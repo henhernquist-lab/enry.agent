@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
-import type { UIMessage, TextUIPart } from 'ai'
+import type { UIMessage, TextUIPart, SourceUrlUIPart } from 'ai'
 import {
   Send,
   Paperclip,
@@ -15,6 +15,8 @@ import {
   Copy,
   Check,
   RotateCcw,
+  Globe,
+  ExternalLink,
 } from 'lucide-react'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
@@ -29,6 +31,10 @@ function getTextContent(message: UIMessage): string {
     .filter((p): p is TextUIPart => p.type === 'text')
     .map((p) => p.text)
     .join('')
+}
+
+function getSources(message: UIMessage): SourceUrlUIPart[] {
+  return message.parts.filter((p): p is SourceUrlUIPart => p.type === 'source-url')
 }
 
 const MODELS = [
@@ -189,6 +195,7 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
           <AnimatePresence>
             {messages.map((message, index) => {
               const text = getTextContent(message)
+              const sources = getSources(message)
               return (
                 <motion.div
                   key={message.id}
@@ -222,6 +229,31 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
                         {text}
                       </p>
                     </div>
+                    {message.role === 'assistant' && sources.length > 0 && (
+                      <div className="mt-2">
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Globe className="h-3 w-3" />
+                          <span>Sources</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {sources.map((s) => (
+                            <a
+                              key={s.sourceId}
+                              href={s.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-start gap-1.5 rounded border border-border bg-surface-elevated px-2.5 py-2 text-xs hover:border-primary/30 hover:bg-surface-elevated transition-colors"
+                            >
+                              <ExternalLink className="mt-0.5 h-3 w-3 flex-shrink-0 text-accent" />
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-foreground">{s.title ?? new URL(s.url).hostname}</p>
+                                <p className="truncate text-muted-foreground">{new URL(s.url).hostname}</p>
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {message.role === 'assistant' && (
                       <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                         <button

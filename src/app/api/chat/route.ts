@@ -4,6 +4,8 @@ import { anthropic } from '@ai-sdk/anthropic'
 const ALLOWED_MODELS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'] as const
 type AllowedModel = typeof ALLOWED_MODELS[number]
 
+export const maxDuration = 30
+
 export async function POST(req: Request) {
   const { messages, model } = await req.json()
   const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : 'claude-sonnet-4-6'
@@ -39,6 +41,11 @@ Re-check the tool name and the inputs you passed. Try a different approach based
 Boundaries
 One user: Henry. Everything is optimized for him. Be honest about what you can and can't do right now. Don't fake capabilities or fake success. If a task needs a tool or key you don't have, say what's missing instead of pretending to do it.`,
     messages: convertToModelMessages(messages),
+    tools: {
+      // @ts-ignore
+      web_search: anthropic.tools.webSearch_20250305(),
+    },
+    maxSteps: 5,
   })
 
   return result.toUIMessageStreamResponse()
