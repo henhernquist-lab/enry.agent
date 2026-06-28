@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 8082",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 8082",
     "lint": "eslint"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.81",
+    "@ai-sdk/openai": "^3.0.68",
     "@ai-sdk/react": "^3.0.198",
     "@vercel/analytics": "^2.0.1",
     "ai": "^6.0.196",

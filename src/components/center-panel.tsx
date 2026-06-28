@@ -38,9 +38,10 @@ function getSources(message: UIMessage): SourceUrlUIPart[] {
 }
 
 const MODELS = [
-  { id: 'claude-haiku-4-5',  label: 'Haiku 4.5',  tag: 'Fast' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', tag: 'Balanced' },
-  { id: 'claude-opus-4-6',   label: 'Opus 4.6',   tag: 'Smart' },
+  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  { id: 'google/gemma-4-31b-it',         label: 'Gemma 4 31b'     },
+  { id: 'qwen/qwen3.5-122b-a10b',        label: 'Qwen 3.5 122b'   },
+  { id: 'z-ai/glm-5.1',                  label: 'GLM 5.1'         },
 ] as const
 
 type ModelId = typeof MODELS[number]['id']
@@ -50,9 +51,10 @@ const transport = new DefaultChatTransport({ api: '/api/chat' })
 export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
   const { messages, sendMessage, status } = useChat({ transport })
   const [input, setInput] = useState('')
-  const [model, setModel] = useState<ModelId>('claude-sonnet-4-6')
+  const [model, setModel] = useState<ModelId>('deepseek-ai/deepseek-v4-pro')
   const [modelOpen, setModelOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const modelDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -64,6 +66,15 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
     else if (status === 'streaming') setAgentStatus('executing')
     else setAgentStatus('online')
   }, [status, setAgentStatus])
+
+  useEffect(() => {
+    if (!modelOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!modelDropdownRef.current?.contains(e.target as Node)) setModelOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [modelOpen])
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault()
@@ -94,68 +105,30 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
       <div className="relative border-b border-border bg-surface-secondary px-8 py-6">
         <div className="pointer-events-none absolute inset-0 grid-overlay opacity-30" />
         <div className="relative z-10 mx-auto max-w-3xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mb-2"
-              >
-                <EnryLogo size="lg" />
-              </motion.div>
-              <motion.p
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="max-w-md text-sm text-muted-foreground"
-              >
-                Autonomous AI agent with advanced reasoning, tool execution, and
-                persistent memory. Built for complex task automation.
-              </motion.p>
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="mt-3"
-              >
-                <StatusIndicator status={agentStatus} />
-              </motion.div>
-            </div>
-            {/* Model selector */}
+          <div>
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.3 }}
-              className="relative"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-2"
             >
-              <button
-                onClick={() => setModelOpen((o) => !o)}
-                className="flex items-center gap-2 rounded border border-border bg-surface-elevated px-4 py-2.5 font-mono text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-surface-elevated"
-              >
-                <span className="text-muted-foreground text-xs">MODEL</span>
-                <span className="text-primary font-medium">
-                  {MODELS.find((m) => m.id === model)?.label}
-                </span>
-                <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {modelOpen && (
-                <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded border border-border bg-surface-secondary shadow-lg">
-                  {MODELS.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => { setModel(m.id); setModelOpen(false) }}
-                      className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition-colors hover:bg-surface-elevated ${model === m.id ? 'text-primary' : 'text-foreground'}`}
-                    >
-                      <span className="font-mono">{m.label}</span>
-                      <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
-                        m.tag === 'Fast' ? 'bg-accent/10 text-accent' :
-                        m.tag === 'Balanced' ? 'bg-primary/10 text-primary' :
-                        'bg-warning/10 text-warning'
-                      }`}>{m.tag}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              <EnryLogo size="lg" />
+            </motion.div>
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="max-w-md text-sm text-muted-foreground"
+            >
+              Autonomous AI agent with advanced reasoning, tool execution, and
+              persistent memory. Built for complex task automation.
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="mt-3"
+            >
+              <StatusIndicator status={agentStatus} />
             </motion.div>
           </div>
           <motion.div
@@ -310,7 +283,7 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
       <div className="border-t border-border bg-surface-secondary p-4">
         <form
           onSubmit={handleSubmit}
-          className="mx-auto flex max-w-3xl items-end gap-3"
+          className="mx-auto flex max-w-3xl items-end gap-2"
         >
           <div className="relative flex-1">
             <textarea
@@ -330,10 +303,47 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
               <Paperclip className="h-4 w-4" />
             </button>
           </div>
+
+          {/* Model selector */}
+          <div ref={modelDropdownRef} className="relative flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setModelOpen((o) => !o)}
+              className="flex h-12 items-center gap-1.5 rounded border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
+            >
+              <span className="text-primary font-semibold">
+                {MODELS.find((m) => m.id === model)?.label}
+              </span>
+              <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {modelOpen && (
+              <div className="absolute bottom-full right-0 z-50 mb-1 w-44 rounded border border-border bg-surface-secondary shadow-xl">
+                {MODELS.map((m) => (
+                  <button
+                    type="button"
+                    key={m.id}
+                    onClick={() => { setModel(m.id); setModelOpen(false) }}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-elevated ${
+                      model === m.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {model === m.id && (
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary" />
+                    )}
+                    {model !== m.id && (
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full border border-border" />
+                    )}
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button
             type="submit"
             disabled={!input.trim() || isStreaming}
-            className="flex h-12 w-12 items-center justify-center rounded border border-primary bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-muted-foreground"
+            className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded border border-primary bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-muted-foreground"
           >
             <Send className="h-4 w-4" />
           </button>
