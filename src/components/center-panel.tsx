@@ -17,13 +17,36 @@ import {
   RotateCcw,
   Globe,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
+import type { ActivityEvent } from '@/lib/chat-history'
 
 interface CenterPanelProps {
   agentStatus: 'online' | 'thinking' | 'executing' | 'idle'
   setAgentStatus: (status: 'online' | 'thinking' | 'executing' | 'idle') => void
+  initialMessages?: UIMessage[]
+  conversationCount: number
+  lastResponseMs: number | null
+  onSaveMessages: (messages: UIMessage[], model: string) => void
+  onActivity: (event: Omit<ActivityEvent, 'id'>) => void
+  onStreamUpdate: (text: string) => void
+  onModelChange: (model: string) => void
+}
+
+const SESSION_START = Date.now()
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function formatUptime(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`
 }
 
 function getTextContent(message: UIMessage): string {
@@ -48,12 +71,33 @@ type ModelId = typeof MODELS[number]['id']
 
 const transport = new DefaultChatTransport({ api: '/api/chat' })
 
-export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
-  const { messages, sendMessage, status } = useChat({ transport })
+export function CenterPanel({
+  agentStatus,
+  setAgentStatus,
+  initialMessages,
+  conversationCount,
+  lastResponseMs,
+  onSaveMessages,
+  onActivity,
+  onStreamUpdate,
+  onModelChange,
+}: CenterPanelProps) {
+  const [model, setModel] = useState<ModelId>('z-ai/glm-5.1')
+  const { messages, sendMessage, status, error } = useChat({
+    transport,
+    messages: initialMessages,
+    onFinish: ({ messages: finalMessages }) => {
+      onSaveMessages(finalMessages, model)
+      onActivity({ type: 'assistant-complete', content: '', at: Date.now() })
+    },
+    onError: (err) => {
+      onActivity({ type: 'error', content: err.message, at: Date.now() })
+    },
+  })
   const [input, setInput] = useState('')
-  const [model, setModel] = useState<ModelId>('deepseek-ai/deepseek-v4-pro')
   const [modelOpen, setModelOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [uptimeMs, setUptimeMs] = useState(0)
   const modelDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -68,6 +112,21 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
   }, [status, setAgentStatus])
 
   useEffect(() => {
+    if (status !== 'streaming') return
+    const last = messages[messages.length - 1]
+    if (last?.role === 'assistant') {
+      onStreamUpdate(getTextContent(last))
+    }
+  }, [messages, status, onStreamUpdate])
+
+  useEffect(() => {
+    const tick = () => setUptimeMs(Date.now() - SESSION_START)
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
     if (!modelOpen) return
     const handler = (e: MouseEvent) => {
       if (!modelDropdownRef.current?.contains(e.target as Node)) setModelOpen(false)
@@ -80,8 +139,16 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
     e?.preventDefault()
     const text = input.trim()
     if (!text) return
+    onActivity({ type: 'user-sent', content: text, at: Date.now() })
+    onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
     sendMessage({ text }, { body: { model } })
     setInput('')
+  }
+
+  const handleModelSelect = (id: ModelId) => {
+    setModel(id)
+    onModelChange(id)
+    setModelOpen(false)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -138,10 +205,10 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
             className="mt-6 grid grid-cols-4 gap-4"
           >
             {[
-              { label: 'Tasks Completed', value: '1,247' },
-              { label: 'Tools Available', value: '24' },
-              { label: 'Uptime', value: '99.9%' },
-              { label: 'Avg Response', value: '1.2s' },
+              { label: 'Saved Chats', value: String(conversationCount) },
+              { label: 'Active Model', value: MODELS.find((m) => m.id === model)?.label ?? model },
+              { label: 'Session', value: formatUptime(uptimeMs) },
+              { label: 'Last Response', value: lastResponseMs !== null ? formatDuration(lastResponseMs) : '—' },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -275,6 +342,17 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
             </motion.div>
           )}
 
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 px-4 py-3"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-warning" />
+              <p className="text-sm text-foreground">{error.message || 'Something went wrong. Try a different model or retry.'}</p>
+            </motion.div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -322,7 +400,7 @@ export function CenterPanel({ agentStatus, setAgentStatus }: CenterPanelProps) {
                   <button
                     type="button"
                     key={m.id}
-                    onClick={() => { setModel(m.id); setModelOpen(false) }}
+                    onClick={() => handleModelSelect(m.id)}
                     className={`flex w-full items-center gap-2 px-3 py-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-elevated ${
                       model === m.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
                     }`}

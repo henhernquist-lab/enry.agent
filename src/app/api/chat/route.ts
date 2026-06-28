@@ -10,18 +10,27 @@ const MODEL_CONFIG = {
 
 type AllowedModel = keyof typeof MODEL_CONFIG
 const ALLOWED_MODELS = Object.keys(MODEL_CONFIG) as AllowedModel[]
-const DEFAULT_MODEL: AllowedModel = 'deepseek-ai/deepseek-v4-pro'
+const DEFAULT_MODEL: AllowedModel = 'z-ai/glm-5.1'
 
 export const maxDuration = 30
 
 export async function POST(req: Request) {
   const { messages, model } = await req.json()
   const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
+  const apiKey = MODEL_CONFIG[selectedModel]()
+
+  if (!apiKey) {
+    return new Response(
+      JSON.stringify({ error: `No API key configured for ${selectedModel}` }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
   const modelMessages = await convertToModelMessages(messages)
 
   const client = createOpenAI({
     baseURL: 'https://integrate.api.nvidia.com/v1',
-    apiKey: MODEL_CONFIG[selectedModel](),
+    apiKey,
   })
 
   const result = streamText({
@@ -55,7 +64,15 @@ Re-check the tool name and the inputs you passed. Try a different approach based
 Boundaries
 One user: Henry. Everything is optimized for him. Be honest about what you can and can't do right now. Don't fake capabilities or fake success. If a task needs a tool or key you don't have, say what's missing instead of pretending to do it.`,
     messages: modelMessages,
+    onError: ({ error }) => {
+      console.error('streamText error:', error)
+    },
   })
 
-  return result.toUIMessageStreamResponse()
+  return result.toUIMessageStreamResponse({
+    onError: (error) => {
+      console.error('chat route error:', error)
+      return error instanceof Error ? error.message : 'Something went wrong'
+    },
+  })
 }

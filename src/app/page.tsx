@@ -1,27 +1,136 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { UIMessage } from 'ai'
 import { LeftSidebar, CenterPanel, RightPanel, GridBackground, CornerAccents } from '@/components/components'
+import {
+  loadConversations,
+  saveConversation,
+  deleteConversation,
+  newConversationId,
+  type Conversation,
+  type ActivityEvent,
+} from '@/lib/chat-history'
 
 export default function EnryAgentPage() {
   const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'executing' | 'idle'>('online')
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [activeId, setActiveId] = useState<string>(() => newConversationId())
+  const [activities, setActivities] = useState<ActivityEvent[]>([])
+  const [streamingText, setStreamingText] = useState('')
+  const [currentModel, setCurrentModel] = useState('z-ai/glm-5.1')
+  const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
+  const responseStartRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    setConversations(loadConversations())
+  }, [])
+
+  const activeConversation = conversations.find((c) => c.id === activeId)
+
+  const handleSaveMessages = useCallback(
+    (messages: UIMessage[], model: string) => {
+      if (messages.length === 0) return
+      const firstUserMsg = messages.find((m) => m.role === 'user')
+      const textPart = firstUserMsg?.parts.find((p) => p.type === 'text')
+      const title = textPart && 'text' in textPart ? textPart.text.slice(0, 60) : 'New chat'
+
+      const conv: Conversation = {
+        id: activeId,
+        title,
+        model,
+        createdAt: activeConversation?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+        messages,
+      }
+      saveConversation(conv)
+      setConversations(loadConversations())
+    },
+    [activeId, activeConversation],
+  )
+
+  const handleActivity = useCallback((event: Omit<ActivityEvent, 'id'>) => {
+    setActivities((prev) => [...prev.slice(-19), { ...event, id: Math.random().toString(36).slice(2) }])
+    if (event.type === 'assistant-start') {
+      responseStartRef.current = Date.now()
+    }
+    if (event.type === 'assistant-complete') {
+      if (responseStartRef.current) {
+        setLastResponseMs(Date.now() - responseStartRef.current)
+        responseStartRef.current = null
+      }
+      setStreamingText('')
+    }
+    if (event.type === 'error') {
+      responseStartRef.current = null
+      setStreamingText('')
+    }
+  }, [])
+
+  const resetActivityState = useCallback(() => {
+    setActivities([])
+    setStreamingText('')
+  }, [])
+
+  const handleNewChat = useCallback(() => {
+    setActiveId(newConversationId())
+    resetActivityState()
+  }, [resetActivityState])
+
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      setActiveId(id)
+      resetActivityState()
+    },
+    [resetActivityState],
+  )
+
+  const handleDeleteConversation = useCallback(
+    (id: string) => {
+      deleteConversation(id)
+      setConversations(loadConversations())
+      if (id === activeId) {
+        setActiveId(newConversationId())
+        resetActivityState()
+      }
+    },
+    [activeId, resetActivityState],
+  )
 
   return (
     <div className="relative flex h-screen w-full overflow-hidden bg-surface-base">
-      {/* Background Effects */}
       <GridBackground />
       <CornerAccents />
-      
-      {/* Main Layout */}
+
       <div className="relative z-10 flex h-full w-full">
-        {/* Left Sidebar - 280px */}
-        <LeftSidebar agentStatus={agentStatus} />
-        
-        {/* Center Panel - Flexible */}
-        <CenterPanel agentStatus={agentStatus} setAgentStatus={setAgentStatus} />
-        
-        {/* Right Panel - 320px */}
-        <RightPanel />
+        <LeftSidebar
+          agentStatus={agentStatus}
+          conversations={conversations}
+          activeId={activeId}
+          onNewChat={handleNewChat}
+          onSelectConversation={handleSelectConversation}
+          onDeleteConversation={handleDeleteConversation}
+        />
+
+        <CenterPanel
+          key={activeId}
+          agentStatus={agentStatus}
+          setAgentStatus={setAgentStatus}
+          initialMessages={activeConversation?.messages}
+          conversationCount={conversations.length}
+          lastResponseMs={lastResponseMs}
+          onSaveMessages={handleSaveMessages}
+          onActivity={handleActivity}
+          onStreamUpdate={setStreamingText}
+          onModelChange={setCurrentModel}
+        />
+
+        <RightPanel
+          agentStatus={agentStatus}
+          activities={activities}
+          streamingText={streamingText}
+          currentModel={currentModel}
+        />
       </div>
     </div>
   )
