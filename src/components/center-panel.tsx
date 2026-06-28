@@ -62,10 +62,10 @@ function getSources(message: UIMessage): SourceUrlUIPart[] {
 }
 
 const MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-  { id: 'google/gemma-4-31b-it',         label: 'Gemma 4 31b'     },
-  { id: 'qwen/qwen3.5-122b-a10b',        label: 'Qwen 3.5 122b'   },
-  { id: 'z-ai/glm-5.1',                  label: 'GLM 5.1'         },
+  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro', desc: "Strongest free model. Best for complex tasks." },
+  { id: 'google/gemma-4-31b-it',         label: 'Gemma 4 31b',     desc: "Google's coding model. Fast and reliable." },
+  { id: 'qwen/qwen3.5-122b-a10b',        label: 'Qwen 3.5 122b',   desc: 'Large reasoning model. Great for analysis.' },
+  { id: 'z-ai/glm-5.1',                  label: 'GLM 5.1',         desc: 'Versatile all-rounder. Good at following instructions.' },
 ] as const
 
 type ModelId = typeof MODELS[number]['id']
@@ -404,23 +404,29 @@ export function CenterPanel({
               <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
             </button>
             {modelOpen && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 w-44 rounded border border-border bg-surface-secondary shadow-xl">
+              <div className="absolute bottom-full right-0 z-50 mb-1 w-64 rounded border border-border bg-surface-secondary shadow-xl">
                 {MODELS.map((m) => (
                   <button
                     type="button"
                     key={m.id}
                     onClick={() => handleModelSelect(m.id)}
-                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-elevated ${
+                    className={`flex w-full items-start gap-2 px-3 py-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-elevated ${
                       model === m.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {model === m.id && (
-                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary" />
-                    )}
-                    {model !== m.id && (
-                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full border border-border" />
-                    )}
-                    {m.label}
+                    <span className="mt-0.5 flex-shrink-0">
+                      {model === m.id ? (
+                        <span className="block h-1.5 w-1.5 rounded-full bg-primary" />
+                      ) : (
+                        <span className="block h-1.5 w-1.5 rounded-full border border-border" />
+                      )}
+                    </span>
+                    <span className="flex flex-col">
+                      <span>{m.label}</span>
+                      <span className="font-normal text-[10px] text-muted-foreground leading-tight mt-0.5">
+                        {m.desc}
+                      </span>
+                    </span>
                   </button>
                 ))}
               </div>
