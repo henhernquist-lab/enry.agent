@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
+import { TypingText } from './typing-text'
 import type { ActivityEvent } from '@/lib/chat-history'
 
 interface CenterPanelProps {
@@ -236,6 +237,10 @@ export function CenterPanel({
             {messages.map((message, index) => {
               const text = getTextContent(message)
               const sources = getSources(message)
+              const isCurrentStream =
+                isStreaming &&
+                index === messages.length - 1 &&
+                message.role === 'assistant'
               return (
                 <motion.div
                   key={message.id}
@@ -266,7 +271,11 @@ export function CenterPanel({
                       }`}
                     >
                       <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                        {text}
+                        {isCurrentStream ? (
+                          <TypingText text={text} isStreaming={true} />
+                        ) : (
+                          text
+                        )}
                       </p>
                     </div>
                     {message.role === 'assistant' && sources.length > 0 && (
