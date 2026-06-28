@@ -18,6 +18,15 @@ import {
   Globe,
   ExternalLink,
   AlertTriangle,
+  Search,
+  Link,
+  Code,
+  Mail,
+  Lock,
+  Zap,
+  Clock,
+  Cpu,
+  Database,
 } from 'lucide-react'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
@@ -70,6 +79,26 @@ const MODELS = [
 
 type ModelId = typeof MODELS[number]['id']
 
+const QUICK_ACTIONS = [
+  { label: 'Search the web', icon: Search, prompt: 'Search the web for ' },
+  { label: 'Summarize a URL', icon: Link, prompt: 'Summarize the content at this URL: ' },
+  { label: 'Write code', icon: Code, prompt: 'Write code to ' },
+  { label: 'Check my email', icon: Mail, prompt: 'Check my email for new messages', comingSoon: true as const },
+]
+
+const SUGGESTION_CARDS = [
+  { label: 'Search the web', icon: Search, prompt: 'Search the web for the latest AI news', description: 'Find real-time information from across the internet' },
+  { label: 'Summarize a URL', icon: Link, prompt: 'Summarize the content at this URL: ', description: 'Extract key insights from any webpage' },
+  { label: 'Write code', icon: Code, prompt: 'Write code to build a todo app', description: 'Generate, refactor, and debug code in any language' },
+  { label: 'Check my email', icon: Mail, prompt: 'Check my email for new messages', description: 'Read and draft email responses', comingSoon: true as const },
+]
+
+const TOOL_BADGES = [
+  { label: 'Web Search', icon: Search, available: true },
+  { label: 'Code', icon: Code, available: true },
+  { label: 'Memory', icon: Database, available: true },
+]
+
 const transport = new DefaultChatTransport({ api: '/api/chat' })
 
 export function CenterPanel({
@@ -101,6 +130,7 @@ export function CenterPanel({
   const [uptimeMs, setUptimeMs] = useState(0)
   const modelDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -146,6 +176,12 @@ export function CenterPanel({
     setInput('')
   }
 
+  const handlePrefillPrompt = (prompt: string, comingSoon?: boolean) => {
+    if (comingSoon) return
+    setInput(prompt)
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }
+
   const handleModelSelect = (id: ModelId) => {
     setModel(id)
     onModelChange(id)
@@ -169,70 +205,151 @@ export function CenterPanel({
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden bg-surface-base">
-      {/* Hero Section */}
-      <div className="relative border-b border-border bg-surface-secondary px-8 py-6">
-        <div className="pointer-events-none absolute inset-0 grid-overlay opacity-30" />
-        <div className="relative z-10 mx-auto max-w-3xl">
-          <div>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-2"
-            >
-              <EnryLogo size="lg" />
-            </motion.div>
-            <motion.p
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="max-w-md text-sm text-muted-foreground"
-            >
-              Autonomous AI agent with advanced reasoning, tool execution, and
-              persistent memory. Built for complex task automation.
-            </motion.p>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="mt-3"
-            >
+      {/* Status Bar */}
+      <div className="relative border-b border-border bg-surface-secondary">
+        <div className="pointer-events-none absolute inset-0 grid-overlay opacity-20" />
+        <div className="relative z-10 mx-auto max-w-3xl px-8 py-3">
+          <div className="flex items-center justify-between">
+            {/* Left: Logo + Status */}
+            <div className="flex items-center gap-3">
+              <EnryLogo size="sm" />
+              <div className="h-4 w-px bg-border" />
               <StatusIndicator status={agentStatus} />
-            </motion.div>
-          </div>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="mt-6 grid grid-cols-4 gap-4"
-          >
-            {[
-              { label: 'Saved Chats', value: String(conversationCount) },
-              { label: 'Active Model', value: MODELS.find((m) => m.id === model)?.label ?? model },
-              { label: 'Session', value: formatUptime(uptimeMs) },
-              { label: 'Last Response', value: lastResponseMs !== null ? formatDuration(lastResponseMs) : '—' },
-            ].map((stat) => (
-              <div
-                key={stat.label}
-                className="rounded border border-border bg-surface-elevated px-4 py-3"
+            </div>
+
+            {/* Right: Live Stats */}
+            <div className="flex items-center gap-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-center gap-1.5"
               >
-                <p className="font-mono text-lg font-semibold text-foreground">
-                  {stat.value}
-                </p>
-                <p className="text-xs text-muted-foreground">{stat.label}</p>
-              </div>
-            ))}
-          </motion.div>
+                <Cpu className="h-3 w-3 text-primary" />
+                <span className="font-mono text-[11px] font-medium text-foreground">
+                  {MODELS.find((m) => m.id === model)?.label}
+                </span>
+              </motion.div>
+
+              <div className="h-3 w-px bg-border" />
+
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.1 }}
+                className="flex items-center gap-1.5"
+              >
+                <Zap className="h-3 w-3 text-accent" />
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {lastResponseMs !== null ? (
+                    <span className="text-accent">{formatDuration(lastResponseMs)}</span>
+                  ) : (
+                    <span>—</span>
+                  )}
+                </span>
+              </motion.div>
+
+              <div className="h-3 w-px bg-border" />
+
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="flex items-center gap-1.5"
+              >
+                <Clock className="h-3 w-3 text-warning" />
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {formatUptime(uptimeMs)}
+                </span>
+              </motion.div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Messages */}
+      {/* Messages Area */}
       <div className="relative flex-1 overflow-y-auto px-8 py-6 scrollbar-hidden">
         <div className="mx-auto max-w-3xl space-y-6">
+          {/* Welcome Section - shown when no messages */}
           {messages.length === 0 && (
-            <div className="flex h-32 items-center justify-center">
-              <p className="text-sm text-muted-foreground">Send a message to start.</p>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center justify-center py-12"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
+                className="mb-6"
+              >
+                <EnryLogo size="lg" />
+              </motion.div>
+
+              <motion.h2
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="mb-2 text-center font-display text-2xl font-bold text-foreground"
+              >
+                What can I help you with?
+              </motion.h2>
+              <motion.p
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="mb-8 max-w-md text-center text-sm text-muted-foreground"
+              >
+                I can search the web, write code, analyze data, and automate complex tasks. Pick a suggestion or just start typing.
+              </motion.p>
+
+              {/* Suggestion Cards */}
+              <div className="grid w-full grid-cols-2 gap-3">
+                {SUGGESTION_CARDS.map((card, index) => (
+                  <motion.button
+                    key={card.label}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 + index * 0.08 }}
+                    whileHover={{ scale: 1.02, borderColor: 'rgba(0, 255, 102, 0.3)' }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handlePrefillPrompt(card.prompt, card.comingSoon)}
+                    disabled={card.comingSoon}
+                    aria-disabled={card.comingSoon}
+                    aria-label={card.comingSoon ? `${card.label} (coming soon)` : `${card.label} - ${card.description}`}
+                    className={`group relative flex items-start gap-3 rounded-lg border border-border bg-surface-secondary p-4 text-left transition-all duration-200 ${
+                      card.comingSoon
+                        ? 'cursor-not-allowed opacity-60'
+                        : 'cursor-pointer hover:border-primary/30 hover:bg-surface-elevated hover:shadow-[0_0_20px_rgba(0,255,102,0.05)]'
+                    }`}
+                  >
+                    <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border ${
+                      card.comingSoon
+                        ? 'border-border bg-surface-elevated'
+                        : 'border-primary/20 bg-primary/10 group-hover:border-primary/40 group-hover:bg-primary/20'
+                    }`}>
+                      <card.icon className={`h-4 w-4 ${
+                        card.comingSoon ? 'text-muted-foreground' : 'text-primary'
+                      }`} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium text-foreground">{card.label}</p>
+                        {card.comingSoon && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-surface-elevated px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+                            <Lock className="h-2 w-2" />
+                            Soon
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{card.description}</p>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            </motion.div>
           )}
+
+          {/* Messages */}
           <AnimatePresence>
             {messages.map((message, index) => {
               const text = getTextContent(message)
@@ -326,7 +443,7 @@ export function CenterPanel({
             })}
           </AnimatePresence>
 
-          {/* Typing indicator — show when submitted but no assistant message yet streaming */}
+          {/* Typing indicator */}
           {isStreaming && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -366,14 +483,42 @@ export function CenterPanel({
         </div>
       </div>
 
-      {/* Input */}
-      <div className="border-t border-border bg-surface-secondary p-4">
+      {/* Input Area */}
+      <div className="border-t border-border bg-surface-secondary">
+        {/* Quick Action Buttons */}
+        <div className="mx-auto max-w-3xl px-4 pt-3">
+          <div className="flex items-center gap-2">
+            {QUICK_ACTIONS.map((action) => (
+              <motion.button
+                key={action.label}
+                whileHover={{ scale: action.comingSoon ? 1 : 1.03 }}
+                whileTap={{ scale: action.comingSoon ? 1 : 0.97 }}
+                onClick={() => handlePrefillPrompt(action.prompt, action.comingSoon)}
+                disabled={action.comingSoon}
+                aria-disabled={action.comingSoon}
+                aria-label={action.comingSoon ? `${action.label} (coming soon)` : action.label}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all duration-200 ${
+                  action.comingSoon
+                    ? 'cursor-not-allowed border-border bg-surface-elevated text-muted-foreground opacity-60'
+                    : 'cursor-pointer border-primary/20 bg-primary/5 text-primary hover:border-primary/40 hover:bg-primary/10 hover:shadow-[0_0_12px_rgba(0,255,102,0.08)]'
+                }`}
+              >
+                <action.icon className="h-3 w-3" />
+                {action.label}
+                {action.comingSoon && <Lock className="h-2.5 w-2.5" />}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+
+        {/* Main Input */}
         <form
           onSubmit={handleSubmit}
-          className="mx-auto flex max-w-3xl items-end gap-2"
+          className="mx-auto flex max-w-3xl items-end gap-2 px-4 pt-2 pb-3"
         >
           <div className="relative flex-1">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -391,7 +536,7 @@ export function CenterPanel({
             </button>
           </div>
 
-          {/* Model selector */}
+          {/* Model Selector */}
           <div ref={modelDropdownRef} className="relative flex-shrink-0">
             <button
               type="button"
@@ -441,22 +586,62 @@ export function CenterPanel({
             <Send className="h-4 w-4" />
           </button>
         </form>
-        <div className="mx-auto mt-2 flex max-w-3xl items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            Press{' '}
-            <kbd className="rounded border border-border bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px]">
-              Enter
-            </kbd>{' '}
-            to send,{' '}
-            <kbd className="rounded border border-border bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px]">
-              Shift + Enter
-            </kbd>{' '}
-            for new line
-          </p>
-          <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-            <Command className="h-3 w-3" />
-            Command Palette
-          </button>
+
+        {/* Tool Badges + Footer */}
+        <div className="mx-auto max-w-3xl px-4 pb-3">
+          <div className="flex items-center justify-between">
+            {/* Tool Badges */}
+            <div className="flex items-center gap-2">
+              {TOOL_BADGES.map((tool) => (
+                <motion.div
+                  key={tool.label}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium ${
+                    tool.available
+                      ? 'border border-primary/30 bg-primary/10 text-primary'
+                      : 'border border-border bg-surface-elevated text-muted-foreground'
+                  }`}
+                >
+                  {tool.available ? (
+                    <motion.div
+                      className="h-1.5 w-1.5 rounded-full bg-primary"
+                      animate={{
+                        boxShadow: [
+                          '0 0 0px rgba(0,255,102,0.5)',
+                          '0 0 6px rgba(0,255,102,0.8)',
+                          '0 0 0px rgba(0,255,102,0.5)',
+                        ],
+                      }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    />
+                  ) : (
+                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                  )}
+                  <tool.icon className="h-2.5 w-2.5" />
+                  {tool.label}
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Keyboard hints */}
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-muted-foreground">
+                <kbd className="rounded border border-border bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px]">
+                  Enter
+                </kbd>{' '}
+                to send,{' '}
+                <kbd className="rounded border border-border bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px]">
+                  Shift + Enter
+                </kbd>{' '}
+                for new line
+              </p>
+              <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                <Command className="h-3 w-3" />
+                Command Palette
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </main>
