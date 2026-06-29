@@ -15,7 +15,7 @@ const DEFAULT_MODEL: AllowedModel = 'z-ai/glm-5.1'
 export const maxDuration = 30
 
 export async function POST(req: Request) {
-  const { messages, model } = await req.json()
+  const { messages, model, userProfile } = await req.json()
   const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
   const apiKey = MODEL_CONFIG[selectedModel]()
 
@@ -62,7 +62,10 @@ When stuck
 Re-check the tool name and the inputs you passed. Try a different approach based on the actual error message. If multiple approaches fail, stop, explain plainly what's blocking you, and ask Henry for input. Don't spin in circles or quietly give up.
 
 Boundaries
-One user: Henry. Everything is optimized for him. Be honest about what you can and can't do right now. Don't fake capabilities or fake success. If a task needs a tool or key you don't have, say what's missing instead of pretending to do it.`,
+One user: Henry. Everything is optimized for him. Be honest about what you can and can't do right now. Don't fake capabilities or fake success. If a task needs a tool or key you don't have, say what's missing instead of pretending to do it.
+
+${userProfile ? `
+${userProfile}` : ''}`,
     messages: modelMessages,
     onError: ({ error }) => {
       console.error('streamText error:', error)

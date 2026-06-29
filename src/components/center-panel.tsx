@@ -34,6 +34,7 @@ import { TypingText } from './typing-text'
 import { DailyBriefingRunner } from './automations/daily-briefing-runner'
 import { loadToggles } from '@/lib/builtin-automations'
 import type { ActivityEvent } from '@/lib/chat-history'
+import { loadProfile, profileToSystemPrompt } from '@/lib/user-profile'
 
 interface CenterPanelProps {
   agentStatus: 'online' | 'thinking' | 'executing' | 'idle'
@@ -179,7 +180,12 @@ export function CenterPanel({
     if (!text) return
     onActivity({ type: 'user-sent', content: text, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
-    sendMessage({ text }, { body: { model } })
+    const profile = loadProfile()
+    const body: Record<string, unknown> = { model }
+    if (profile?.setupComplete) {
+      body.userProfile = profileToSystemPrompt(profile)
+    }
+    sendMessage({ text }, { body })
     setInput('')
   }
 

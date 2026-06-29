@@ -18,6 +18,8 @@ import {
   type Automation,
   type AutomationRun,
 } from '@/lib/automations'
+import { hasCompletedSetup } from '@/lib/user-profile'
+import { OnboardingFlow } from '@/components/onboarding-flow'
 
 export default function EnryAgentPage() {
   const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'executing' | 'idle'>('online')
@@ -27,6 +29,7 @@ export default function EnryAgentPage() {
   const [streamingText, setStreamingText] = useState('')
   const [currentModel, setCurrentModel] = useState('z-ai/glm-5.1')
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const responseStartRef = useRef<number | null>(null)
 
   // ─── Automation scheduler lifecycle ─────────────────────────
@@ -46,6 +49,10 @@ export default function EnryAgentPage() {
 
   useEffect(() => {
     setConversations(loadConversations())
+    // Check if this is the first launch — show onboarding if no profile exists
+    if (!hasCompletedSetup()) {
+      setShowOnboarding(true)
+    }
   }, [])
 
   const activeConversation = conversations.find((c) => c.id === activeId)
@@ -133,6 +140,13 @@ export default function EnryAgentPage() {
           onSelectConversation={handleSelectConversation}
           onDeleteConversation={handleDeleteConversation}
           onAutomationsChange={handleAutomationsChange}
+          onSetupProfile={() => setShowOnboarding(true)}
+        />
+
+        <OnboardingFlow
+          open={showOnboarding}
+          onComplete={() => setShowOnboarding(false)}
+          onClose={() => setShowOnboarding(false)}
         />
 
         <CenterPanel
