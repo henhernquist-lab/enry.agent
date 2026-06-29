@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
+import { AutomationsSection } from './automations-section'
 import type { Conversation } from '@/lib/chat-history'
 import { MessageSquarePlus, MessageSquare, Trash2, Download, X } from 'lucide-react'
 
@@ -14,6 +15,7 @@ interface LeftSidebarProps {
   onNewChat: () => void
   onSelectConversation: (id: string) => void
   onDeleteConversation: (id: string) => void
+  onAutomationsChange?: () => void
 }
 
 function formatRelativeTime(ts: number): string {
@@ -26,6 +28,7 @@ function formatRelativeTime(ts: number): string {
   const days = Math.floor(hours / 24)
   return `${days}d ago`
 }
+// Note: automations-section.tsx has its own formatRelativeTime with second-level granularity.
 
 export function LeftSidebar({
   agentStatus,
@@ -34,6 +37,7 @@ export function LeftSidebar({
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
+  onAutomationsChange,
 }: LeftSidebarProps) {
   const [showComingSoon, setShowComingSoon] = useState(false)
 
@@ -57,6 +61,10 @@ export function LeftSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 scrollbar-hidden">
+        <AutomationsSection onAutomationsChange={onAutomationsChange} />
+
+        <div className="my-3 border-t border-border" />
+
         <h3 className="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Chat History
         </h3>

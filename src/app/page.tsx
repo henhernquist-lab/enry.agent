@@ -11,6 +11,13 @@ import {
   type Conversation,
   type ActivityEvent,
 } from '@/lib/chat-history'
+import {
+  startAllSchedulers,
+  stopAllSchedulers,
+  setOnAutomationRun,
+  type Automation,
+  type AutomationRun,
+} from '@/lib/automations'
 
 export default function EnryAgentPage() {
   const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'executing' | 'idle'>('online')
@@ -21,6 +28,21 @@ export default function EnryAgentPage() {
   const [currentModel, setCurrentModel] = useState('z-ai/glm-5.1')
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
   const responseStartRef = useRef<number | null>(null)
+
+  // ─── Automation scheduler lifecycle ─────────────────────────
+  useEffect(() => {
+    setOnAutomationRun((_automation: Automation, _run: AutomationRun) => {
+      // Could pipe automation events into the activity timeline here
+    })
+    startAllSchedulers()
+    return () => stopAllSchedulers()
+  }, [])
+
+  const handleAutomationsChange = useCallback(() => {
+    // Re-sync schedulers when automations are created/toggled/deleted
+    stopAllSchedulers()
+    startAllSchedulers()
+  }, [])
 
   useEffect(() => {
     setConversations(loadConversations())
@@ -110,6 +132,7 @@ export default function EnryAgentPage() {
           onNewChat={handleNewChat}
           onSelectConversation={handleSelectConversation}
           onDeleteConversation={handleDeleteConversation}
+          onAutomationsChange={handleAutomationsChange}
         />
 
         <CenterPanel

@@ -1,4 +1,5 @@
 export { LeftSidebar } from './left-sidebar'
 export { CenterPanel } from './center-panel'
 export { RightPanel } from './right-panel'
+export { AutomationsSection } from './automations-section'
 export { GridBackground, CornerAccents } from './grid-background'
