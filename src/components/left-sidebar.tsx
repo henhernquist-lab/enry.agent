@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
 import { AutomationsSection } from './automations-section'
+import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
 import { MessageSquarePlus, MessageSquare, Trash2, Download, X } from 'lucide-react'
 
@@ -61,6 +62,10 @@ export function LeftSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 scrollbar-hidden">
+        <BuiltinAutomationsLauncher />
+
+        <div className="my-3 border-t border-border" />
+
         <AutomationsSection onAutomationsChange={onAutomationsChange} />
 
         <div className="my-3 border-t border-border" />

@@ -31,6 +31,8 @@ import {
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
 import { TypingText } from './typing-text'
+import { DailyBriefingRunner } from './automations/daily-briefing-runner'
+import { loadToggles } from '@/lib/builtin-automations'
 import type { ActivityEvent } from '@/lib/chat-history'
 
 interface CenterPanelProps {
@@ -128,9 +130,14 @@ export function CenterPanel({
   const [modelOpen, setModelOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [uptimeMs, setUptimeMs] = useState(0)
+  const [briefingEnabled, setBriefingEnabled] = useState(false)
   const modelDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    setBriefingEnabled(loadToggles().dailyBriefing)
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -269,6 +276,8 @@ export function CenterPanel({
       {/* Messages Area */}
       <div className="relative flex-1 overflow-y-auto px-8 py-6 scrollbar-hidden">
         <div className="mx-auto max-w-3xl space-y-6">
+          <DailyBriefingRunner enabled={briefingEnabled} />
+
           {/* Welcome Section - shown when no messages */}
           {messages.length === 0 && (
             <motion.div
