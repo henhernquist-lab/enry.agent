@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages, tool } from 'ai'
+import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { tavily } from '@tavily/core'
 import { z } from 'zod'
@@ -73,11 +73,11 @@ One user: Henry. Everything is optimized for him. Be honest about what you can a
 
 ${userProfile ? `\n${userProfile}` : ''}`,
     messages: modelMessages,
-    maxSteps: 5,
+    stopWhen: stepCountIs(5),
     tools: {
       web_search: tool({
         description: 'Search the web for current, real-time information. Use this for news, prices, recent events, people, or anything that may have changed.',
-        parameters: z.object({
+        inputSchema: z.object({
           query: z.string().describe('The search query'),
           max_results: z.number().optional().default(5).describe('Number of results to return'),
         }),
@@ -108,4 +108,5 @@ ${userProfile ? `\n${userProfile}` : ''}`,
       return error instanceof Error ? error.message : 'Something went wrong'
     },
   })
+}
 }
