@@ -1,5 +1,7 @@
-import { streamText, convertToModelMessages } from 'ai'
+import { streamText, convertToModelMessages, tool } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
+import { tavily } from '@tavily/core'
+import { z } from 'zod'
 
 const MODEL_CONFIG = {
   'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
@@ -12,7 +14,9 @@ type AllowedModel = keyof typeof MODEL_CONFIG
 const ALLOWED_MODELS = Object.keys(MODEL_CONFIG) as AllowedModel[]
 const DEFAULT_MODEL: AllowedModel = 'z-ai/glm-5.1'
 
-export const maxDuration = 30
+export const maxDuration = 60
+
+const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY ?? '' })
 
 export async function POST(req: Request) {
   const { messages, model, userProfile } = await req.json()
@@ -49,6 +53,9 @@ For any non-trivial task, run this loop:
 4. Check — verify your work before saying it's done. If you wrote code, make sure it runs/compiles. Don't declare success you haven't confirmed.
 5. Report — deliver the result with a tight summary. Lead with the answer or the deliverable, not a recap of everything you did.
 
+Tools available
+- web_search: use this whenever Henry asks about current events, real-time info, prices, people, news, or anything that might have changed recently. Always search before saying you don't know something current.
+
 Communication
 Be concise and direct. Short answers for simple questions. Plain language. No hype-for-the-sake-of-hype, no padding. When you change approach mid-task, say so in one line and keep moving. Don't thank Henry for asking or over-explain unless he wants the detail.
 
@@ -64,9 +71,32 @@ Re-check the tool name and the inputs you passed. Try a different approach based
 Boundaries
 One user: Henry. Everything is optimized for him. Be honest about what you can and can't do right now. Don't fake capabilities or fake success. If a task needs a tool or key you don't have, say what's missing instead of pretending to do it.
 
-${userProfile ? `
-${userProfile}` : ''}`,
+${userProfile ? `\n${userProfile}` : ''}`,
     messages: modelMessages,
+    maxSteps: 5,
+    tools: {
+      web_search: tool({
+        description: 'Search the web for current, real-time information. Use this for news, prices, recent events, people, or anything that may have changed.',
+        parameters: z.object({
+          query: z.string().describe('The search query'),
+          max_results: z.number().optional().default(5).describe('Number of results to return'),
+        }),
+        execute: async ({ query, max_results }) => {
+          const response = await tavilyClient.search(query, {
+            maxResults: max_results,
+            includeAnswer: true,
+          })
+          return {
+            answer: response.answer,
+            results: response.results.map(r => ({
+              title: r.title,
+              url: r.url,
+              content: r.content,
+            })),
+          }
+        },
+      }),
+    },
     onError: ({ error }) => {
       console.error('streamText error:', error)
     },

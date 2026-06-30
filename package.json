@@ -11,6 +11,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.68",
     "@ai-sdk/react": "^3.0.198",
+    "@tavily/core": "^0.7.6",
     "@vercel/analytics": "^2.0.1",
     "ai": "^6.0.196",
     "framer-motion": "^12.40.0",
