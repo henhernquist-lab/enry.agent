@@ -2,6 +2,8 @@ import NextAuth from 'next-auth'
 import Google from 'next-auth/providers/google'
 import { supabase } from './supabase'
 
+const THIRTY_DAYS = 30 * 24 * 60 * 60
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Google({
@@ -9,6 +11,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
   ],
+  session: {
+    strategy: 'jwt',
+    maxAge: THIRTY_DAYS,
+  },
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider === 'google') {
@@ -25,13 +31,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       return true
     },
+    async jwt({ token, account }) {
+      // On initial sign-in, store the Google ID in the token
+      if (account) {
+        ;(token as Record<string, unknown>).googleId = account.providerAccountId
+      }
+      return token
+    },
     async session({ session, token }) {
-      if (session.user && token.sub) {
+      // With JWT strategy, map from token to session
+      const googleId = (token as Record<string, unknown>).googleId
+      if (session.user && googleId) {
         const user = session.user as typeof session.user & { id?: string }
-        user.id = token.sub
+        user.id = googleId as string
       }
       return session
     },
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || '',
 })

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import type { UIMessage } from 'ai'
 import { LeftSidebar, CenterPanel, RightPanel, GridBackground, CornerAccents } from '@/components/components'
 import {
@@ -23,6 +24,7 @@ import { OnboardingFlow } from '@/components/onboarding-flow'
 import { ProfileEditor } from '@/components/profile-editor'
 
 export default function EnryAgentPage() {
+  const { data: session, status: sessionStatus } = useSession()
   const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'executing' | 'idle'>('online')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string>(() => newConversationId())
@@ -51,13 +53,14 @@ export default function EnryAgentPage() {
 
   useEffect(() => {
     setConversations(loadConversations())
-    // Check Supabase for existing profile — skip onboarding if already set up
+    // Wait for the session to be confirmed before checking for an existing profile
+    if (sessionStatus !== 'authenticated') return
     loadProfileAsync().then((profile) => {
       if (!profile?.setupComplete) {
         setShowOnboarding(true)
       }
     })
-  }, [])
+  }, [sessionStatus])
 
   const activeConversation = conversations.find((c) => c.id === activeId)
 
