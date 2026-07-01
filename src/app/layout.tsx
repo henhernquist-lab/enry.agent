@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { Space_Grotesk, Inter, IBM_Plex_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { SessionProvider } from 'next-auth/react'
+import { auth } from '@/lib/auth'
 import './globals.css'
 
 const spaceGrotesk = Space_Grotesk({
@@ -51,15 +53,19 @@ export const viewport: Viewport = {
   initialScale: 1,
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const session = await auth()
+
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${ibmPlexMono.variable} bg-background`}>
       <body className="font-sans antialiased">
-        {children}
+        <SessionProvider session={session}>
+          {children}
+        </SessionProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
