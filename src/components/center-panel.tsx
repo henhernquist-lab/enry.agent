@@ -11,7 +11,6 @@ import {
   Command,
   ChevronDown,
   User,
-  Bot,
   Copy,
   Check,
   RotateCcw,
@@ -389,7 +388,7 @@ export function CenterPanel({
                     }`}
                   >
                     {message.role === 'assistant' ? (
-                      <Bot className="h-4 w-4 text-primary" />
+                      <span className="font-mono text-xs font-bold text-primary tracking-tighter select-none" aria-hidden="true">E</span>
                     ) : (
                       <User className="h-4 w-4 text-muted-foreground" />
                     )}
@@ -402,7 +401,7 @@ export function CenterPanel({
                           : 'border-primary/20 bg-primary/5 text-left'
                       }`}
                     >
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                      <p className={`whitespace-pre-wrap text-sm leading-relaxed ${message.role === 'assistant' ? 'font-mono text-primary/90' : 'text-foreground'}`}>
                         {isCurrentStream ? (
                           <TypingText text={text} isStreaming={true} />
                         ) : (
@@ -466,7 +465,7 @@ export function CenterPanel({
               className="flex gap-4"
             >
               <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-primary/30 bg-primary/10">
-                <Bot className="h-4 w-4 text-primary" />
+                <span className="font-mono text-xs font-bold text-primary tracking-tighter select-none" aria-hidden="true">E</span>
               </div>
               <div className="rounded border border-border bg-surface-secondary px-4 py-3">
                 <div className="flex items-center gap-1.5">

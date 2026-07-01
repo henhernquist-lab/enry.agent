@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, X, Quote, BookOpen, Dumbbell } from 'lucide-react'
+import { X, Quote, BookOpen, Dumbbell } from 'lucide-react'
 import type { DailyBriefing } from '@/lib/daily-briefing'
 
 interface DailyBriefingCardProps {
@@ -21,7 +21,6 @@ export function DailyBriefingCard({ briefing, loading, onDismiss }: DailyBriefin
           className="mx-auto mb-4 max-w-3xl overflow-hidden rounded border border-primary/30 bg-primary/5 px-4 py-3"
         >
           <div className="flex items-start gap-3">
-            <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
               <p className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
                 Daily Briefing

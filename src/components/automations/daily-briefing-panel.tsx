@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, RefreshCw, Quote, BookOpen, Dumbbell } from 'lucide-react'
+import { RefreshCw, Quote, BookOpen, Dumbbell } from 'lucide-react'
 import { ModalShell } from './modal-shell'
 import { loadBriefing, saveBriefing, parseBriefingText, todayKey, type DailyBriefing } from '@/lib/daily-briefing'
 
@@ -40,7 +40,7 @@ export function DailyBriefingPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <ModalShell title="Daily Briefing" subtitle="Generated once per day" icon={<Sparkles className="h-4 w-4 text-primary" />} onClose={onClose}>
+    <ModalShell title="Daily Briefing" subtitle="Generated once per day" onClose={onClose}>
       {loading ? (
         <p className="py-6 text-center text-xs text-muted-foreground">Generating...</p>
       ) : briefing ? (

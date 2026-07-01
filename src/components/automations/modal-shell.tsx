@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 interface ModalShellProps {
   title: string
   subtitle?: string
-  icon: ReactNode
+  icon?: ReactNode
   onClose: () => void
   width?: string
   children: ReactNode
@@ -31,9 +31,11 @@ export function ModalShell({ title, subtitle, icon, onClose, width = 'w-[480px]'
       >
         <div className="flex items-center justify-between border-b border-border p-4">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-primary/30 bg-primary/10">
-              {icon}
-            </div>
+            {icon !== undefined && (
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-primary/30 bg-primary/10">
+                {icon}
+              </div>
+            )}
             <div className="min-w-0">
               <h3 className="truncate text-sm font-semibold text-foreground">{title}</h3>
               {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}

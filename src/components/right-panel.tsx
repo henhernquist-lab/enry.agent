@@ -5,10 +5,9 @@ import {
   Play,
   Pause,
   MessageCircle,
-  Bot,
   AlertCircle,
   ArrowRight,
-  Sparkles,
+  ChevronRight,
 } from 'lucide-react'
 import type { ActivityEvent } from '@/lib/chat-history'
 
@@ -21,8 +20,8 @@ interface RightPanelProps {
 
 const iconMap: Record<ActivityEvent['type'], typeof MessageCircle> = {
   'user-sent': MessageCircle,
-  'assistant-start': Bot,
-  'assistant-complete': Bot,
+  'assistant-start': ChevronRight,
+  'assistant-complete': ChevronRight,
   error: AlertCircle,
 }
 
@@ -125,7 +124,7 @@ export function RightPanel({ agentStatus, activities, streamingText, currentMode
 
       <div className="border-t border-border p-4">
         <div className="mb-2 flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-warning" />
+          <ChevronRight className="h-4 w-4 text-primary" />
           <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Streaming Output
           </h3>

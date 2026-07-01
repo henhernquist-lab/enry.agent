@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Sparkles, Globe, Timer, Dumbbell, Apple, ToggleLeft, ToggleRight, Zap } from 'lucide-react'
+import { Globe, Timer, Dumbbell, Apple, ToggleLeft, ToggleRight, Zap } from 'lucide-react'
 import { DailyBriefingPanel } from './daily-briefing-panel'
 import { UrlWatcherPanel } from './url-watcher-panel'
 import { StudyTimerPanel } from './study-timer-panel'
@@ -13,8 +13,8 @@ import { loadWatchedUrls, checkUrl } from '@/lib/url-watcher'
 
 const URL_WATCH_INTERVAL_MS = 15 * 60 * 1000
 
-const ITEMS: { id: BuiltinAutomationId; label: string; icon: typeof Sparkles }[] = [
-  { id: 'dailyBriefing', label: 'Daily Briefing', icon: Sparkles },
+const ITEMS: { id: BuiltinAutomationId; label: string; icon: typeof Zap }[] = [
+  { id: 'dailyBriefing', label: 'Daily Briefing', icon: Zap },
   { id: 'urlWatcher', label: 'URL Watcher', icon: Globe },
   { id: 'studyTimer', label: 'Smart Study Timer', icon: Timer },
   { id: 'workoutLogger', label: 'Workout Logger', icon: Dumbbell },
