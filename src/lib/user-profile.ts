@@ -44,8 +44,6 @@ export interface PriorityRanking {
   social: number
 }
 
-const STORAGE_KEY = 'enry_user_profile'
-
 export function createDefaultProfile(): UserProfile {
   return {
     name: '',
@@ -72,26 +70,54 @@ export function createDefaultProfile(): UserProfile {
   }
 }
 
-export function loadProfile(): UserProfile | null {
-  if (typeof window === 'undefined') return null
+// ─── Supabase API helpers ──────────────────────────────────────
+
+async function fetchProfile(): Promise<UserProfile | null> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
+    const res = await fetch('/api/profile')
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.profile ?? null
   } catch {
     return null
   }
 }
 
-export function saveProfile(profile: UserProfile): void {
-  if (typeof window === 'undefined') return
+async function pushProfile(profile: UserProfile): Promise<boolean> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile))
-  } catch {}
+    const res = await fetch('/api/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
-export function hasCompletedSetup(): boolean {
-  const profile = loadProfile()
-  return profile?.setupComplete === true
+// ─── Public API ────────────────────────────────────────────────
+
+let cachedProfile: UserProfile | null = null
+
+export function loadProfile(): UserProfile | null {
+  // Synchronous fallback — callers should prefer loadProfileAsync
+  return cachedProfile
+}
+
+export async function loadProfileAsync(): Promise<UserProfile | null> {
+  const profile = await fetchProfile()
+  if (profile) cachedProfile = profile
+  return profile
+}
+
+export function saveProfile(profile: UserProfile): Promise<boolean> {
+  cachedProfile = profile
+  return pushProfile(profile)
+}
+
+export function preloadProfile(profile: UserProfile | null): void {
+  cachedProfile = profile
 }
 
 export function profileToSystemPrompt(profile: UserProfile): string {

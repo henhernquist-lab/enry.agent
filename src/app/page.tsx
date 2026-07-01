@@ -18,8 +18,9 @@ import {
   type Automation,
   type AutomationRun,
 } from '@/lib/automations'
-import { hasCompletedSetup } from '@/lib/user-profile'
+import { loadProfileAsync, createDefaultProfile, saveProfile } from '@/lib/user-profile'
 import { OnboardingFlow } from '@/components/onboarding-flow'
+import { ProfileEditor } from '@/components/profile-editor'
 
 export default function EnryAgentPage() {
   const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'executing' | 'idle'>('online')
@@ -30,6 +31,7 @@ export default function EnryAgentPage() {
   const [currentModel, setCurrentModel] = useState('z-ai/glm-5.1')
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showProfileEditor, setShowProfileEditor] = useState(false)
   const responseStartRef = useRef<number | null>(null)
 
   // ─── Automation scheduler lifecycle ─────────────────────────
@@ -49,10 +51,12 @@ export default function EnryAgentPage() {
 
   useEffect(() => {
     setConversations(loadConversations())
-    // Check if this is the first launch — show onboarding if no profile exists
-    if (!hasCompletedSetup()) {
-      setShowOnboarding(true)
-    }
+    // Check Supabase for existing profile — skip onboarding if already set up
+    loadProfileAsync().then((profile) => {
+      if (!profile?.setupComplete) {
+        setShowOnboarding(true)
+      }
+    })
   }, [])
 
   const activeConversation = conversations.find((c) => c.id === activeId)
@@ -140,13 +144,23 @@ export default function EnryAgentPage() {
           onSelectConversation={handleSelectConversation}
           onDeleteConversation={handleDeleteConversation}
           onAutomationsChange={handleAutomationsChange}
-          onSetupProfile={() => setShowOnboarding(true)}
+          onSetupProfile={() => setShowProfileEditor(true)}
         />
 
         <OnboardingFlow
           open={showOnboarding}
           onComplete={() => setShowOnboarding(false)}
           onClose={() => setShowOnboarding(false)}
+          onSkip={() => {
+            const skipped = { ...createDefaultProfile(), setupComplete: true, setupDate: Date.now() }
+            saveProfile(skipped)
+            setShowOnboarding(false)
+          }}
+        />
+
+        <ProfileEditor
+          open={showProfileEditor}
+          onClose={() => setShowProfileEditor(false)}
         />
 
         <CenterPanel

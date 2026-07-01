@@ -132,7 +132,7 @@ export function LeftSidebar({
           className="flex w-full items-center justify-center gap-2 rounded border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover:border-primary/60"
         >
           <User className="h-4 w-4" />
-          Setup Profile
+          Profile
         </button>
       </div>
 

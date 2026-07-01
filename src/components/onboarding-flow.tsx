@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, ChevronRight, Pencil, ArrowLeft, Sparkles, User, BookOpen, Dumbbell, Apple, Clock, Sliders } from 'lucide-react'
+import { Check, ChevronRight, Pencil, ArrowLeft, User, BookOpen, Dumbbell, Apple, Clock, Sliders, X } from 'lucide-react'
 import type { UserProfile, PriorityKey } from '@/lib/user-profile'
 import { createDefaultProfile, saveProfile } from '@/lib/user-profile'
 
@@ -10,6 +10,7 @@ interface OnboardingFlowProps {
   open: boolean
   onComplete: () => void
   onClose: () => void
+  onSkip: () => void
 }
 
 // ─── Question definitions ────────────────────────────────────
@@ -322,14 +323,6 @@ function SummaryCard({
       className="w-full"
     >
       <div className="mb-6 text-center">
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
-          className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 border border-primary/30"
-        >
-          <Sparkles className="h-8 w-8 text-primary" />
-        </motion.div>
         <h2 className="text-2xl font-bold text-foreground font-display">All Set, {profile.name}!</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Here&apos;s what I know about you. Tap any field to edit.
@@ -380,7 +373,7 @@ function SummaryCard({
 
 // ─── Main Onboarding Flow ────────────────────────────────────
 
-export function OnboardingFlow({ open, onComplete, onClose }: OnboardingFlowProps) {
+export function OnboardingFlow({ open, onComplete, onClose, onSkip }: OnboardingFlowProps) {
   const [step, setStep] = useState(0)
   const [profile, setProfile] = useState<UserProfile>(createDefaultProfile())
   const [direction, setDirection] = useState(1) // 1 = forward, -1 = backward
@@ -441,13 +434,13 @@ export function OnboardingFlow({ open, onComplete, onClose }: OnboardingFlowProp
     }
   }, [])
 
-  const handleConfirm = useCallback(() => {
+  const handleConfirm = useCallback(async () => {
     const completed = {
       ...profile,
       setupComplete: true,
       setupDate: Date.now(),
     }
-    saveProfile(completed)
+    await saveProfile(completed)
     onComplete()
   }, [profile, onComplete])
 
@@ -502,6 +495,17 @@ export function OnboardingFlow({ open, onComplete, onClose }: OnboardingFlowProp
             className="absolute -top-10 right-0 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             Skip for now
+          </button>
+        )}
+
+        {/* Skip button — on every non-summary step */}
+        {!isSummaryStep && (
+          <button
+            onClick={onSkip}
+            className="absolute -top-10 right-0 text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+          >
+            <X className="h-3.5 w-3.5" />
+            Skip setup
           </button>
         )}
 
