@@ -4,6 +4,7 @@ import { tavily } from '@tavily/core'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { saveMemory, searchMemories } from '@/lib/memory'
+import { listRepos, listIssues, createIssue, getFileContent } from '@/lib/github'
 
 const MODEL_CONFIG = {
   'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
@@ -33,7 +34,8 @@ export async function POST(req: Request) {
   }
 
   const session = await auth()
-  const googleId = (session?.user as { id?: string })?.id
+  const googleId    = (session?.user as { id?: string })?.id
+  const githubToken = (session as { githubToken?: string } | null)?.githubToken
 
   const modelMessages = await convertToModelMessages(messages)
 
@@ -62,6 +64,10 @@ Tools available
 - web_search: use this whenever Henry asks about current events, real-time info, prices, people, news, or anything that might have changed recently. Always search before saying you don't know something current.
 - save_memory: persist important facts about Henry across conversations. Use this when he shares goals, PRs, preferences, schedules, or anything worth remembering.
 - recall_memory: recall past memories before answering personalized questions about Henry's goals, preferences, or history.
+- github_list_repos: list Henry's GitHub repos. Use when he asks "what repos do I have" or wants to pick a repo for another task.
+- github_read_file: read a file (or list a directory) from a GitHub repo. Use when Henry asks to review, explain, or reference code in a specific file.
+- github_create_issue: open a new GitHub issue. Use when Henry asks to file a bug, todo, or feature request.
+- github_list_issues: list open issues on a repo. Use when Henry asks what's open or needs to be done in a repo.
 Communication
 Be concise and direct. Short answers for simple questions. Plain language. No hype-for-the-sake-of-hype, no padding. When you change approach mid-task, say so in one line and keep moving. Don't thank Henry for asking or over-explain unless he wants the detail.
 
@@ -135,6 +141,92 @@ ${userProfile ? `\n${userProfile}` : ''}`,
             return { results: [], error: result.error }
           }
           return { results: result.results }
+        },
+      }),
+
+      github_list_repos: tool({
+        description: "List Henry's GitHub repositories. Use when he asks what repos he has or needs to pick one for another task.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          if (!githubToken) {
+            return { repos: [], error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          const { repos, error } = await listRepos(githubToken)
+          if (error) return { repos: [], error }
+          return {
+            repos: repos.map(r => ({
+              name: r.full_name,
+              private: r.private,
+              description: r.description,
+              language: r.language,
+              stars: r.stargazers_count,
+              updated_at: r.updated_at,
+              url: r.html_url,
+            })),
+          }
+        },
+      }),
+
+      github_read_file: tool({
+        description: 'Read a file from a GitHub repo, or list directory contents if a path points to a folder.',
+        inputSchema: z.object({
+          owner: z.string().describe('Repository owner (username or org)'),
+          repo:  z.string().describe('Repository name (without owner prefix)'),
+          path:  z.string().describe('File or directory path within the repo, e.g. "src/index.ts" or "src/"'),
+        }),
+        execute: async ({ owner, repo, path }) => {
+          if (!githubToken) {
+            return { content: null, error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          const { content, error } = await getFileContent(githubToken, owner, repo, path)
+          if (error) return { content: null, error }
+          // Truncate very large files to avoid blowing the context window
+          const truncated = content && content.length > 20000
+            ? content.slice(0, 20000) + `\n\n[… truncated at 20 000 chars — ${content.length} total]`
+            : content
+          return { content: truncated }
+        },
+      }),
+
+      github_create_issue: tool({
+        description: 'Create a new GitHub issue on a repository.',
+        inputSchema: z.object({
+          owner: z.string().describe('Repository owner'),
+          repo:  z.string().describe('Repository name'),
+          title: z.string().describe('Issue title'),
+          body:  z.string().describe('Issue body (markdown supported)'),
+        }),
+        execute: async ({ owner, repo, title, body }) => {
+          if (!githubToken) {
+            return { issue: null, error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          const { issue, error } = await createIssue(githubToken, owner, repo, title, body)
+          if (error) return { issue: null, error }
+          return { issue: { number: issue!.number, title: issue!.title, url: issue!.html_url } }
+        },
+      }),
+
+      github_list_issues: tool({
+        description: 'List open issues on a GitHub repository.',
+        inputSchema: z.object({
+          owner: z.string().describe('Repository owner'),
+          repo:  z.string().describe('Repository name'),
+        }),
+        execute: async ({ owner, repo }) => {
+          if (!githubToken) {
+            return { issues: [], error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          const { issues, error } = await listIssues(githubToken, owner, repo)
+          if (error) return { issues: [], error }
+          return {
+            issues: issues.map(i => ({
+              number: i.number,
+              title:  i.title,
+              labels: i.labels.map(l => l.name),
+              created_at: i.created_at,
+              url: i.html_url,
+            })),
+          }
         },
       }),
     },

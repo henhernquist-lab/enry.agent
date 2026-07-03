@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth'
 import Google from 'next-auth/providers/google'
+import GitHub from 'next-auth/providers/github'
 import Credentials from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { supabase } from './supabase'
@@ -11,6 +12,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
+    GitHub({
+      clientId:     process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      authorization: { params: { scope: 'read:user user:email repo' } },
     }),
     Credentials({
       credentials: {
@@ -44,16 +50,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider === 'google') {
+      if (account?.provider === 'google' || account?.provider === 'github') {
+        const userId = account.provider === 'github'
+          ? `github_${account.providerAccountId}`
+          : account.providerAccountId
         const { error } = await supabase
           .from('profiles')
           .upsert(
             {
-              google_id:   account.providerAccountId,
-              email:       user.email!,
-              name:        user.name,
-              avatar_url:  user.image,
-              updated_at:  new Date().toISOString(),
+              google_id:  userId,
+              email:      user.email!,
+              name:       user.name,
+              avatar_url: user.image,
+              updated_at: new Date().toISOString(),
             },
             { onConflict: 'google_id' },
           )
@@ -66,6 +75,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (account?.provider === 'google') {
         return { ...token, googleId: account.providerAccountId }
       }
+      if (account?.provider === 'github') {
+        return {
+          ...token,
+          googleId:    `github_${account.providerAccountId}`,
+          githubToken: account.access_token,
+        }
+      }
       if (account?.provider === 'credentials' && user?.id) {
         return { ...token, googleId: user.id }
       }
@@ -76,6 +92,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (session.user && token.googleId) {
         const u = session.user as typeof session.user & { id?: string }
         u.id = token.googleId as string
+      }
+      if (token.githubToken) {
+        const s = session as typeof session & { githubToken?: string }
+        s.githubToken = token.githubToken as string
       }
       return session
     },
