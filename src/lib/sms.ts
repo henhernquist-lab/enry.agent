@@ -1,0 +1,22 @@
+import twilio from 'twilio'
+
+export async function sendSMS(
+  to: string,
+  message: string,
+): Promise<{ success: boolean; error: string | null }> {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID
+  const authToken  = process.env.TWILIO_AUTH_TOKEN
+  const from       = process.env.TWILIO_PHONE_NUMBER
+
+  if (!accountSid || !authToken || !from) {
+    return { success: false, error: 'Twilio credentials not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)' }
+  }
+
+  try {
+    const client = twilio(accountSid, authToken)
+    await client.messages.create({ body: message, from, to })
+    return { success: true, error: null }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
