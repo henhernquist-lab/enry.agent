@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Smartphone, Brain, GraduationCap, Dumbbell, Utensils, GitBranch, Target, Plus, Calendar } from 'lucide-react'
+import { X, Smartphone, Brain, GraduationCap, Dumbbell, Utensils, GitBranch, Target, Plus } from 'lucide-react'
 import { SmsSummaries } from './sms-summaries'
 import { FlashcardGenerator } from './flashcard-generator'
 import { GradeCalculator } from './grade-calculator'
@@ -10,9 +10,8 @@ import { WorkoutLoggerTool } from './workout-logger'
 import { MealLogger } from './meal-logger'
 import { RepoScanner } from './repo-scanner'
 import { HabitStreaks } from './habit-streaks'
-import { CalendarTool } from './calendar'
 
-type ToolId = 'sms' | 'flashcards' | 'grades' | 'workouts' | 'meals' | 'repo' | 'habits' | 'calendar'
+type ToolId = 'sms' | 'flashcards' | 'grades' | 'workouts' | 'meals' | 'repo' | 'habits'
 
 interface Tool {
   id: ToolId
@@ -29,7 +28,6 @@ const TOOLS: Tool[] = [
   { id: 'meals',     icon: Utensils,       label: 'Meal Logger',         desc: 'Plain-English logging with macro estimation' },
   { id: 'repo',      icon: GitBranch,      label: 'Repo Scanner',        desc: 'Fetch a GitHub repo and chat about the code' },
   { id: 'habits',    icon: Target,         label: 'Habit Streaks',       desc: 'Daily check-ins with streak tracking' },
-  { id: 'calendar',  icon: Calendar,       label: 'Calendar',            desc: 'Upcoming events and quick add' },
 ]
 
 interface ToolsGridProps {
@@ -126,7 +124,6 @@ export function ToolsGrid({ open, onClose }: ToolsGridProps) {
         {openTool === 'meals'      && <MealLogger         onClose={() => setOpenTool(null)} />}
         {openTool === 'repo'       && <RepoScanner        onClose={() => setOpenTool(null)} />}
         {openTool === 'habits'     && <HabitStreaks       onClose={() => setOpenTool(null)} />}
-        {openTool === 'calendar'   && <CalendarTool       onClose={() => setOpenTool(null)} />}
       </AnimatePresence>
     </>
   )

@@ -4,7 +4,6 @@ import { tavily } from '@tavily/core'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { saveMemory, searchMemories } from '@/lib/memory'
-import { listEvents, createEvent } from '@/lib/calendar'
 
 const MODEL_CONFIG = {
   'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
@@ -22,13 +21,6 @@ export const maxDuration = 60
 const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY ?? '' })
 
 export async function POST(req: Request) {
-  // Authenticate and extract googleId + calendar access token from session
-  const session = await auth()
-  const googleId = (session?.user as { id?: string })?.id
-  const s = session as typeof session & { accessToken?: string; calendarError?: string }
-  const accessToken = s?.accessToken
-  const calendarError = s?.calendarError
-
   const { messages, model, userProfile } = await req.json()
   const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
   const apiKey = MODEL_CONFIG[selectedModel]()
@@ -39,6 +31,9 @@ export async function POST(req: Request) {
       { status: 500, headers: { 'Content-Type': 'application/json' } },
     )
   }
+
+  const session = await auth()
+  const googleId = (session?.user as { id?: string })?.id
 
   const modelMessages = await convertToModelMessages(messages)
 
@@ -67,9 +62,6 @@ Tools available
 - web_search: use this whenever Henry asks about current events, real-time info, prices, people, news, or anything that might have changed recently. Always search before saying you don't know something current.
 - save_memory: persist important facts about Henry across conversations. Use this when he shares goals, PRs, preferences, schedules, or anything worth remembering.
 - recall_memory: recall past memories before answering personalized questions about Henry's goals, preferences, or history.
-- get_calendar_events: fetch Henry's upcoming Google Calendar events. Use when he asks about his schedule, "what's on my calendar", "when's my next X", "am I free on Y", etc. Default to the next 7 days if no time range specified.
-- create_calendar_event: add an event to Henry's Google Calendar. Use when he says "add X to my calendar", "schedule Y for Z time", "remind me to do X tomorrow at 3pm", etc. Always confirm the details before creating.
-
 Communication
 Be concise and direct. Short answers for simple questions. Plain language. No hype-for-the-sake-of-hype, no padding. When you change approach mid-task, say so in one line and keep moving. Don't thank Henry for asking or over-explain unless he wants the detail.
 
@@ -143,80 +135,6 @@ ${userProfile ? `\n${userProfile}` : ''}`,
             return { results: [], error: result.error }
           }
           return { results: result.results }
-        },
-      }),
-
-      get_calendar_events: tool({
-        description: "Fetch upcoming events from Henry's Google Calendar. Use when he asks about his schedule, upcoming events, or whether he's free at a given time.",
-        inputSchema: z.object({
-          days_ahead: z.number().optional().default(7).describe('How many days ahead to fetch (default 7)'),
-          time_min: z.string().optional().describe('ISO 8601 start time (defaults to now)'),
-          time_max: z.string().optional().describe('ISO 8601 end time (defaults to days_ahead from now)'),
-        }),
-        execute: async ({ days_ahead, time_min, time_max }) => {
-          if (!accessToken) {
-            const reason = calendarError === 'no_refresh_token'
-              ? 'Calendar access requires re-authentication with the new Calendar permissions. Please sign out and sign back in.'
-              : calendarError === 'refresh_failed'
-              ? 'Your Google Calendar token could not be refreshed. Please sign out and sign back in.'
-              : 'No Google Calendar access token found. Please sign out and sign back in to grant Calendar permissions.'
-            return { events: [], error: reason }
-          }
-          const now = new Date()
-          const min = time_min ?? now.toISOString()
-          const max = time_max ?? new Date(now.getTime() + (days_ahead ?? 7) * 86400000).toISOString()
-          const { events, error } = await listEvents(accessToken, min, max)
-          if (error) return { events: [], error }
-          return {
-            events: events.map((e) => ({
-              id: e.id,
-              title: e.summary,
-              start: e.start.dateTime ?? e.start.date,
-              end: e.end.dateTime ?? e.end.date,
-              description: e.description,
-              location: e.location,
-              link: e.htmlLink,
-            })),
-          }
-        },
-      }),
-
-      create_calendar_event: tool({
-        description: "Add a new event to Henry's Google Calendar. Use when he wants to schedule something.",
-        inputSchema: z.object({
-          summary: z.string().describe('Event title'),
-          start_datetime: z.string().describe('Start time in ISO 8601 format (e.g. 2025-07-10T15:00:00)'),
-          end_datetime: z.string().describe('End time in ISO 8601 format'),
-          description: z.string().optional().describe('Optional event description or notes'),
-          location: z.string().optional().describe('Optional location'),
-          timezone: z.string().optional().default('America/Chicago').describe('IANA timezone (default America/Chicago)'),
-        }),
-        execute: async ({ summary, start_datetime, end_datetime, description, location, timezone }) => {
-          if (!accessToken) {
-            const reason = calendarError
-              ? 'Calendar token error — please sign out and sign back in to grant Calendar permissions.'
-              : 'No Calendar access. Please sign out and sign back in.'
-            return { success: false, error: reason }
-          }
-          const tz = timezone ?? 'America/Chicago'
-          const { event, error } = await createEvent(accessToken, {
-            summary,
-            description,
-            location,
-            start: { dateTime: start_datetime, timeZone: tz },
-            end: { dateTime: end_datetime, timeZone: tz },
-          })
-          if (error) return { success: false, error }
-          return {
-            success: true,
-            event: {
-              id: event!.id,
-              title: event!.summary,
-              start: event!.start.dateTime ?? event!.start.date,
-              end: event!.end.dateTime ?? event!.end.date,
-              link: event!.htmlLink,
-            },
-          }
         },
       }),
     },
