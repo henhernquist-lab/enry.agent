@@ -10,7 +10,6 @@ import {
   Paperclip,
   Command,
   ChevronDown,
-  User,
   Copy,
   Check,
   RotateCcw,
@@ -27,7 +26,6 @@ import {
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
 import { TypingText } from './typing-text'
-import { AgentMark } from './agent-mark'
 import { DailyBriefingRunner } from './automations/daily-briefing-runner'
 import { loadToggles } from '@/lib/builtin-automations'
 import type { ActivityEvent } from '@/lib/chat-history'
@@ -71,10 +69,10 @@ function getSources(message: UIMessage): SourceUrlUIPart[] {
 }
 
 const MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro', desc: "Strongest free model. Best for complex tasks." },
-  { id: 'minimax/minimax-m3',            label: 'MiniMax M3',      desc: 'Fast and capable. Great for general tasks.' },
-  { id: 'qwen/qwen3.5-122b-a10b',        label: 'Qwen 3.5 122B',   desc: 'Large reasoning model. Great for analysis.' },
-  { id: 'z-ai/glm-5.2',                  label: 'GLM 5.2',         desc: 'Versatile all-rounder. Good at following instructions.' },
+  { id: 'deepseek-ai/deepseek-v4-pro', label: 'V4 Pro', company: 'DeepSeek', desc: "Strongest free model. Best for complex tasks." },
+  { id: 'minimax/minimax-m3',            label: 'M3',      company: 'MiniMax', desc: 'Fast and capable. Great for general tasks.' },
+  { id: 'qwen/qwen3.5-122b-a10b',        label: '122B',   company: 'Qwen', desc: 'Large reasoning model. Great for analysis.' },
+  { id: 'z-ai/glm-5.2',                  label: 'GLM 5.2', company: 'Z.ai', desc: 'Versatile all-rounder. Good at following instructions.' },
 ] as const
 
 type ModelId = typeof MODELS[number]['id']
@@ -238,7 +236,7 @@ export function CenterPanel({
               >
                 <Cpu className="h-3 w-3 text-primary" />
                 <span className="font-mono text-[11px] font-medium text-foreground">
-                  {MODELS.find((m) => m.id === model)?.label}
+                  {(() => { const m = MODELS.find((x) => x.id === model); return m ? `${m.company} ${m.label}` : ''; })()}
                 </span>
               </motion.div>
 
@@ -377,22 +375,7 @@ export function CenterPanel({
                   transition={{ delay: Math.min(index * 0.03, 0.3) }}
                   className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
                 >
-                  <div
-                    className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border ${
-                      message.role === 'assistant'
-                        ? isCurrentStream
-                          ? 'border-primary/50 bg-primary/15 shadow-[0_0_10px_rgba(0,255,102,0.1)]'
-                          : 'border-primary/30 bg-primary/10'
-                        : 'border-border bg-surface-elevated'
-                    }`}
-                  >
-                    {message.role === 'assistant' ? (
-                      <AgentMark size="sm" animated={isCurrentStream} />
-                    ) : (
-                      <User className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className={`group max-w-[85%] ${message.role === 'user' ? 'text-right' : ''}`}>
+                                    <div className={`group max-w-[85%] ${message.role === 'user' ? 'text-right' : ''}`}>
                     <div
                       className={`rounded border px-4 py-3 transition-colors duration-300 ${
                         message.role === 'assistant'
@@ -465,9 +448,6 @@ export function CenterPanel({
               animate={{ opacity: 1, y: 0 }}
               className="flex gap-4"
             >
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-primary/50 bg-primary/15 shadow-[0_0_10px_rgba(0,255,102,0.1)]">
-                <AgentMark size="sm" animated={true} />
-              </div>
               <div className="rounded border border-primary/30 bg-surface-secondary px-4 py-3 shadow-[0_0_18px_rgba(0,255,102,0.07)]">
                 <div className="flex items-center gap-1.5">
                   {[0, 0.2, 0.4].map((delay) => (
@@ -557,6 +537,9 @@ export function CenterPanel({
               onClick={() => setModelOpen((o) => !o)}
               className="flex h-12 items-center gap-1.5 rounded border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
             >
+              <span className="text-muted-foreground/60 text-[10px]">
+                {MODELS.find((m) => m.id === model)?.company}
+              </span>
               <span className="text-primary font-semibold">
                 {MODELS.find((m) => m.id === model)?.label}
               </span>
@@ -581,7 +564,10 @@ export function CenterPanel({
                       )}
                     </span>
                     <span className="flex flex-col">
-                      <span>{m.label}</span>
+                      <span>
+                        <span className="text-muted-foreground/60 text-[10px]">{m.company}</span>{' '}
+                        <span>{m.label}</span>
+                      </span>
                       <span className="font-normal text-[10px] text-muted-foreground leading-tight mt-0.5">
                         {m.desc}
                       </span>

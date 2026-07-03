@@ -7,7 +7,8 @@ import { StatusIndicator } from './status-indicator'
 import { AutomationsSection } from './automations-section'
 import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
-import { MessageSquarePlus, MessageSquare, Trash2, Download, X, User } from 'lucide-react'
+import { MessageSquarePlus, MessageSquare, Trash2, Download, X, User, Wrench } from 'lucide-react'
+import { ToolsGrid } from './tools/tools-grid'
 
 interface LeftSidebarProps {
   agentStatus: 'online' | 'thinking' | 'executing' | 'idle'
@@ -43,6 +44,7 @@ export function LeftSidebar({
   onSetupProfile,
 }: LeftSidebarProps) {
   const [showComingSoon, setShowComingSoon] = useState(false)
+  const [showTools, setShowTools] = useState(false)
 
   return (
     <aside className="flex h-full w-[280px] flex-col border-r border-border bg-surface-secondary">
@@ -121,11 +123,11 @@ export function LeftSidebar({
 
       <div className="border-t border-border p-4 space-y-2">
         <button
-          onClick={() => setShowComingSoon(true)}
-          className="flex w-full items-center justify-center gap-2 rounded border border-border bg-surface-elevated px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+          onClick={() => setShowTools(true)}
+          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
-          <Download className="h-4 w-4" />
-          Download Agent
+          <Wrench className="h-4 w-4" />
+          Tools
         </button>
         <button
           onClick={() => onSetupProfile?.()}
@@ -134,7 +136,16 @@ export function LeftSidebar({
           <User className="h-4 w-4" />
           Profile
         </button>
+        <button
+          onClick={() => setShowComingSoon(true)}
+          className="flex w-full items-center justify-center gap-2 rounded border border-border bg-surface-elevated px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+        >
+          <Download className="h-4 w-4" />
+          Download Agent
+        </button>
       </div>
+
+      <ToolsGrid open={showTools} onClose={() => setShowTools(false)} />
 
       <AnimatePresence>
         {showComingSoon && (
