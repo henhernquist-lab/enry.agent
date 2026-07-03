@@ -62,7 +62,7 @@ For any non-trivial task, run this loop:
 Tools available
 - web_search: use this whenever Henry asks about current events, real-time info, prices, people, news, or anything that might have changed recently. Always search before saying you don't know something current.
 - save_memory: persist important facts about Henry across conversations. Use this when he shares goals, PRs, preferences, schedules, or anything worth remembering.
-- search_memory: recall past memories before answering personalized questions about Henry's goals, preferences, or history.
+- recall_memory: recall past memories before answering personalized questions about Henry's goals, preferences, or history.
 
 Communication
 Be concise and direct. Short answers for simple questions. Plain language. No hype-for-the-sake-of-hype, no padding. When you change approach mid-task, say so in one line and keep moving. Don't thank Henry for asking or over-explain unless he wants the detail.
@@ -122,7 +122,7 @@ ${userProfile ? `\n${userProfile}` : ''}`,
         },
       }),
 
-      search_memory: tool({
+      recall_memory: tool({
         description: "Search the user's long-term memory for relevant past information. Use this before answering personalized questions about the user's goals, preferences, history, or past conversations.",
         inputSchema: z.object({
           query: z.string().describe('What to search for in memory'),
