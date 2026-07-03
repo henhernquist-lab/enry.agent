@@ -6,6 +6,7 @@ import type { UIMessage } from 'ai'
 import { LeftSidebar, CenterPanel, RightPanel, GridBackground, CornerAccents } from '@/components/components'
 import {
   loadConversations,
+  loadConversationMessages,
   saveConversation,
   deleteConversation,
   newConversationId,
@@ -26,8 +27,15 @@ import { ProfileEditor } from '@/components/profile-editor'
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
   const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'executing' | 'idle'>('online')
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations())
-  const [activeId, setActiveId] = useState<string>(() => newConversationId())
+
+  // Conversations list (no messages — loaded separately on demand)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [activeId, setActiveId] = useState<string>('')
+  // Messages for the currently active conversation (fetched on select)
+  const [activeMessages, setActiveMessages] = useState<UIMessage[] | undefined>(undefined)
+  // Track createdAt for the active conversation so saveConversation can preserve it
+  const activeCreatedAtRef = useRef<number>(Date.now())
+
   const [activities, setActivities] = useState<ActivityEvent[]>([])
   const [streamingText, setStreamingText] = useState('')
   const [currentModel, setCurrentModel] = useState('deepseek-ai/deepseek-v4-pro')
@@ -38,39 +46,54 @@ export default function EnryAgentPage() {
 
   // ─── Automation scheduler lifecycle ─────────────────────────
   useEffect(() => {
-    setOnAutomationRun((_automation: Automation, _run: AutomationRun) => {
-      // Could pipe automation events into the activity timeline here
-    })
+    setOnAutomationRun((_automation: Automation, _run: AutomationRun) => {})
     startAllSchedulers()
     return () => stopAllSchedulers()
   }, [])
 
   const handleAutomationsChange = useCallback(() => {
-    // Re-sync schedulers when automations are created/toggled/deleted
     stopAllSchedulers()
     startAllSchedulers()
   }, [])
 
+  // ─── Load conversations + profile when session is authenticated ───
+  // Clears state first so a freshly-logged-in user never sees another
+  // user's chats that were resident in React state.
   useEffect(() => {
-    // Wait for the session to be confirmed before checking for an existing profile
-    if (sessionStatus !== 'authenticated') {
-      console.log('[page] Session status:', sessionStatus, '— skipping profile load')
+    if (sessionStatus === 'unauthenticated') {
+      // Wipe all chat state immediately on logout
+      setConversations([])
+      setActiveId('')
+      setActiveMessages(undefined)
       return
     }
-    console.log('[page] Session authenticated — loading profile')
+
+    if (sessionStatus !== 'authenticated') return
+
+    // Load this user's chats from Supabase
+    loadConversations().then((convs) => {
+      setConversations(convs)
+      // Default to a new blank chat — don't auto-select the last conversation
+      // so the user consciously chooses to resume one
+      setActiveId(newConversationId())
+      setActiveMessages(undefined)
+      activeCreatedAtRef.current = Date.now()
+    })
+
+    // Load profile / show onboarding
     loadProfileAsync().then((profile) => {
-      console.log('[page] Profile loaded:', profile ? `setupComplete=${profile.setupComplete}` : 'null')
-      if (!profile?.setupComplete) {
-        console.log('[page] Profile not set up — showing onboarding')
-        setShowOnboarding(true)
-      }
+      if (!profile?.setupComplete) setShowOnboarding(true)
     })
   }, [sessionStatus])
 
-  const activeConversation = conversations.find((c) => c.id === activeId)
+  // ─── Refresh conversation list (without disrupting active chat) ───
+  const refreshConversations = useCallback(() => {
+    loadConversations().then(setConversations)
+  }, [])
 
+  // ─── Save messages to Supabase ────────────────────────────────────
   const handleSaveMessages = useCallback(
-    (messages: UIMessage[], model: string) => {
+    async (messages: UIMessage[], model: string) => {
       if (messages.length === 0) return
       const firstUserMsg = messages.find((m) => m.role === 'user')
       const textPart = firstUserMsg?.parts.find((p) => p.type === 'text')
@@ -80,16 +103,17 @@ export default function EnryAgentPage() {
         id: activeId,
         title,
         model,
-        createdAt: activeConversation?.createdAt ?? Date.now(),
+        createdAt: activeCreatedAtRef.current,
         updatedAt: Date.now(),
         messages,
       }
-      saveConversation(conv)
-      setConversations(loadConversations())
+      await saveConversation(conv)
+      refreshConversations()
     },
-    [activeId, activeConversation],
+    [activeId, refreshConversations],
   )
 
+  // ─── Activity timeline ────────────────────────────────────────────
   const handleActivity = useCallback((event: Omit<ActivityEvent, 'id'>) => {
     setActivities((prev) => [...prev.slice(-19), { ...event, id: Math.random().toString(36).slice(2) }])
     if (event.type === 'assistant-start') {
@@ -113,29 +137,42 @@ export default function EnryAgentPage() {
     setStreamingText('')
   }, [])
 
+  // ─── Chat management ──────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
     setActiveId(newConversationId())
+    setActiveMessages(undefined)
+    activeCreatedAtRef.current = Date.now()
     resetActivityState()
   }, [resetActivityState])
 
   const handleSelectConversation = useCallback(
-    (id: string) => {
+    async (id: string) => {
       setActiveId(id)
+      setActiveMessages(undefined) // clear while loading
       resetActivityState()
+
+      // Fetch messages from Supabase — server verifies ownership (403 if wrong user)
+      const msgs = await loadConversationMessages(id)
+      setActiveMessages(msgs)
+
+      const conv = conversations.find((c) => c.id === id)
+      activeCreatedAtRef.current = conv?.createdAt ?? Date.now()
     },
-    [resetActivityState],
+    [resetActivityState, conversations],
   )
 
   const handleDeleteConversation = useCallback(
-    (id: string) => {
-      deleteConversation(id)
-      setConversations(loadConversations())
+    async (id: string) => {
+      await deleteConversation(id)
+      refreshConversations()
       if (id === activeId) {
         setActiveId(newConversationId())
+        setActiveMessages(undefined)
+        activeCreatedAtRef.current = Date.now()
         resetActivityState()
       }
     },
-    [activeId, resetActivityState],
+    [activeId, refreshConversations, resetActivityState],
   )
 
   return (
@@ -161,10 +198,8 @@ export default function EnryAgentPage() {
           onClose={() => setShowOnboarding(false)}
           onSkip={() => {
             const skipped = { ...createDefaultProfile(), setupComplete: true, setupDate: Date.now() }
-            console.log('[page:skip] Saving default profile')
             saveProfile(skipped).then((ok) => {
               if (!ok) console.error('[page:skip] Failed to save skipped profile')
-              else console.log('[page:skip] Skipped profile saved successfully')
             })
             setShowOnboarding(false)
           }}
@@ -179,7 +214,7 @@ export default function EnryAgentPage() {
           key={activeId}
           agentStatus={agentStatus}
           setAgentStatus={setAgentStatus}
-          initialMessages={activeConversation?.messages}
+          initialMessages={activeMessages}
           conversationCount={conversations.length}
           lastResponseMs={lastResponseMs}
           onSaveMessages={handleSaveMessages}

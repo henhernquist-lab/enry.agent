@@ -17,40 +17,66 @@ export type ActivityEvent = {
   model?: string
 }
 
-const STORAGE_KEY = 'enry_conversations'
-const MAX_STORED = 50
+export function newConversationId(): string {
+  return `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+}
 
-export function loadConversations(): Conversation[] {
-  if (typeof window === 'undefined') return []
+// ─── Supabase-backed API calls ────────────────────────────────
+// All functions are async. Server enforces google_id scoping — no
+// client-side user filtering needed, but caller must be authenticated.
+
+export async function loadConversations(): Promise<Conversation[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
+    const res = await fetch('/api/chats')
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.chats ?? []).map((c: {
+      id: string; title: string; model: string; created_at: string; updated_at: string
+    }) => ({
+      id: c.id,
+      title: c.title,
+      model: c.model,
+      createdAt: new Date(c.created_at).getTime(),
+      updatedAt: new Date(c.updated_at).getTime(),
+      messages: [],
+    }))
   } catch {
     return []
   }
 }
 
-export function saveConversation(conv: Conversation): void {
-  const all = loadConversations()
-  const idx = all.findIndex(c => c.id === conv.id)
-  if (idx >= 0) all[idx] = conv
-  else all.unshift(conv)
+export async function loadConversationMessages(id: string): Promise<UIMessage[]> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all.slice(0, MAX_STORED)))
+    const res = await fetch(`/api/chats/${id}`)
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.messages ?? []
   } catch {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(all.slice(0, 10)))
-    } catch {}
+    return []
   }
 }
 
-export function deleteConversation(id: string): void {
-  const all = loadConversations().filter(c => c.id !== id)
+export async function saveConversation(conv: Conversation): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all))
-  } catch {}
+    await fetch('/api/chats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: conv.id,
+        title: conv.title,
+        model: conv.model,
+        messages: conv.messages,
+      }),
+    })
+  } catch (err) {
+    console.error('[chat-history] saveConversation failed:', err)
+  }
 }
 
-export function newConversationId(): string {
-  return `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+export async function deleteConversation(id: string): Promise<void> {
+  try {
+    await fetch(`/api/chats/${id}`, { method: 'DELETE' })
+  } catch (err) {
+    console.error('[chat-history] deleteConversation failed:', err)
+  }
 }
