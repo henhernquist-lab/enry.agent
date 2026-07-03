@@ -104,33 +104,6 @@ export function StudyTimerPanel({ onClose }: { onClose: () => void }) {
     setSessions(loadSessions())
   }
 
-  async function handleComplete() {
-    setPhase('completed')
-    const id = sessionIdRef.current
-    if (!id) return
-    setGeneratingQuiz(true)
-    try {
-      const res = await fetch('/api/automations/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: `Generate one short quiz question (and its concise answer) to test recall on this subject: "${subject}". Respond in exactly this format:\nQ: <question>\nA: <answer>`,
-        }),
-      })
-      const data = await res.json()
-      const parsed = data.text ? parseQuiz(data.text) : null
-      completeSession(id, parsed)
-      setQuiz(parsed)
-    } catch (error) {
-      console.error('quiz generation failed:', error)
-      completeSession(id, null)
-    } finally {
-      setGeneratingQuiz(false)
-      setSessions(loadSessions())
-      sessionIdRef.current = null
-    }
-  }
-
   const streak = calculateStreak(sessions)
   const completedSessions = sessions.filter((s) => s.completedAt)
 
