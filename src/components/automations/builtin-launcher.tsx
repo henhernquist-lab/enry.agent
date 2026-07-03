@@ -22,12 +22,8 @@ const ITEMS: { id: BuiltinAutomationId; label: string; icon: typeof Zap }[] = [
 ]
 
 export function BuiltinAutomationsLauncher() {
-  const [toggles, setToggles] = useState<BuiltinAutomationToggles | null>(null)
+  const [toggles, setToggles] = useState<BuiltinAutomationToggles | null>(() => loadToggles())
   const [openPanel, setOpenPanel] = useState<BuiltinAutomationId | null>(null)
-
-  useEffect(() => {
-    setToggles(loadToggles())
-  }, [])
 
   useEffect(() => {
     if (!toggles?.urlWatcher) return

@@ -2,23 +2,29 @@ import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { tavily } from '@tavily/core'
 import { z } from 'zod'
+import { auth } from '@/lib/auth'
+import { saveMemory, searchMemories } from '@/lib/memory'
 
 const MODEL_CONFIG = {
   'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
-  'google/gemma-4-31b-it':       () => process.env.GEMMA_API_KEY ?? '',
+  'minimax/minimax-m3':           () => process.env.MINIMAX_API_KEY ?? '',
   'qwen/qwen3.5-122b-a10b':      () => process.env.QWEN_API_KEY ?? '',
-  'z-ai/glm-5.1':                () => process.env.GLM_API_KEY ?? '',
+  'z-ai/glm-5.2':                () => process.env.GLM_API_KEY ?? '',
 } as const
 
 type AllowedModel = keyof typeof MODEL_CONFIG
 const ALLOWED_MODELS = Object.keys(MODEL_CONFIG) as AllowedModel[]
-const DEFAULT_MODEL: AllowedModel = 'z-ai/glm-5.1'
+const DEFAULT_MODEL: AllowedModel = 'deepseek-ai/deepseek-v4-pro'
 
 export const maxDuration = 60
 
 const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY ?? '' })
 
 export async function POST(req: Request) {
+  // Authenticate and extract googleId from session
+  const session = await auth()
+  const googleId = (session?.user as { id?: string })?.id
+
   const { messages, model, userProfile } = await req.json()
   const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
   const apiKey = MODEL_CONFIG[selectedModel]()
@@ -55,6 +61,8 @@ For any non-trivial task, run this loop:
 
 Tools available
 - web_search: use this whenever Henry asks about current events, real-time info, prices, people, news, or anything that might have changed recently. Always search before saying you don't know something current.
+- save_memory: persist important facts about Henry across conversations. Use this when he shares goals, PRs, preferences, schedules, or anything worth remembering.
+- search_memory: recall past memories before answering personalized questions about Henry's goals, preferences, or history.
 
 Communication
 Be concise and direct. Short answers for simple questions. Plain language. No hype-for-the-sake-of-hype, no padding. When you change approach mid-task, say so in one line and keep moving. Don't thank Henry for asking or over-explain unless he wants the detail.
@@ -73,7 +81,7 @@ One user: Henry. Everything is optimized for him. Be honest about what you can a
 
 ${userProfile ? `\n${userProfile}` : ''}`,
     messages: modelMessages,
-    stopWhen: stepCountIs(5),
+    stopWhen: stepCountIs(7),
     tools: {
       web_search: tool({
         description: 'Search the web for current, real-time information. Use this for news, prices, recent events, people, or anything that may have changed.',
@@ -94,6 +102,41 @@ ${userProfile ? `\n${userProfile}` : ''}`,
               content: r.content,
             })),
           }
+        },
+      }),
+
+      save_memory: tool({
+        description: 'Save an important fact about the user to long-term memory. Use this when the user shares personal goals, PRs, preferences, schedules, important events, or anything worth remembering for future conversations.',
+        inputSchema: z.object({
+          content: z.string().describe('The fact or information to remember about the user'),
+        }),
+        execute: async ({ content }) => {
+          if (!googleId) {
+            return { success: false, error: 'Not authenticated — cannot save memory.' }
+          }
+          const result = await saveMemory(googleId, content)
+          if (result.error) {
+            return { success: false, error: result.error }
+          }
+          return { success: true, id: result.id, content }
+        },
+      }),
+
+      search_memory: tool({
+        description: "Search the user's long-term memory for relevant past information. Use this before answering personalized questions about the user's goals, preferences, history, or past conversations.",
+        inputSchema: z.object({
+          query: z.string().describe('What to search for in memory'),
+          limit: z.number().optional().default(5).describe('Maximum number of results to return'),
+        }),
+        execute: async ({ query, limit }) => {
+          if (!googleId) {
+            return { results: [], error: 'Not authenticated — cannot search memory.' }
+          }
+          const result = await searchMemories(googleId, query, limit)
+          if (result.error) {
+            return { results: [], error: result.error }
+          }
+          return { results: result.results }
         },
       }),
     },

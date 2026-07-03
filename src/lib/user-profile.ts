@@ -74,24 +74,37 @@ export function createDefaultProfile(): UserProfile {
 
 async function fetchProfile(): Promise<UserProfile | null> {
   try {
+    console.log('[user-profile] Fetching profile from API...')
     const res = await fetch('/api/profile')
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.error('[user-profile] Fetch profile failed:', res.status, res.statusText)
+      return null
+    }
     const data = await res.json()
+    console.log('[user-profile] Fetched profile:', data.profile ? 'found' : 'null')
     return data.profile ?? null
-  } catch {
+  } catch (err) {
+    console.error('[user-profile] Fetch profile error:', err)
     return null
   }
 }
 
 async function pushProfile(profile: UserProfile): Promise<boolean> {
   try {
+    console.log('[user-profile] Pushing profile to API...')
     const res = await fetch('/api/profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ profile }),
     })
-    return res.ok
-  } catch {
+    if (!res.ok) {
+      console.error('[user-profile] Push profile failed:', res.status, res.statusText)
+      return false
+    }
+    console.log('[user-profile] Push profile succeeded')
+    return true
+  } catch (err) {
+    console.error('[user-profile] Push profile error:', err)
     return false
   }
 }

@@ -29,7 +29,7 @@ function formatClock(totalSec: number): string {
 }
 
 export function StudyTimerPanel({ onClose }: { onClose: () => void }) {
-  const [sessions, setSessions] = useState<StudySession[]>([])
+  const [sessions, setSessions] = useState<StudySession[]>(() => loadSessions())
   const [subject, setSubject] = useState('')
   const [durationMin, setDurationMin] = useState(25)
   const [phase, setPhase] = useState<'idle' | 'running' | 'paused' | 'completed'>('idle')
@@ -38,10 +38,34 @@ export function StudyTimerPanel({ onClose }: { onClose: () => void }) {
   const [showAnswer, setShowAnswer] = useState(false)
   const [generatingQuiz, setGeneratingQuiz] = useState(false)
   const sessionIdRef = useRef<string | null>(null)
+  // Sessions are initialized lazily via useState; no mount-time setState required.
 
-  useEffect(() => {
-    setSessions(loadSessions())
-  }, [])
+  async function handleComplete() {
+    setPhase('completed')
+    const id = sessionIdRef.current
+    if (!id) return
+    setGeneratingQuiz(true)
+    try {
+      const res = await fetch('/api/automations/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `Generate one short quiz question (and its concise answer) to test recall on this subject: "${subject}". Respond in exactly this format:\nQ: <question>\nA: <answer>`,
+        }),
+      })
+      const data = await res.json()
+      const parsed = data.text ? parseQuiz(data.text) : null
+      completeSession(id, parsed)
+      setQuiz(parsed)
+    } catch (error) {
+      console.error('quiz generation failed:', error)
+      completeSession(id, null)
+    } finally {
+      setGeneratingQuiz(false)
+      setSessions(loadSessions())
+      sessionIdRef.current = null
+    }
+  }
 
   useEffect(() => {
     if (phase !== 'running') return
@@ -80,7 +104,7 @@ export function StudyTimerPanel({ onClose }: { onClose: () => void }) {
     setSessions(loadSessions())
   }
 
-  const handleComplete = async () => {
+  async function handleComplete() {
     setPhase('completed')
     const id = sessionIdRef.current
     if (!id) return

@@ -19,9 +19,9 @@ enry.agent is Henry's personal AI superagent — Next.js chat UI over NVIDIA NIM
 | Model ID | Label | Env var |
 |---|---|---|
 | `deepseek-ai/deepseek-v4-pro` | DeepSeek V4 Pro (default) | `DEEPSEEK_API_KEY` |
-| `google/gemma-4-31b-it` | Gemma 4 31b | `GEMMA_API_KEY` |
-| `qwen/qwen3.5-122b-a10b` | Qwen 3.5 122b | `QWEN_API_KEY` |
-| `z-ai/glm-5.1` | GLM 5.1 | `GLM_API_KEY` |
+| `minimax/minimax-m3` | MiniMax M3 | `MINIMAX_API_KEY` |
+| `qwen/qwen3.5-122b-a10b` | Qwen 3.5 122B | `QWEN_API_KEY` |
+| `z-ai/glm-5.2` | GLM 5.2 | `GLM_API_KEY` |
 
 Verify IDs against `GET /v1/models` before hardcoding — NIM model names don't match training data.
 

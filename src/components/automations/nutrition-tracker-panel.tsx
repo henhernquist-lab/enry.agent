@@ -29,15 +29,10 @@ function parseMacros(text: string): { calories: number; protein: number; carbs: 
 }
 
 export function NutritionTrackerPanel({ onClose }: { onClose: () => void }) {
-  const [entries, setEntries] = useState<FoodEntry[]>([])
+  const [entries, setEntries] = useState<FoodEntry[]>(() => loadFoodEntries())
   const [input, setInput] = useState('')
   const [estimating, setEstimating] = useState(false)
-
   const refresh = () => setEntries(loadFoodEntries())
-
-  useEffect(() => {
-    refresh()
-  }, [])
 
   const today = todayEntries(entries)
   const dailyTotals = totals(today)

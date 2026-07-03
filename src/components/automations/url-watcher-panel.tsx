@@ -18,16 +18,11 @@ function formatRelativeTime(ts: number | null): string {
 }
 
 export function UrlWatcherPanel({ onClose }: { onClose: () => void }) {
-  const [urls, setUrls] = useState<WatchedUrl[]>([])
+  const [urls, setUrls] = useState<WatchedUrl[]>(() => loadWatchedUrls())
   const [newUrl, setNewUrl] = useState('')
   const [newLabel, setNewLabel] = useState('')
   const [checkingId, setCheckingId] = useState<string | null>(null)
-
   const refresh = () => setUrls(loadWatchedUrls())
-
-  useEffect(() => {
-    refresh()
-  }, [])
 
   const handleAdd = () => {
     const url = newUrl.trim()

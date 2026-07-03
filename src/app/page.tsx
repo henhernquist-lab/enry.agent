@@ -26,11 +26,11 @@ import { ProfileEditor } from '@/components/profile-editor'
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
   const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'executing' | 'idle'>('online')
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations())
   const [activeId, setActiveId] = useState<string>(() => newConversationId())
   const [activities, setActivities] = useState<ActivityEvent[]>([])
   const [streamingText, setStreamingText] = useState('')
-  const [currentModel, setCurrentModel] = useState('z-ai/glm-5.1')
+  const [currentModel, setCurrentModel] = useState('deepseek-ai/deepseek-v4-pro')
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showProfileEditor, setShowProfileEditor] = useState(false)
@@ -52,11 +52,16 @@ export default function EnryAgentPage() {
   }, [])
 
   useEffect(() => {
-    setConversations(loadConversations())
     // Wait for the session to be confirmed before checking for an existing profile
-    if (sessionStatus !== 'authenticated') return
+    if (sessionStatus !== 'authenticated') {
+      console.log('[page] Session status:', sessionStatus, '— skipping profile load')
+      return
+    }
+    console.log('[page] Session authenticated — loading profile')
     loadProfileAsync().then((profile) => {
+      console.log('[page] Profile loaded:', profile ? `setupComplete=${profile.setupComplete}` : 'null')
       if (!profile?.setupComplete) {
+        console.log('[page] Profile not set up — showing onboarding')
         setShowOnboarding(true)
       }
     })
@@ -156,7 +161,11 @@ export default function EnryAgentPage() {
           onClose={() => setShowOnboarding(false)}
           onSkip={() => {
             const skipped = { ...createDefaultProfile(), setupComplete: true, setupDate: Date.now() }
-            saveProfile(skipped)
+            console.log('[page:skip] Saving default profile')
+            saveProfile(skipped).then((ok) => {
+              if (!ok) console.error('[page:skip] Failed to save skipped profile')
+              else console.log('[page:skip] Skipped profile saved successfully')
+            })
             setShowOnboarding(false)
           }}
         />

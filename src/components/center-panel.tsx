@@ -14,14 +14,11 @@ import {
   Copy,
   Check,
   RotateCcw,
-  Globe,
   ExternalLink,
   AlertTriangle,
   Search,
   Link,
   Code,
-  Mail,
-  Lock,
   Zap,
   Clock,
   Cpu,
@@ -30,6 +27,7 @@ import {
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
 import { TypingText } from './typing-text'
+import { AgentMark } from './agent-mark'
 import { DailyBriefingRunner } from './automations/daily-briefing-runner'
 import { loadToggles } from '@/lib/builtin-automations'
 import type { ActivityEvent } from '@/lib/chat-history'
@@ -74,31 +72,31 @@ function getSources(message: UIMessage): SourceUrlUIPart[] {
 
 const MODELS = [
   { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro', desc: "Strongest free model. Best for complex tasks." },
-  { id: 'google/gemma-4-31b-it',         label: 'Gemma 4 31b',     desc: "Google's coding model. Fast and reliable." },
-  { id: 'qwen/qwen3.5-122b-a10b',        label: 'Qwen 3.5 122b',   desc: 'Large reasoning model. Great for analysis.' },
-  { id: 'z-ai/glm-5.1',                  label: 'GLM 5.1',         desc: 'Versatile all-rounder. Good at following instructions.' },
+  { id: 'minimax/minimax-m3',            label: 'MiniMax M3',      desc: 'Fast and capable. Great for general tasks.' },
+  { id: 'qwen/qwen3.5-122b-a10b',        label: 'Qwen 3.5 122B',   desc: 'Large reasoning model. Great for analysis.' },
+  { id: 'z-ai/glm-5.2',                  label: 'GLM 5.2',         desc: 'Versatile all-rounder. Good at following instructions.' },
 ] as const
 
 type ModelId = typeof MODELS[number]['id']
 
 const QUICK_ACTIONS = [
-  { label: 'Search the web', icon: Search, prompt: 'Search the web for ' },
-  { label: 'Summarize a URL', icon: Link, prompt: 'Summarize the content at this URL: ' },
-  { label: 'Write code', icon: Code, prompt: 'Write code to ' },
-  { label: 'Check my email', icon: Mail, prompt: 'Check my email for new messages', comingSoon: true as const },
+  { label: 'Search the web', glyph: '/', prompt: 'Search the web for ' },
+  { label: 'Summarize a URL', glyph: '↗', prompt: 'Summarize the content at this URL: ' },
+  { label: 'Write code', glyph: '<>', prompt: 'Write code to ' },
+  { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages', comingSoon: true as const },
 ]
 
 const SUGGESTION_CARDS = [
-  { label: 'Search the web', icon: Search, prompt: 'Search the web for the latest AI news', description: 'Find real-time information from across the internet' },
-  { label: 'Summarize a URL', icon: Link, prompt: 'Summarize the content at this URL: ', description: 'Extract key insights from any webpage' },
-  { label: 'Write code', icon: Code, prompt: 'Write code to build a todo app', description: 'Generate, refactor, and debug code in any language' },
-  { label: 'Check my email', icon: Mail, prompt: 'Check my email for new messages', description: 'Read and draft email responses', comingSoon: true as const },
+  { label: 'Search the web', glyph: '/', prompt: 'Search the web for the latest AI news', description: 'Find real-time information from across the internet' },
+  { label: 'Summarize a URL', glyph: '↗', prompt: 'Summarize the content at this URL: ', description: 'Extract key insights from any webpage' },
+  { label: 'Write code', glyph: '<>', prompt: 'Write code to build a todo app', description: 'Generate, refactor, and debug code in any language' },
+  { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages', description: 'Read and draft email responses', comingSoon: true as const },
 ]
 
 const TOOL_BADGES = [
-  { label: 'Web Search', icon: Search, available: true },
-  { label: 'Code', icon: Code, available: true },
-  { label: 'Memory', icon: Database, available: true },
+  { label: 'Web Search', glyph: '/', available: true },
+  { label: 'Code', glyph: '<>', available: true },
+  { label: 'Memory', glyph: 'M', available: true },
 ]
 
 const transport = new DefaultChatTransport({ api: '/api/chat' })
@@ -114,7 +112,7 @@ export function CenterPanel({
   onStreamUpdate,
   onModelChange,
 }: CenterPanelProps) {
-  const [model, setModel] = useState<ModelId>('z-ai/glm-5.1')
+  const [model, setModel] = useState<ModelId>('deepseek-ai/deepseek-v4-pro')
   const { messages, sendMessage, status, error } = useChat({
     transport,
     messages: initialMessages,
@@ -130,14 +128,12 @@ export function CenterPanel({
   const [modelOpen, setModelOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [uptimeMs, setUptimeMs] = useState(0)
-  const [briefingEnabled, setBriefingEnabled] = useState(false)
+  const [briefingEnabled, setBriefingEnabled] = useState(() => loadToggles().dailyBriefing)
   const modelDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
-    setBriefingEnabled(loadToggles().dailyBriefing)
-  }, [])
+  // briefingEnabled initialized lazily; no mount-time setState required.
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -180,9 +176,13 @@ export function CenterPanel({
     onActivity({ type: 'user-sent', content: text, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
     const profile = loadProfile()
+    console.log('[center-panel] Sending message — profile loaded:', profile ? `setupComplete=${profile.setupComplete}` : 'null')
     const body: Record<string, unknown> = { model }
     if (profile?.setupComplete) {
       body.userProfile = profileToSystemPrompt(profile)
+      console.log('[center-panel] Injecting user profile into system prompt')
+    } else {
+      console.log('[center-panel] No profile — skipping system prompt injection')
     }
     sendMessage({ text }, { body })
     setInput('')
@@ -330,28 +330,25 @@ export function CenterPanel({
                     disabled={card.comingSoon}
                     aria-disabled={card.comingSoon}
                     aria-label={card.comingSoon ? `${card.label} (coming soon)` : `${card.label} - ${card.description}`}
-                    className={`group relative flex items-start gap-3 rounded-lg border border-border bg-surface-secondary p-4 text-left transition-all duration-200 ${
+                    className={`group relative flex items-start gap-3 border border-border bg-surface-secondary p-4 text-left transition-all duration-200 ${
                       card.comingSoon
                         ? 'cursor-not-allowed opacity-60'
                         : 'cursor-pointer hover:border-primary/30 hover:bg-surface-elevated hover:shadow-[0_0_20px_rgba(0,255,102,0.05)]'
                     }`}
                   >
-                    <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border ${
+                    <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center border font-mono text-base font-bold ${
                       card.comingSoon
-                        ? 'border-border bg-surface-elevated'
-                        : 'border-primary/20 bg-primary/10 group-hover:border-primary/40 group-hover:bg-primary/20'
+                        ? 'border-border text-muted-foreground/40'
+                        : 'border-primary/30 text-primary group-hover:border-primary/60'
                     }`}>
-                      <card.icon className={`h-4 w-4 ${
-                        card.comingSoon ? 'text-muted-foreground' : 'text-primary'
-                      }`} />
+                      {card.glyph}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-foreground">{card.label}</p>
                         {card.comingSoon && (
-                          <span className="inline-flex items-center gap-0.5 rounded-full bg-surface-elevated px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
-                            <Lock className="h-2 w-2" />
-                            Soon
+                          <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                            — soon
                           </span>
                         )}
                       </div>
@@ -383,21 +380,25 @@ export function CenterPanel({
                   <div
                     className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border ${
                       message.role === 'assistant'
-                        ? 'border-primary/30 bg-primary/10'
+                        ? isCurrentStream
+                          ? 'border-primary/50 bg-primary/15 shadow-[0_0_10px_rgba(0,255,102,0.1)]'
+                          : 'border-primary/30 bg-primary/10'
                         : 'border-border bg-surface-elevated'
                     }`}
                   >
                     {message.role === 'assistant' ? (
-                      <span className="font-mono text-xs font-bold text-primary tracking-tighter select-none" aria-hidden="true">E</span>
+                      <AgentMark size="sm" animated={isCurrentStream} />
                     ) : (
                       <User className="h-4 w-4 text-muted-foreground" />
                     )}
                   </div>
                   <div className={`group max-w-[85%] ${message.role === 'user' ? 'text-right' : ''}`}>
                     <div
-                      className={`rounded border px-4 py-3 ${
+                      className={`rounded border px-4 py-3 transition-colors duration-300 ${
                         message.role === 'assistant'
-                          ? 'border-border bg-surface-secondary text-left'
+                          ? isCurrentStream
+                            ? 'border-primary/40 bg-surface-secondary text-left shadow-[0_0_18px_rgba(0,255,102,0.07)]'
+                            : 'border-border bg-surface-secondary text-left'
                           : 'border-primary/20 bg-primary/5 text-left'
                       }`}
                     >
@@ -411,8 +412,8 @@ export function CenterPanel({
                     </div>
                     {message.role === 'assistant' && sources.length > 0 && (
                       <div className="mt-2">
-                        <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Globe className="h-3 w-3" />
+                        <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                          <span className="text-primary">▸</span>
                           <span>Sources</span>
                         </div>
                         <div className="grid grid-cols-2 gap-1.5">
@@ -422,7 +423,7 @@ export function CenterPanel({
                               href={s.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex items-start gap-1.5 rounded border border-border bg-surface-elevated px-2.5 py-2 text-xs hover:border-primary/30 hover:bg-surface-elevated transition-colors"
+                              className="flex items-start gap-1.5 border border-border bg-surface-elevated px-2.5 py-2 text-xs hover:border-primary/30 hover:bg-surface-elevated transition-colors"
                             >
                               <ExternalLink className="mt-0.5 h-3 w-3 flex-shrink-0 text-accent" />
                               <div className="min-w-0">
@@ -464,16 +465,16 @@ export function CenterPanel({
               animate={{ opacity: 1, y: 0 }}
               className="flex gap-4"
             >
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-primary/30 bg-primary/10">
-                <span className="font-mono text-xs font-bold text-primary tracking-tighter select-none" aria-hidden="true">E</span>
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-primary/50 bg-primary/15 shadow-[0_0_10px_rgba(0,255,102,0.1)]">
+                <AgentMark size="sm" animated={true} />
               </div>
-              <div className="rounded border border-border bg-surface-secondary px-4 py-3">
+              <div className="rounded border border-primary/30 bg-surface-secondary px-4 py-3 shadow-[0_0_18px_rgba(0,255,102,0.07)]">
                 <div className="flex items-center gap-1.5">
                   {[0, 0.2, 0.4].map((delay) => (
                     <motion.div
                       key={delay}
                       className="h-2 w-2 rounded-full bg-primary"
-                      animate={{ scale: [1, 1.2, 1] }}
+                      animate={{ scale: [1, 1.2, 1], opacity: [0.6, 1, 0.6] }}
                       transition={{ duration: 0.6, repeat: Infinity, delay }}
                     />
                   ))}
@@ -511,15 +512,14 @@ export function CenterPanel({
                 disabled={action.comingSoon}
                 aria-disabled={action.comingSoon}
                 aria-label={action.comingSoon ? `${action.label} (coming soon)` : action.label}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all duration-200 ${
+                className={`flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-medium transition-all duration-200 ${
                   action.comingSoon
                     ? 'cursor-not-allowed border-border bg-surface-elevated text-muted-foreground opacity-60'
                     : 'cursor-pointer border-primary/20 bg-primary/5 text-primary hover:border-primary/40 hover:bg-primary/10 hover:shadow-[0_0_12px_rgba(0,255,102,0.08)]'
                 }`}
               >
-                <action.icon className="h-3 w-3" />
+                <span className="font-mono text-xs text-primary opacity-80">{action.glyph}</span>
                 {action.label}
-                {action.comingSoon && <Lock className="h-2.5 w-2.5" />}
               </motion.button>
             ))}
           </div>
@@ -563,7 +563,7 @@ export function CenterPanel({
               <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
             </button>
             {modelOpen && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 w-64 rounded border border-border bg-surface-secondary shadow-xl">
+              <div className="absolute bottom-full right-0 z-50 mb-1 w-64 border border-border bg-surface-secondary shadow-xl">
                 {MODELS.map((m) => (
                   <button
                     type="button"
@@ -611,10 +611,10 @@ export function CenterPanel({
                   key={tool.label}
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium ${
+                  className={`flex items-center gap-1 border px-2.5 py-1 text-[10px] font-medium ${
                     tool.available
-                      ? 'border border-primary/30 bg-primary/10 text-primary'
-                      : 'border border-border bg-surface-elevated text-muted-foreground'
+                      ? 'border-primary/30 text-primary'
+                      : 'border-border bg-surface-elevated text-muted-foreground'
                   }`}
                 >
                   {tool.available ? (
@@ -632,7 +632,7 @@ export function CenterPanel({
                   ) : (
                     <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
                   )}
-                  <tool.icon className="h-2.5 w-2.5" />
+                  <span className="font-mono text-[10px]">{tool.glyph}</span>
                   {tool.label}
                 </motion.div>
               ))}

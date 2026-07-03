@@ -18,6 +18,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider === 'google') {
+        console.log('[auth] signIn upsert for google_id:', account.providerAccountId)
         const { error } = await supabase
           .from('profiles')
           .upsert({

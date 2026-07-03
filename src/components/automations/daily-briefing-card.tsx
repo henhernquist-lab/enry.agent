@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Quote, BookOpen, Dumbbell } from 'lucide-react'
+import { X } from 'lucide-react'
 import type { DailyBriefing } from '@/lib/daily-briefing'
 
 interface DailyBriefingCardProps {
@@ -29,19 +29,19 @@ export function DailyBriefingCard({ briefing, loading, onDismiss }: DailyBriefin
                 <p className="text-sm text-muted-foreground">Generating today&apos;s briefing...</p>
               ) : briefing ? (
                 <div className="space-y-1.5 text-sm text-foreground">
-                  <p className="flex items-start gap-1.5">
-                    <Quote className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                  <p className="flex items-start gap-2">
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground shrink-0 mt-1">[Q]</span>
                     <span>{briefing.quote}</span>
                   </p>
                   {briefing.studyTip && (
-                    <p className="flex items-start gap-1.5">
-                      <BookOpen className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                    <p className="flex items-start gap-2">
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground shrink-0 mt-1">[S]</span>
                       <span>{briefing.studyTip}</span>
                     </p>
                   )}
                   {briefing.workoutReminder && (
-                    <p className="flex items-start gap-1.5">
-                      <Dumbbell className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                    <p className="flex items-start gap-2">
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground shrink-0 mt-1">[W]</span>
                       <span>{briefing.workoutReminder}</span>
                     </p>
                   )}

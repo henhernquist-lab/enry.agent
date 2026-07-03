@@ -32,7 +32,7 @@ interface AutomationsSectionProps {
 }
 
 export function AutomationsSection({ onAutomationsChange }: AutomationsSectionProps) {
-  const [automations, setAutomations] = useState<Automation[]>([])
+  const [automations, setAutomations] = useState<Automation[]>(() => loadAutomations())
   const [expanded, setExpanded] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -41,10 +41,6 @@ export function AutomationsSection({ onAutomationsChange }: AutomationsSectionPr
     setAutomations(loadAutomations())
     onAutomationsChange?.()
   }, [onAutomationsChange])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
 
   const handleToggle = (id: string) => {
     toggleAutomation(id)

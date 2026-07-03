@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { RefreshCw, Quote, BookOpen, Dumbbell } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { ModalShell } from './modal-shell'
 import { loadBriefing, saveBriefing, parseBriefingText, todayKey, type DailyBriefing } from '@/lib/daily-briefing'
 
@@ -11,12 +11,8 @@ Line 2: a quick, practical study tip he can apply today.
 Line 3: a brief workout reminder/nudge for today.`
 
 export function DailyBriefingPanel({ onClose }: { onClose: () => void }) {
-  const [briefing, setBriefing] = useState<DailyBriefing | null>(null)
+  const [briefing, setBriefing] = useState<DailyBriefing | null>(() => loadBriefing())
   const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    setBriefing(loadBriefing())
-  }, [])
 
   const handleRegenerate = async () => {
     setLoading(true)
@@ -46,16 +42,16 @@ export function DailyBriefingPanel({ onClose }: { onClose: () => void }) {
       ) : briefing ? (
         <div className="space-y-2.5 rounded border border-border bg-surface-elevated p-3 text-sm text-foreground">
           <p className="flex items-start gap-2">
-            <Quote className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-            {briefing.quote}
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground shrink-0 mt-1">[Q]</span>
+            <span>{briefing.quote}</span>
           </p>
           <p className="flex items-start gap-2">
-            <BookOpen className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-            {briefing.studyTip}
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground shrink-0 mt-1">[S]</span>
+            <span>{briefing.studyTip}</span>
           </p>
           <p className="flex items-start gap-2">
-            <Dumbbell className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-            {briefing.workoutReminder}
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground shrink-0 mt-1">[W]</span>
+            <span>{briefing.workoutReminder}</span>
           </p>
         </div>
       ) : (

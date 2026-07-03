@@ -22,7 +22,7 @@ export async function POST(req: Request) {
 
   try {
     const { text } = await generateText({
-      model: client.chat('z-ai/glm-5.1'),
+      model: client.chat('z-ai/glm-5.2'),
       system,
       prompt,
     })

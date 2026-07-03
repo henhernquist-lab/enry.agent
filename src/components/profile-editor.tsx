@@ -131,12 +131,15 @@ export function ProfileEditor({ open, onClose }: ProfileEditorProps) {
 
   useEffect(() => {
     if (open) {
-      setLoading(true)
-      setSaved(false)
-      loadProfileAsync().then((p) => {
-        setProfile(p ?? createDefaultProfile())
-        setLoading(false)
-      })
+      // Defer to avoid synchronous setState calls inside effect
+      setTimeout(() => {
+        setLoading(true)
+        setSaved(false)
+        loadProfileAsync().then((p) => {
+          setProfile(p ?? createDefaultProfile())
+          setLoading(false)
+        })
+      }, 0)
     }
   }, [open])
 
@@ -157,9 +160,13 @@ export function ProfileEditor({ open, onClose }: ProfileEditorProps) {
 
   const handleSave = useCallback(async () => {
     setSaving(true)
-    saveProfile(profile)
-    // Give the fetch request a moment to complete visually
-    await new Promise((r) => setTimeout(r, 300))
+    console.log('[profile-editor] Saving profile:', profile)
+    const ok = await saveProfile(profile)
+    if (!ok) {
+      console.error('[profile-editor] Failed to save profile to server')
+    } else {
+      console.log('[profile-editor] Profile saved successfully')
+    }
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)

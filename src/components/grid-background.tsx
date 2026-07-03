@@ -20,16 +20,14 @@ export function GridBackground() {
 }
 
 function DataTraces() {
-  const [traces, setTraces] = useState<{ id: number; x: number; delay: number }[]>([])
-
-  useEffect(() => {
-    const newTraces = Array.from({ length: 8 }, (_, i) => ({
+  const [traces] = useState(() =>
+    Array.from({ length: 8 }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
       delay: Math.random() * 5,
-    }))
-    setTraces(newTraces)
-  }, [])
+      duration: 4 + Math.random() * 2,
+    })),
+  )
 
   return (
     <div className="absolute inset-0 overflow-hidden opacity-20">
@@ -44,7 +42,7 @@ function DataTraces() {
             opacity: [0, 0.5, 0],
           }}
           transition={{
-            duration: 4 + Math.random() * 2,
+            duration: trace.duration,
             repeat: Infinity,
             delay: trace.delay,
             ease: 'linear',

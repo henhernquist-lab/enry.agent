@@ -17,19 +17,19 @@ Line 2: a quick, practical study tip he can apply today.
 Line 3: a brief workout reminder/nudge for today.`
 
 export function DailyBriefingRunner({ enabled }: { enabled: boolean }) {
-  const [briefing, setBriefing] = useState<DailyBriefing | null>(null)
+  const [briefing, setBriefing] = useState<DailyBriefing | null>(() => loadBriefing())
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!enabled) return
     const existing = loadBriefing()
     if (existing) {
-      setBriefing(existing)
       return
     }
 
     let cancelled = false
-    setLoading(true)
+    // Defer loading state update to avoid synchronous setState in effect
+    setTimeout(() => setLoading(true), 0)
     fetch('/api/automations/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

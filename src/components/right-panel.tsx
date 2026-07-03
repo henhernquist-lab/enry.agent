@@ -2,11 +2,8 @@
 
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Play,
-  Pause,
   MessageCircle,
   AlertCircle,
-  ArrowRight,
   ChevronRight,
 } from 'lucide-react'
 import type { ActivityEvent } from '@/lib/chat-history'
@@ -44,20 +41,16 @@ export function RightPanel({ agentStatus, activities, streamingText, currentMode
       <div className="border-b border-border p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative">
-              {isActive ? (
-                <Play className="h-4 w-4 text-primary" />
-              ) : (
-                <Pause className="h-4 w-4 text-muted-foreground" />
-              )}
+            <span className="relative flex h-4 w-4 items-center justify-center">
+              <motion.span
+                className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-primary' : 'bg-muted-foreground'}`}
+                animate={isActive ? { opacity: [1, 0.4, 1], scale: [1, 1.4, 1] } : {}}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
               {isActive && (
-                <motion.div
-                  className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-warning"
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1, repeat: Infinity }}
-                />
+                <span className="absolute h-3 w-3 rounded-full border border-primary/30" />
               )}
-            </div>
+            </span>
             <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Live Execution
             </h3>
@@ -73,7 +66,7 @@ export function RightPanel({ agentStatus, activities, streamingText, currentMode
 
       <div className="flex-1 overflow-y-auto p-4 scrollbar-hidden">
         <div className="mb-3 flex items-center gap-2">
-          <ArrowRight className="h-4 w-4 text-accent" />
+          <span className="font-mono text-xs text-accent">▸</span>
           <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Activity Timeline
           </h3>
@@ -124,7 +117,7 @@ export function RightPanel({ agentStatus, activities, streamingText, currentMode
 
       <div className="border-t border-border p-4">
         <div className="mb-2 flex items-center gap-2">
-          <ChevronRight className="h-4 w-4 text-primary" />
+          <span className="font-mono text-xs text-primary">▸</span>
           <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Streaming Output
           </h3>

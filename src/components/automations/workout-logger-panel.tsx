@@ -45,16 +45,11 @@ function ProgressChart({ data }: { data: { loggedAt: number; maxWeight: number }
 }
 
 export function WorkoutLoggerPanel({ onClose }: { onClose: () => void }) {
-  const [entries, setEntries] = useState<WorkoutEntry[]>([])
+  const [entries, setEntries] = useState<WorkoutEntry[]>(() => loadWorkouts())
   const [exercise, setExercise] = useState('')
   const [sets, setSets] = useState<SetEntry[]>([{ reps: 8, weight: 0 }])
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
-
   const refresh = () => setEntries(loadWorkouts())
-
-  useEffect(() => {
-    refresh()
-  }, [])
 
   const names = useMemo(() => exerciseNames(entries), [entries])
   const activeExercise = selectedExercise ?? names[0] ?? null

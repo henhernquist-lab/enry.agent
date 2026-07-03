@@ -26,7 +26,7 @@ export function TypingText({ text, isStreaming, speed = 40 }: TypingTextProps) {
   useEffect(() => {
     if (!isStreaming) {
       // Immediately reveal all text when streaming ends
-      setDisplayedWordCount(words.length)
+      setTimeout(() => setDisplayedWordCount(words.length), 0)
       return
     }
 

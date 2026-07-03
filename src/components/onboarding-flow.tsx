@@ -69,11 +69,11 @@ const QUESTIONS: Question[] = [
   ]},
 ]
 
-const PRIORITY_OPTIONS: { key: PriorityKey; label: string; icon: string }[] = [
-  { key: 'grades', label: 'Grades', icon: '📚' },
-  { key: 'athletics', label: 'Athletics', icon: '🏃' },
-  { key: 'projects', label: 'Building Projects', icon: '💻' },
-  { key: 'social', label: 'Social Life', icon: '👥' },
+const PRIORITY_OPTIONS: { key: PriorityKey; label: string; mark: string }[] = [
+  { key: 'grades', label: 'Grades', mark: 'G' },
+  { key: 'athletics', label: 'Athletics', mark: 'A' },
+  { key: 'projects', label: 'Building Projects', mark: 'P' },
+  { key: 'social', label: 'Social Life', mark: 'S' },
 ]
 
 // ─── Sub-components ──────────────────────────────────────────
@@ -234,7 +234,6 @@ function PriorityRanker({
             {idx + 1}
           </div>
           <span className="flex-1 text-sm text-foreground">
-            <span className="mr-2">{item.icon}</span>
             {item.label}
           </span>
           <div className="flex items-center gap-1">
@@ -440,7 +439,13 @@ export function OnboardingFlow({ open, onComplete, onClose, onSkip }: Onboarding
       setupComplete: true,
       setupDate: Date.now(),
     }
-    await saveProfile(completed)
+    console.log('[onboarding] Completing setup — saving profile:', completed.name)
+    const ok = await saveProfile(completed)
+    if (!ok) {
+      console.error('[onboarding] Failed to save completed profile — keeping modal open for retry')
+      return // Don't close modal — user can retry
+    }
+    console.log('[onboarding] Profile saved successfully on completion')
     onComplete()
   }, [profile, onComplete])
 
@@ -451,10 +456,13 @@ export function OnboardingFlow({ open, onComplete, onClose, onSkip }: Onboarding
   // Reset when opened
   useEffect(() => {
     if (open) {
-      setStep(0)
-      setDirection(1)
-      setProfile(createDefaultProfile())
-      setEditingField(null)
+      // Defer state resets to avoid synchronous setState calls inside effect
+      setTimeout(() => {
+        setStep(0)
+        setDirection(1)
+        setProfile(createDefaultProfile())
+        setEditingField(null)
+      }, 0)
     }
   }, [open])
 
