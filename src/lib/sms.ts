@@ -1,5 +1,13 @@
 import twilio from 'twilio'
 
+/** Normalise any US phone format to E.164 (+1XXXXXXXXXX). */
+function toE164(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits[0] === '1') return `+${digits}`
+  return phone // already formatted or international — pass through
+}
+
 export async function sendSMS(
   to: string,
   message: string,
@@ -14,7 +22,7 @@ export async function sendSMS(
 
   try {
     const client = twilio(accountSid, authToken)
-    await client.messages.create({ body: message, from, to })
+    await client.messages.create({ body: message, from, to: toE164(to) })
     return { success: true, error: null }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : String(e) }
