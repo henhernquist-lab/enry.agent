@@ -73,4 +73,4 @@ Patterns:
 1. `npx tsc --noEmit` passes
 2. Dev server starts clean
 3. Test the actual stream (not just compile)
-4. Don't commit or push unless Henry asks
+4. Auto-commit after every change — `git add -A && git commit -m "<concise message>"`. Never push unless Henry asks.
