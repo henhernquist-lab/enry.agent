@@ -36,13 +36,24 @@ const TABS: { id: ResourceType; label: string; icon: typeof BookOpen }[] = [
 ]
 
 function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime()
+  const then = new Date(iso)
+  const ms = Date.now() - then.getTime()
   const min = Math.floor(ms / 60000)
   if (min < 1) return 'just now'
   if (min < 60) return `${min}m ago`
   const hr = Math.floor(min / 60)
   if (hr < 24) return `${hr}h ago`
-  return `${Math.floor(hr / 24)}d ago`
+  // "yesterday" if the date is exactly the previous calendar day
+  const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (then.toDateString() === yesterday.toDateString()) return 'yesterday'
+  // Within this year: "Mar 3"
+  if (then.getFullYear() === now.getFullYear()) {
+    return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+  // Older: "Mar 3, 2025"
+  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function DetailModal({ item, onClose }: { item: Resource; onClose: () => void }) {
@@ -216,7 +227,7 @@ function SavedList({ type, refreshKey }: { type: ResourceType; refreshKey: numbe
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelected(item)}
-              className="group flex cursor-pointer items-center justify-between rounded border border-border/60 bg-surface-elevated/60 px-3 py-2 transition-colors hover:border-primary/30 hover:bg-surface-elevated"
+              className="group flex cursor-pointer items-center justify-between rounded border border-border/60 bg-surface-elevated/60 px-3 py-2 transition-all duration-200 hover:border-primary/30 hover:bg-surface-elevated hover:shadow-sm"
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium text-foreground">{item.title}</p>
@@ -301,22 +312,46 @@ function ResourcesContent() {
             <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         </div>
-        <div className="flex overflow-x-auto border-t border-border/50 scrollbar-hidden">
+        <div
+          className="relative flex overflow-x-auto border-t border-border/50 scrollbar-hidden"
+          role="tablist"
+          aria-label="Resource types"
+          onKeyDown={(e) => {
+            const tabs = TABS
+            const idx = tabs.findIndex((t) => t.id === activeTab)
+            let next = idx
+            if (e.key === 'ArrowRight') next = (idx + 1) % tabs.length
+            else if (e.key === 'ArrowLeft') next = (idx - 1 + tabs.length) % tabs.length
+            else return
+            e.preventDefault()
+            router.replace(`/resources?tab=${tabs[next].id}`)
+          }}
+        >
           {TABS.map((tab) => {
             const Icon = tab.icon
             const active = activeTab === tab.id
             return (
               <button
                 key={tab.id}
+                role="tab"
+                aria-selected={active}
+                tabIndex={active ? 0 : -1}
                 onClick={() => router.replace(`/resources?tab=${tab.id}`)}
-                className={`flex flex-shrink-0 items-center gap-1.5 px-4 py-2.5 font-mono text-[11px] transition-colors border-b-2 whitespace-nowrap ${
+                className={`relative flex flex-shrink-0 items-center gap-1.5 px-4 py-2.5 font-mono text-[11px] whitespace-nowrap transition-colors duration-200 ${
                   active
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                    ? 'text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 <Icon className="h-3 w-3" />
                 {tab.label}
+                {active && (
+                  <motion.div
+                    layoutId="tab-indicator"
+                    className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary"
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                )}
               </button>
             )
           })}
