@@ -7,8 +7,8 @@ import { StatusIndicator } from './status-indicator'
 import { AutomationsSection } from './automations-section'
 import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
+import Link from 'next/link'
 import { MessageSquarePlus, MessageSquare, Trash2, Download, X, User, Wrench } from 'lucide-react'
-import { ToolsGrid } from './tools/tools-grid'
 
 interface LeftSidebarProps {
   agentStatus: 'online' | 'thinking' | 'executing' | 'idle'
@@ -44,7 +44,6 @@ export function LeftSidebar({
   onSetupProfile,
 }: LeftSidebarProps) {
   const [showComingSoon, setShowComingSoon] = useState(false)
-  const [showTools, setShowTools] = useState(false)
 
   return (
     <aside className="flex h-full w-[280px] flex-col border-r border-border bg-surface-secondary">
@@ -122,13 +121,13 @@ export function LeftSidebar({
       </div>
 
       <div className="border-t border-border p-4 space-y-2">
-        <button
-          onClick={() => setShowTools(true)}
+        <Link
+          href="/resources"
           className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
           <Wrench className="h-4 w-4" />
-          Tools
-        </button>
+          Tools &amp; Resources
+        </Link>
         <button
           onClick={() => onSetupProfile?.()}
           className="flex w-full items-center justify-center gap-2 rounded border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover:border-primary/60"
@@ -144,8 +143,6 @@ export function LeftSidebar({
           Download Agent
         </button>
       </div>
-
-      <ToolsGrid open={showTools} onClose={() => setShowTools(false)} />
 
       <AnimatePresence>
         {showComingSoon && (
