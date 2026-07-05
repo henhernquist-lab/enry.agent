@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Smartphone, Brain, GraduationCap, Dumbbell, Utensils, GitBranch, Target, Plus } from 'lucide-react'
-import { SmsSummaries } from './sms-summaries'
+import { X, Brain, GraduationCap, Dumbbell, Utensils, GitBranch, Target, Plus } from 'lucide-react'
 import { FlashcardGenerator } from './flashcard-generator'
 import { GradeCalculator } from './grade-calculator'
 import { WorkoutLoggerTool } from './workout-logger'
@@ -12,17 +11,16 @@ import { RepoScanner } from './repo-scanner'
 import { HabitStreaks } from './habit-streaks'
 import { GitHubTool } from './github'
 
-type ToolId = 'sms' | 'flashcards' | 'grades' | 'workouts' | 'meals' | 'repo' | 'habits' | 'github'
+type ToolId = 'flashcards' | 'grades' | 'workouts' | 'meals' | 'repo' | 'habits' | 'github'
 
 interface Tool {
   id: ToolId
-  icon: typeof Smartphone
+  icon: typeof Brain
   label: string
   desc: string
 }
 
 const TOOLS: Tool[] = [
-  { id: 'sms',       icon: Smartphone,     label: 'SMS Summaries',       desc: 'Daily AI briefing texted to your phone' },
   { id: 'flashcards',icon: Brain,          label: 'Flashcard Generator', desc: 'Paste notes → AI-generated Anki cards' },
   { id: 'grades',    icon: GraduationCap,  label: 'Grade Calculator',    desc: 'What do you need on finals for target GPA?' },
   { id: 'workouts',  icon: Dumbbell,       label: 'Workout Logger',      desc: 'Track sets, reps, and weight over time' },
@@ -119,7 +117,6 @@ export function ToolsGrid({ open, onClose }: ToolsGridProps) {
 
       {/* Tool panels render at z-50, on top of the z-40 grid */}
       <AnimatePresence>
-        {openTool === 'sms'        && <SmsSummaries      onClose={() => setOpenTool(null)} />}
         {openTool === 'flashcards' && <FlashcardGenerator onClose={() => setOpenTool(null)} />}
         {openTool === 'grades'     && <GradeCalculator    onClose={() => setOpenTool(null)} />}
         {openTool === 'workouts'   && <WorkoutLoggerTool  onClose={() => setOpenTool(null)} />}
