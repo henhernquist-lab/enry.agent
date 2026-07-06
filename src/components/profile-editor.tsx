@@ -9,6 +9,7 @@ import {
   X,
   Save,
   Loader2,
+  AlertCircle,
 } from 'lucide-react'
 import type { UserProfile } from '@/lib/user-profile'
 import { createDefaultProfile, loadProfileAsync, saveProfile } from '@/lib/user-profile'
@@ -26,6 +27,7 @@ export function ProfileEditor({ open, onClose }: ProfileEditorProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(false)
   const [expandedSection, setExpandedSection] = useState<SectionKey | null>(null)
 
   useEffect(() => {
@@ -59,16 +61,16 @@ export function ProfileEditor({ open, onClose }: ProfileEditorProps) {
 
   const handleSave = useCallback(async () => {
     setSaving(true)
-    console.log('[profile-editor] Saving profile:', profile)
+    setSaveError(false)
     const ok = await saveProfile(profile)
-    if (!ok) {
-      console.error('[profile-editor] Failed to save profile to server')
-    } else {
-      console.log('[profile-editor] Profile saved successfully')
-    }
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    if (ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } else {
+      setSaveError(true)
+      setTimeout(() => setSaveError(false), 3000)
+    }
   }, [profile])
 
   if (!open) return null
@@ -140,17 +142,38 @@ export function ProfileEditor({ open, onClose }: ProfileEditorProps) {
             {/* Footer */}
             <div className="border-t border-border px-6 py-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  Changes are saved to your account
-                </p>
+                <AnimatePresence mode="wait">
+                  {saveError ? (
+                    <motion.p
+                      key="error"
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="flex items-center gap-1.5 text-xs text-destructive"
+                    >
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      Failed to save — check your connection
+                    </motion.p>
+                  ) : (
+                    <motion.p
+                      key="hint"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Changes are saved to your account
+                    </motion.p>
+                  )}
+                </AnimatePresence>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={handleSave}
                   disabled={saving}
                   className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-xs font-medium transition-all ${
-                    saved
-                      ? 'border-primary bg-primary text-primary-foreground'
+                    saveError
+                      ? 'border-destructive/60 bg-destructive/10 text-destructive'
                       : 'border-primary bg-primary text-primary-foreground hover:shadow-[0_0_15px_rgba(0,255,102,0.15)]'
                   } disabled:opacity-70`}
                 >
@@ -163,6 +186,11 @@ export function ProfileEditor({ open, onClose }: ProfileEditorProps) {
                     <>
                       <Check className="h-3.5 w-3.5" />
                       Saved
+                    </>
+                  ) : saveError ? (
+                    <>
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      Retry
                     </>
                   ) : (
                     <>

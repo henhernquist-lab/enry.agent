@@ -98,7 +98,8 @@ async function pushProfile(profile: UserProfile): Promise<boolean> {
       body: JSON.stringify({ profile }),
     })
     if (!res.ok) {
-      console.error('[user-profile] Push profile failed:', res.status, res.statusText)
+      const body = await res.text().catch(() => '(unreadable)')
+      console.error('[user-profile] Push profile failed:', res.status, res.statusText, body)
       return false
     }
     console.log('[user-profile] Push profile succeeded')
