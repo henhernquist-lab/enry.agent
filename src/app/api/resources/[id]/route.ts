@@ -18,7 +18,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     .from('resources')
     .select('*')
     .eq('id', id)
-    .eq('google_id', uid)
+    .eq('user_id', uid)
     .maybeSingle()
 
   if (error) return Response.json({ error: 'Failed to fetch' }, { status: 500 })
@@ -37,7 +37,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     .from('resources')
     .delete()
     .eq('id', id)
-    .eq('google_id', uid)
+    .eq('user_id', uid)
 
   if (error) return Response.json({ error: 'Failed to delete' }, { status: 500 })
   return Response.json({ ok: true })

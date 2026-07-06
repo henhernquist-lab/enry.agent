@@ -18,6 +18,8 @@ function userId(session: { user?: { id?: string } } | null): string | null {
   return (session?.user as { id?: string } | undefined)?.id ?? null
 }
 
+// resources table uses user_id uuid (references auth.users), not google_id text
+
 export async function GET(req: Request) {
   const session = await auth()
   const uid = userId(session)
@@ -33,7 +35,7 @@ export async function GET(req: Request) {
   const { data, error } = await supabase
     .from('resources')
     .select('id, type, title, payload, created_at, updated_at')
-    .eq('google_id', uid)
+    .eq('user_id', uid)
     .eq('type', type)
     .order('created_at', { ascending: false })
     .limit(20)
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
 
   const { data, error } = await supabase
     .from('resources')
-    .insert({ google_id: uid, type, title: title.trim().slice(0, 200), payload: payload ?? {} })
+    .insert({ user_id: uid, type, title: title.trim().slice(0, 200), payload: payload ?? {} })
     .select('id, type, title, payload, created_at, updated_at')
     .single()
 
