@@ -18,6 +18,7 @@ import {
   Target,
   Timer,
   Trophy,
+  Newspaper,
 } from 'lucide-react'
 import {
   type Resource,
@@ -29,6 +30,7 @@ import {
   type RepoScanPayload,
   type HabitStreakPayload,
   type RacePacePayload,
+  type ArticleNotePayload,
   loadResources,
   deleteResource,
   resourceSummary,
@@ -43,6 +45,7 @@ const TABS: { id: ResourceType; label: string; icon: typeof BookOpen }[] = [
   { id: 'repo_scan',    label: 'Repos',        icon: GitBranch },
   { id: 'habit_streak', label: 'Habits',       icon: Target },
   { id: 'race_pace',    label: 'Race Pace',    icon: Timer },
+  { id: 'article_note', label: 'Articles',     icon: Newspaper },
 ]
 
 function shortDate(iso: string): string {
@@ -236,6 +239,43 @@ function PayloadView({ resource }: { resource: Resource }) {
                   <span key={i} className="rounded border border-border bg-surface-elevated px-2 py-1 font-mono text-xs text-foreground">
                     {fmtSecs(s)}
                   </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+    case 'article_note': {
+      const p = resource.payload as ArticleNotePayload
+      return (
+        <div className="space-y-3">
+          <a href={p.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-mono text-[10px] text-primary hover:underline">
+            {p.source_domain} ↗
+          </a>
+          {p.summary && <p className="text-xs leading-relaxed text-foreground">{p.summary}</p>}
+          {p.key_claims.length > 0 && (
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Key Claims</p>
+              <ol className="space-y-1">
+                {p.key_claims.map((c, i) => (
+                  <li key={i} className="flex gap-2 text-xs text-muted-foreground">
+                    <span className="flex-shrink-0 font-mono text-[10px]">{i + 1}.</span>
+                    {c}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {p.flashcards.length > 0 && (
+            <div>
+              <p className="mb-1.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Flashcards</p>
+              <div className="space-y-1.5">
+                {p.flashcards.map((fc, i) => (
+                  <div key={i} className="rounded border border-border bg-surface-elevated p-2.5 text-xs">
+                    <p className="font-medium text-foreground">Q: {fc.q}</p>
+                    <p className="mt-1 text-muted-foreground">A: {fc.a}</p>
+                  </div>
                 ))}
               </div>
             </div>

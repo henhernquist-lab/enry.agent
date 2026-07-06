@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, ChevronRight, Loader2, Trash2, BookOpen, Calculator, Dumbbell, Utensils, GitBranch, Target, Timer, Trophy } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Loader2, Trash2, BookOpen, Calculator, Dumbbell, Utensils, GitBranch, Target, Timer, Trophy, Newspaper } from 'lucide-react'
 import { FlashcardGenerator } from '@/components/tools/flashcard-generator'
 import { GradeCalculator } from '@/components/tools/grade-calculator'
 import { WorkoutLoggerTool } from '@/components/tools/workout-logger'
@@ -13,6 +13,8 @@ import { MealLogger } from '@/components/tools/meal-logger'
 import { RepoScanner } from '@/components/tools/repo-scanner'
 import { HabitStreaks } from '@/components/tools/habit-streaks'
 import { RacePaceCalculator, fmtSecs, RACE_DISTANCES } from '@/components/tools/race-pace-calculator'
+import { ArticleNotes, ArticleNotesSavedList, StudySession } from '@/components/tools/article-notes'
+import type { ArticleNotePayload } from '@/lib/resources'
 import {
   type Resource,
   type ResourceType,
@@ -36,6 +38,7 @@ const TABS: { id: ResourceType; label: string; icon: typeof BookOpen }[] = [
   { id: 'repo_scan',    label: 'Repo Scanner',  icon: GitBranch },
   { id: 'habit_streak', label: 'Habits',        icon: Target },
   { id: 'race_pace',    label: 'Race Pace',     icon: Timer },
+  { id: 'article_note', label: 'Articles',      icon: Newspaper },
 ]
 
 function shortDate(iso: string): string {
@@ -261,6 +264,30 @@ function PayloadView({ resource }: { resource: Resource }) {
         </div>
       )
     }
+    case 'article_note': {
+      const p = resource.payload as ArticleNotePayload
+      return (
+        <div className="space-y-3">
+          {p.summary && <p className="text-xs leading-relaxed text-foreground">{p.summary}</p>}
+          {p.key_claims.length > 0 && (
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Key Claims</p>
+              <ol className="space-y-1">
+                {p.key_claims.map((c, i) => (
+                  <li key={i} className="flex gap-2 text-xs text-muted-foreground">
+                    <span className="flex-shrink-0 font-mono text-[10px]">{i + 1}.</span>
+                    {c}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {p.flashcards.length > 0 && (
+            <p className="font-mono text-[10px] text-muted-foreground">{p.flashcards.length} flashcard{p.flashcards.length !== 1 ? 's' : ''}</p>
+          )}
+        </div>
+      )
+    }
     default:
       return <pre className="text-xs text-muted-foreground">{JSON.stringify(resource.payload, null, 2)}</pre>
   }
@@ -377,6 +404,7 @@ function ActiveTool({ tab, onSave }: { tab: ResourceType; onSave: () => void }) 
     case 'repo_scan':     return <RepoScanner {...props} />
     case 'habit_streak':  return <HabitStreaks {...props} />
     case 'race_pace':     return <RacePaceCalculator {...props} />
+    case 'article_note':  return <ArticleNotes {...props} />
   }
 }
 
@@ -385,6 +413,7 @@ function ResourcesContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [saveKey, setSaveKey] = useState(0)
+  const [studyCards, setStudyCards] = useState<{ q: string; a: string }[] | null>(null)
 
   const rawTab = searchParams.get('tab')
   const validTabs = new Set<string>(TABS.map((t) => t.id))
@@ -476,15 +505,30 @@ function ResourcesContent() {
 
         {/* Saved items */}
         <div>
-          <div className="mb-3 flex items-center justify-between">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Saved</p>
-            <Link href={`/resources/saved?tab=${activeTab}`} className="text-[10px] text-muted-foreground hover:text-primary">
-              View all →
-            </Link>
-          </div>
-          <SavedList type={activeTab} refreshKey={saveKey} />
+          {activeTab !== 'article_note' && (
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Saved</p>
+              <Link href={`/resources/saved?tab=${activeTab}`} className="text-[10px] text-muted-foreground hover:text-primary">
+                View all →
+              </Link>
+            </div>
+          )}
+          {activeTab === 'article_note' ? (
+            <ArticleNotesSavedList
+              refreshKey={saveKey}
+              onStudyAll={(cards) => setStudyCards(cards)}
+            />
+          ) : (
+            <SavedList type={activeTab} refreshKey={saveKey} />
+          )}
         </div>
       </main>
+
+      <AnimatePresence>
+        {studyCards && (
+          <StudySession cards={studyCards} onClose={() => setStudyCards(null)} />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note'
 
 export interface Resource<T = unknown> {
   id: string
@@ -59,6 +59,23 @@ export interface PromptPayload {
   notes?: string
   use_count?: number
   last_used_at?: string
+}
+
+export interface ArticleNotePayload {
+  url: string
+  canonical_url?: string
+  source_domain: string
+  article_title: string
+  author?: string
+  published_at?: string
+  fetched_at: string
+  raw_text_length: number
+  summary: string
+  key_claims: string[]
+  flashcards: { q: string; a: string }[]
+  tags: string[]
+  user_note?: string
+  processing_failed?: boolean
 }
 
 export interface RacePacePayload {
@@ -141,6 +158,11 @@ export function resourceSummary(resource: Resource): string {
       return rp.mode === 'result'
         ? `${rp.distance} ${t}${rp.is_pr ? ' · PR' : ''}`
         : `${rp.distance} goal ${t}`
+    }
+    case 'article_note': {
+      const an = p as unknown as ArticleNotePayload
+      const fc = (an.flashcards ?? []).length
+      return `${an.source_domain} · ${fc} card${fc !== 1 ? 's' : ''}`
     }
     default:
       return ''
