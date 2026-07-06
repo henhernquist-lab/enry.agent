@@ -11,6 +11,7 @@ const VALID_TYPES = new Set<ResourceType>([
   'meal',
   'repo_scan',
   'habit_streak',
+  'race_pace',
 ])
 
 function userId(session: { user?: { id?: string } } | null): string | null {

@@ -1,4 +1,4 @@
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace'
 
 export interface Resource<T = unknown> {
   id: string
@@ -52,6 +52,19 @@ export interface HabitStreakPayload {
   streak: number
 }
 
+export interface RacePacePayload {
+  mode: 'calculation' | 'result'
+  distance: string
+  distance_meters: number
+  time_seconds: number
+  splits?: number[]
+  strategy?: 'even' | 'negative' | 'race_model'
+  date?: string
+  notes?: string
+  is_pr?: boolean
+  meet?: string
+}
+
 export async function saveResource(
   type: ResourceType,
   title: string,
@@ -77,6 +90,13 @@ export async function loadResources(type: ResourceType): Promise<Resource[]> {
 
 export async function deleteResource(id: string): Promise<void> {
   await fetch(`/api/resources/${id}`, { method: 'DELETE' })
+}
+
+function fmtSecsShort(s: number): string {
+  if (s < 60) return s.toFixed(2)
+  const m = Math.floor(s / 60)
+  const r = s - m * 60
+  return `${m}:${r < 10 ? '0' : ''}${r.toFixed(2)}`
 }
 
 export function resourceSummary(resource: Resource): string {
@@ -105,6 +125,13 @@ export function resourceSummary(resource: Resource): string {
     case 'habit_streak': {
       const streak = typeof p.streak === 'number' ? p.streak : 0
       return streak > 0 ? `${streak}d streak` : 'checked in'
+    }
+    case 'race_pace': {
+      const rp = p as unknown as RacePacePayload
+      const t = fmtSecsShort(rp.time_seconds)
+      return rp.mode === 'result'
+        ? `${rp.distance} ${t}${rp.is_pr ? ' · PR' : ''}`
+        : `${rp.distance} goal ${t}`
     }
     default:
       return ''

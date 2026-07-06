@@ -16,6 +16,8 @@ import {
   Utensils,
   GitBranch,
   Target,
+  Timer,
+  Trophy,
 } from 'lucide-react'
 import {
   type Resource,
@@ -26,10 +28,12 @@ import {
   type MealPayload,
   type RepoScanPayload,
   type HabitStreakPayload,
+  type RacePacePayload,
   loadResources,
   deleteResource,
   resourceSummary,
 } from '@/lib/resources'
+import { fmtSecs } from '@/components/tools/race-pace-calculator'
 
 const TABS: { id: ResourceType; label: string; icon: typeof BookOpen }[] = [
   { id: 'flashcards',    label: 'Flashcards',  icon: BookOpen },
@@ -38,7 +42,13 @@ const TABS: { id: ResourceType; label: string; icon: typeof BookOpen }[] = [
   { id: 'meal',         label: 'Meal',         icon: Utensils },
   { id: 'repo_scan',    label: 'Repos',        icon: GitBranch },
   { id: 'habit_streak', label: 'Habits',       icon: Target },
+  { id: 'race_pace',    label: 'Race Pace',    icon: Timer },
 ]
+
+function shortDate(iso: string): string {
+  if (!iso) return ''
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
 function timeAgo(iso: string): string {
   const then = new Date(iso)
@@ -161,6 +171,75 @@ function PayloadView({ resource }: { resource: Resource }) {
             <span className="text-muted-foreground">Checked on {p.checked_on}</span>
             {p.streak > 0 && <span className="font-mono text-warning">{p.streak}d streak</span>}
           </div>
+        </div>
+      )
+    }
+    case 'race_pace': {
+      const p = resource.payload as RacePacePayload
+      if (p.mode === 'calculation') {
+        return (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xl font-bold text-foreground">{fmtSecs(p.time_seconds)}</span>
+              <span className="font-mono text-xs text-muted-foreground">{p.distance}</span>
+              {p.strategy && (
+                <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] capitalize text-muted-foreground">
+                  {p.strategy.replace('_', ' ')}
+                </span>
+              )}
+            </div>
+            {p.splits && p.splits.length > 1 && (
+              <div className="overflow-hidden rounded border border-border">
+                <div className="grid grid-cols-3 bg-surface-base px-3 py-1.5">
+                  {['Split', 'Time', 'Total'].map((h) => (
+                    <span key={h} className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">{h}</span>
+                  ))}
+                </div>
+                <div className="divide-y divide-border/40">
+                  {p.splits.map((s, i) => {
+                    const cum = p.splits!.slice(0, i + 1).reduce((a, b) => a + b, 0)
+                    return (
+                      <div key={i} className="grid grid-cols-3 px-3 py-2">
+                        <span className="font-mono text-xs text-muted-foreground">Split {i + 1}</span>
+                        <span className="font-mono text-xs font-medium text-foreground">{fmtSecs(s)}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{fmtSecs(cum)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      }
+      return (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-2xl font-bold text-foreground">{fmtSecs(p.time_seconds)}</span>
+            <span className="font-mono text-xs text-muted-foreground">{p.distance}</span>
+            {p.is_pr && (
+              <span className="flex items-center gap-1 rounded border border-warning/30 bg-warning/10 px-2 py-0.5 font-mono text-[10px] text-warning">
+                <Trophy className="h-2.5 w-2.5" />PR
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-3 font-mono text-xs text-muted-foreground">
+            {p.date && <span>{shortDate(p.date)}</span>}
+            {p.meet && <span>@ {p.meet}</span>}
+          </div>
+          {p.notes && <p className="text-xs text-muted-foreground">{p.notes}</p>}
+          {p.splits && p.splits.length > 0 && (
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Splits</p>
+              <div className="flex flex-wrap gap-1">
+                {p.splits.map((s, i) => (
+                  <span key={i} className="rounded border border-border bg-surface-elevated px-2 py-1 font-mono text-xs text-foreground">
+                    {fmtSecs(s)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )
     }

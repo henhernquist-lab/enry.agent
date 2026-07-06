@@ -5,13 +5,14 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, ChevronRight, Loader2, Trash2, BookOpen, Calculator, Dumbbell, Utensils, GitBranch, Target } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Loader2, Trash2, BookOpen, Calculator, Dumbbell, Utensils, GitBranch, Target, Timer, Trophy } from 'lucide-react'
 import { FlashcardGenerator } from '@/components/tools/flashcard-generator'
 import { GradeCalculator } from '@/components/tools/grade-calculator'
 import { WorkoutLoggerTool } from '@/components/tools/workout-logger'
 import { MealLogger } from '@/components/tools/meal-logger'
 import { RepoScanner } from '@/components/tools/repo-scanner'
 import { HabitStreaks } from '@/components/tools/habit-streaks'
+import { RacePaceCalculator, fmtSecs, RACE_DISTANCES } from '@/components/tools/race-pace-calculator'
 import {
   type Resource,
   type ResourceType,
@@ -21,6 +22,7 @@ import {
   type MealPayload,
   type RepoScanPayload,
   type HabitStreakPayload,
+  type RacePacePayload,
   loadResources,
   deleteResource,
   resourceSummary,
@@ -33,7 +35,13 @@ const TABS: { id: ResourceType; label: string; icon: typeof BookOpen }[] = [
   { id: 'meal',         label: 'Meal',          icon: Utensils },
   { id: 'repo_scan',    label: 'Repo Scanner',  icon: GitBranch },
   { id: 'habit_streak', label: 'Habits',        icon: Target },
+  { id: 'race_pace',    label: 'Race Pace',     icon: Timer },
 ]
+
+function shortDate(iso: string): string {
+  if (!iso) return ''
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
 function timeAgo(iso: string): string {
   const then = new Date(iso)
@@ -184,9 +192,110 @@ function PayloadView({ resource }: { resource: Resource }) {
         </div>
       )
     }
+    case 'race_pace': {
+      const p = resource.payload as RacePacePayload
+      if (p.mode === 'calculation') {
+        return (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xl font-bold text-foreground">{fmtSecs(p.time_seconds)}</span>
+              <span className="font-mono text-xs text-muted-foreground">{p.distance}</span>
+              {p.strategy && (
+                <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] capitalize text-muted-foreground">
+                  {p.strategy.replace('_', ' ')}
+                </span>
+              )}
+            </div>
+            {p.splits && p.splits.length > 1 && (
+              <div className="overflow-hidden rounded border border-border">
+                <div className="grid grid-cols-3 bg-surface-base px-3 py-1.5">
+                  {['Split', 'Time', 'Total'].map((h) => (
+                    <span key={h} className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">{h}</span>
+                  ))}
+                </div>
+                <div className="divide-y divide-border/40">
+                  {p.splits.map((s, i) => {
+                    const cum = p.splits!.slice(0, i + 1).reduce((a, b) => a + b, 0)
+                    return (
+                      <div key={i} className="grid grid-cols-3 px-3 py-2">
+                        <span className="font-mono text-xs text-muted-foreground">Split {i + 1}</span>
+                        <span className="font-mono text-xs font-medium text-foreground">{fmtSecs(s)}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{fmtSecs(cum)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      }
+      return (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-2xl font-bold text-foreground">{fmtSecs(p.time_seconds)}</span>
+            <span className="font-mono text-xs text-muted-foreground">{p.distance}</span>
+            {p.is_pr && (
+              <span className="flex items-center gap-1 rounded border border-warning/30 bg-warning/10 px-2 py-0.5 font-mono text-[10px] text-warning">
+                <Trophy className="h-2.5 w-2.5" />PR
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-3 font-mono text-xs text-muted-foreground">
+            {p.date && <span>{shortDate(p.date)}</span>}
+            {p.meet && <span>@ {p.meet}</span>}
+          </div>
+          {p.notes && <p className="text-xs text-muted-foreground">{p.notes}</p>}
+          {p.splits && p.splits.length > 0 && (
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Splits</p>
+              <div className="flex flex-wrap gap-1">
+                {p.splits.map((s, i) => (
+                  <span key={i} className="rounded border border-border bg-surface-elevated px-2 py-1 font-mono text-xs text-foreground">
+                    {fmtSecs(s)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
     default:
       return <pre className="text-xs text-muted-foreground">{JSON.stringify(resource.payload, null, 2)}</pre>
   }
+}
+
+const DIST_ORDER = ['100m', '200m', '400m', '800m', '1600m', '3200m', '5K']
+
+function PRCards({ items }: { items: Resource[] }) {
+  const prMap: Record<string, { time: number; date: string }> = {}
+  items.forEach((item) => {
+    const p = item.payload as RacePacePayload
+    if (p.mode !== 'result') return
+    const ex = prMap[p.distance]
+    if (!ex || p.time_seconds < ex.time) prMap[p.distance] = { time: p.time_seconds, date: p.date ?? '' }
+  })
+  const entries = Object.entries(prMap).sort((a, b) => {
+    const ai = DIST_ORDER.indexOf(a[0])
+    const bi = DIST_ORDER.indexOf(b[0])
+    return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi)
+  })
+  if (entries.length === 0) return null
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      {entries.map(([dist, { time, date }]) => (
+        <div key={dist} className="rounded border border-warning/20 bg-warning/5 px-3 py-2">
+          <div className="mb-0.5 flex items-center gap-1">
+            <Trophy className="h-2.5 w-2.5 text-warning" />
+            <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-warning">{dist} PR</span>
+          </div>
+          <p className="font-mono text-sm font-bold text-foreground">{fmtSecs(time)}</p>
+          {date && <p className="font-mono text-[10px] text-muted-foreground">{shortDate(date)}</p>}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function SavedList({ type, refreshKey }: { type: ResourceType; refreshKey: number }) {
@@ -218,6 +327,7 @@ function SavedList({ type, refreshKey }: { type: ResourceType; refreshKey: numbe
 
   return (
     <>
+      {type === 'race_pace' && <PRCards items={items} />}
       <div className="space-y-1.5">
         <AnimatePresence>
           {items.map((item) => (
@@ -266,6 +376,7 @@ function ActiveTool({ tab, onSave }: { tab: ResourceType; onSave: () => void }) 
     case 'meal':          return <MealLogger {...props} />
     case 'repo_scan':     return <RepoScanner {...props} />
     case 'habit_streak':  return <HabitStreaks {...props} />
+    case 'race_pace':     return <RacePaceCalculator {...props} />
   }
 }
 
