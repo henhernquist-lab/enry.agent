@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { generateEmbedding } from '@/lib/embeddings'
 import type { ResourceType } from '@/lib/resources'
 
 export const maxDuration = 30
@@ -12,6 +13,7 @@ const VALID_TYPES = new Set<ResourceType>([
   'repo_scan',
   'habit_streak',
   'race_pace',
+  'prompt',
 ])
 
 function userId(session: { user?: { id?: string } } | null): string | null {
@@ -38,7 +40,7 @@ export async function GET(req: Request) {
     .eq('user_id', uid)
     .eq('type', type)
     .order('created_at', { ascending: false })
-    .limit(20)
+    .limit(type === 'prompt' ? 100 : 50)
 
   if (error) return Response.json({ error: 'Failed to fetch' }, { status: 500 })
   return Response.json({ resources: data ?? [] })
@@ -66,5 +68,17 @@ export async function POST(req: Request) {
     .single()
 
   if (error) return Response.json({ error: 'Failed to save' }, { status: 500 })
+
+  // Generate embedding for prompt type — fire-and-forget, doesn't block the response
+  if (type === 'prompt' && data?.id) {
+    const pp = payload as { title?: string; body?: string; tags?: string[] }
+    const text = [pp.title, pp.body, ...(pp.tags ?? [])].filter(Boolean).join('\n\n')
+    generateEmbedding(text)
+      .then((embedding) => {
+        if (embedding) supabase.from('resources').update({ embedding }).eq('id', data.id).then()
+      })
+      .catch(console.error)
+  }
+
   return Response.json({ resource: data })
 }

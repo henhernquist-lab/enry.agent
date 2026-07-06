@@ -8,7 +8,7 @@ import { AutomationsSection } from './automations-section'
 import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
 import Link from 'next/link'
-import { MessageSquarePlus, MessageSquare, Trash2, Download, X, User, Wrench } from 'lucide-react'
+import { MessageSquarePlus, MessageSquare, Trash2, Download, X, User, Wrench, BookMarked } from 'lucide-react'
 
 interface LeftSidebarProps {
   agentStatus: 'online' | 'thinking' | 'executing' | 'idle'
@@ -127,6 +127,13 @@ export function LeftSidebar({
         >
           <Wrench className="h-4 w-4" />
           Tools &amp; Resources
+        </Link>
+        <Link
+          href="/prompts"
+          className="flex w-full items-center justify-center gap-2 rounded border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover:border-primary/60"
+        >
+          <BookMarked className="h-4 w-4" />
+          Prompt Library
         </Link>
         <button
           onClick={() => onSetupProfile?.()}

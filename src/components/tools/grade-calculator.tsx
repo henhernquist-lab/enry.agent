@@ -39,7 +39,10 @@ function letterGrade(pct: number): string {
   if (pct >= 77) return 'C+'
   if (pct >= 73) return 'C'
   if (pct >= 70) return 'C-'
-  return 'D'
+  if (pct >= 67) return 'D+'
+  if (pct >= 63) return 'D'
+  if (pct >= 60) return 'D-'
+  return 'F'
 }
 
 function newClass(): GradeClass {

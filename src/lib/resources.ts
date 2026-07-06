@@ -1,8 +1,8 @@
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt'
 
 export interface Resource<T = unknown> {
   id: string
-  google_id: string
+  user_id: string
   type: ResourceType
   title: string
   payload: T
@@ -50,6 +50,15 @@ export interface HabitStreakPayload {
   habit_name: string
   checked_on: string
   streak: number
+}
+
+export interface PromptPayload {
+  body: string
+  category: 'coding' | 'writing' | 'study' | 'training' | 'general'
+  tags: string[]
+  notes?: string
+  use_count?: number
+  last_used_at?: string
 }
 
 export interface RacePacePayload {
