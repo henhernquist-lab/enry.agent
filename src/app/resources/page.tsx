@@ -20,6 +20,7 @@ import {
   Newspaper,
   Library,
   Circle,
+  Timer,
 } from 'lucide-react'
 import type { ResourceType } from '@/lib/resources'
 import { loadResources } from '@/lib/resources'
@@ -43,6 +44,7 @@ const TOOLS: ToolDef[] = [
   { slug: 'habits',           type: 'habit_streak',  name: 'Habit Streaks',       desc: 'Daily check-ins with streak tracking',              icon: Target },
   { slug: 'prompts',          type: 'prompt',        name: 'Prompt Library',      desc: 'Browse and save reusable AI prompts',               icon: BookMarked },
   { slug: 'articles',         type: 'article_note',   name: 'Article Notes',       desc: 'Save articles with AI summaries and flashcards',    icon: Newspaper },
+  { slug: 'race-pace',        type: 'race_pace',       name: 'Race Pace Calculator', desc: 'Split targets and PR tracking',                     icon: Timer },
 ]
 
 /* ─── Saved count fetcher ───────────────────────────────── */

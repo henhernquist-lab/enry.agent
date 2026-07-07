@@ -20,6 +20,7 @@ import {
   BookMarked,
   Newspaper,
   Check,
+  Timer,
 } from 'lucide-react'
 import { FlashcardGenerator } from '@/components/tools/flashcard-generator'
 import { GradeCalculator } from '@/components/tools/grade-calculator'
@@ -28,6 +29,7 @@ import { MealLogger } from '@/components/tools/meal-logger'
 import { RepoScanner } from '@/components/tools/repo-scanner'
 import { HabitStreaks } from '@/components/tools/habit-streaks'
 import { ArticleNotes, ArticleNotesSavedList } from '@/components/tools/article-notes'
+import { RacePaceCalculator } from '@/components/tools/race-pace-calculator'
 import {
   type Resource,
   type ResourceType,
@@ -56,6 +58,7 @@ const SLUG_MAP: Record<string, ResourceType> = {
   'habits':           'habit_streak',
   'prompts':          'prompt',
   'articles':         'article_note',
+  'race-pace':        'race_pace',
 }
 
 const SLUG_LABELS: Record<string, { name: string; icon: typeof BookOpen; desc: string }> = {
@@ -67,6 +70,7 @@ const SLUG_LABELS: Record<string, { name: string; icon: typeof BookOpen; desc: s
   'habits':           { name: 'Habit Streaks',       icon: Target, desc: 'Daily check-ins with streak tracking' },
   'prompts':          { name: 'Prompt Library',      icon: BookMarked, desc: 'Browse and save reusable AI prompts' },
   'articles':         { name: 'Article Notes',       icon: Newspaper, desc: 'Save articles with AI summaries and flashcards' },
+  'race-pace':        { name: 'Race Pace Calculator', icon: Timer, desc: 'Split targets and PR tracking' },
 }
 
 /* ─── Helpers ──────────────────────────────────────────── */
@@ -485,6 +489,7 @@ function ToolPageContent() {
         {resourceType === 'repo_scan'    && <RepoScanner        onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'habit_streak' && <HabitStreaks       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'article_note' && <ArticleNotes       onClose={() => {}} mode="page" onSave={handleSave} />}
+        {resourceType === 'race_pace'    && <RacePaceCalculator onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'prompt'       && <PromptLibraryLauncher onSave={handleSave} />}
 
         {/* Saved items */}
