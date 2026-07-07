@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/embeddings'
+import { resolveResourceUserId } from '@/lib/resource-user'
 import type { ResourceType } from '@/lib/resources'
 
 export const maxDuration = 30
@@ -21,11 +22,12 @@ function userId(session: { user?: { id?: string } } | null): string | null {
   return (session?.user as { id?: string } | undefined)?.id ?? null
 }
 
-// resources table uses user_id uuid (references auth.users), not google_id text
+// resources table uses user_id uuid (references profiles.id) — resolved from
+// the session's google_id via resolveResourceUserId, not used directly
 
 export async function GET(req: Request) {
   const session = await auth()
-  const uid = userId(session)
+  const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
@@ -49,7 +51,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await auth()
-  const uid = userId(session)
+  const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
@@ -68,7 +70,10 @@ export async function POST(req: Request) {
     .select('id, type, title, payload, created_at, updated_at')
     .single()
 
-  if (error) return Response.json({ error: 'Failed to save' }, { status: 500 })
+  if (error) {
+    console.error('[resources] insert failed:', error)
+    return Response.json({ error: 'Failed to save' }, { status: 500 })
+  }
 
   // Generate embedding for prompt type — fire-and-forget, doesn't block the response
   if (type === 'prompt' && data?.id) {

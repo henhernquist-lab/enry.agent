@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/embeddings'
+import { resolveResourceUserId } from '@/lib/resource-user'
 import { generateText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { tavily } from '@tavily/core'
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
     console.log('[article-notes] POST received')
 
     const session = await auth()
-    const uid = userId(session)
+    const uid = await resolveResourceUserId(userId(session))
     console.log('[article-notes] auth uid:', uid ?? 'null')
     if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 

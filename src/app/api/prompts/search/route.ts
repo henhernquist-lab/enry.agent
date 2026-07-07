@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/embeddings'
+import { resolveResourceUserId } from '@/lib/resource-user'
 
 export const maxDuration = 30
 
@@ -10,7 +11,7 @@ function userId(session: { user?: { id?: string } } | null): string | null {
 
 export async function POST(req: Request) {
   const session = await auth()
-  const uid = userId(session)
+  const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()

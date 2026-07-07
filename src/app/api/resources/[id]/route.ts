@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/embeddings'
+import { resolveResourceUserId } from '@/lib/resource-user'
 
 export const maxDuration = 30
 
@@ -10,7 +11,7 @@ function userId(session: { user?: { id?: string } } | null): string | null {
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
-  const uid = userId(session)
+  const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
@@ -29,7 +30,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
-  const uid = userId(session)
+  const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
@@ -46,7 +47,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
-  const uid = userId(session)
+  const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
@@ -86,7 +87,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
-  const uid = userId(session)
+  const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
