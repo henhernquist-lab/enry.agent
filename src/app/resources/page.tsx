@@ -19,6 +19,7 @@ import {
   BookMarked,
   Newspaper,
   Library,
+  Circle,
 } from 'lucide-react'
 import type { ResourceType } from '@/lib/resources'
 import { loadResources } from '@/lib/resources'
@@ -144,7 +145,7 @@ function ResourcesContent() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-base">
+    <div className="flex min-h-screen flex-col bg-surface-base">
       {/* Sticky header */}
       <header className="sticky top-0 z-20 border-b border-border bg-surface-secondary/95 backdrop-blur">
         <div className="flex h-11 items-center justify-between px-4">
@@ -177,17 +178,17 @@ function ResourcesContent() {
       </header>
 
       {/* Main content */}
-      <main className="mx-auto max-w-4xl px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-lg font-semibold text-foreground">Tools &amp; Resources</h1>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-8 lg:px-12 lg:py-10">
+        <div className="mb-8">
+          <h1 className="text-lg font-bold tracking-tight text-foreground">Tools &amp; Resources</h1>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
             {TOOLS.length} tools ·{' '}
             {countsLoading ? '…' : `${totalSaved} saved across all tools`}
           </p>
         </div>
 
         {/* Grid with page transition */}
-        <div className="relative overflow-hidden">
+        <div className="relative flex-1 overflow-hidden">
           {/* Swipe gesture layer — sits behind the grid so links still click */}
           <div
             className="absolute inset-0 z-0"
@@ -210,10 +211,10 @@ function ResourcesContent() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -30 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="relative z-10"
+              className="relative z-10 h-full"
             >
               <div
-                className="grid gap-3"
+                className="grid h-full gap-4 lg:gap-5"
                 style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
               >
                 {pageTools.map((tool, i) => {
@@ -223,28 +224,29 @@ function ResourcesContent() {
                     <motion.a
                       key={tool.slug}
                       href={`/resources/${tool.slug}`}
-                      initial={{ opacity: 0, y: 12 }}
+                      initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.06, type: 'spring', stiffness: 300, damping: 26 }}
-                      className="group flex flex-col gap-3 rounded border border-border bg-surface-secondary p-4 transition-all duration-200 hover:border-primary/40 hover:shadow-sm"
+                      transition={{ delay: i * 0.07, type: 'spring', stiffness: 300, damping: 26 }}
+                      className="group flex flex-col gap-5 rounded-lg border border-border bg-surface-secondary p-6 shadow-sm shadow-black/20 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md hover:shadow-black/30 lg:p-7"
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded border border-primary/20 bg-primary/10 transition-colors group-hover:border-primary/40 group-hover:bg-primary/15">
-                          <Icon className="h-[18px] w-[18px] text-primary" />
+                      <div className="flex items-start gap-4">
+                        {/* Icon container with hover glow */}
+                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 transition-all duration-300 group-hover:border-primary/40 group-hover:bg-primary/15 group-hover:shadow-[0_0_16px_rgba(0,255,102,0.10)]">
+                          <Icon className="h-5 w-5 text-primary" />
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+                        <div className="min-w-0 flex-1 pt-0.5">
+                          <h3 className="text-base font-bold tracking-tight text-foreground transition-colors duration-300 group-hover:text-primary">
                             {tool.name}
                           </h3>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                             {tool.desc}
                           </p>
                         </div>
-                        <ChevronRight className="mt-1 h-4 w-4 flex-shrink-0 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
+                        <ChevronRight className="mt-2 h-4 w-4 flex-shrink-0 text-muted-foreground opacity-0 transition-all duration-300 group-hover:translate-x-1 group-hover:opacity-100" />
                       </div>
 
                       {/* Saved count footer */}
-                      <div className="flex items-center justify-between border-t border-border/50 pt-3">
+                      <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-3">
                         {countsLoading ? (
                           <div className="flex items-center gap-1.5">
                             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -257,7 +259,8 @@ function ResourcesContent() {
                             {count} saved
                           </span>
                         ) : (
-                          <span className="font-mono text-[10px] text-muted-foreground/50">
+                          <span className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground/50">
+                            <Circle className="h-1.5 w-1.5 fill-current" />
                             No items yet
                           </span>
                         )}
@@ -272,17 +275,17 @@ function ResourcesContent() {
 
         {/* Page indicators + nav arrows */}
         {totalPages > 1 && (
-          <div className="mt-6 flex items-center justify-center gap-3">
+          <div className="mt-8 flex items-center justify-center gap-4">
             <button
               onClick={goPrev}
               disabled={page === 0}
-              className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
               aria-label="Previous page"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
 
-            <div className="flex gap-1.5" role="tablist" aria-label="Tool pages">
+            <div className="flex gap-2" role="tablist" aria-label="Tool pages">
               {Array.from({ length: totalPages }).map((_, i) => (
                 <button
                   key={i}
@@ -290,10 +293,10 @@ function ResourcesContent() {
                   aria-selected={i === page}
                   aria-label={`Page ${i + 1}`}
                   onClick={() => setPage(i)}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                  className={`h-2 rounded-full transition-all duration-300 ${
                     i === page
-                      ? 'w-5 bg-primary'
-                      : 'w-1.5 bg-border hover:bg-muted-foreground/40'
+                      ? 'w-6 bg-primary shadow-[0_0_8px_rgba(0,255,102,0.25)]'
+                      : 'w-2 bg-border hover:bg-muted-foreground/40'
                   }`}
                 />
               ))}
@@ -302,7 +305,7 @@ function ResourcesContent() {
             <button
               onClick={goNext}
               disabled={page === totalPages - 1}
-              className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
               aria-label="Next page"
             >
               <ChevronRight className="h-4 w-4" />

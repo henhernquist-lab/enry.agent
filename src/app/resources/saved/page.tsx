@@ -37,15 +37,15 @@ import {
 } from '@/lib/resources'
 import { fmtSecs } from '@/components/tools/race-pace-calculator'
 
-const TABS: { id: ResourceType; label: string; icon: typeof BookOpen }[] = [
-  { id: 'flashcards',    label: 'Flashcards',  icon: BookOpen },
-  { id: 'grade_calc',   label: 'Grade Calc',   icon: Calculator },
-  { id: 'workout',      label: 'Workout',      icon: Dumbbell },
-  { id: 'meal',         label: 'Meal',         icon: Utensils },
-  { id: 'repo_scan',    label: 'Repos',        icon: GitBranch },
-  { id: 'habit_streak', label: 'Habits',       icon: Target },
-  { id: 'race_pace',    label: 'Race Pace',    icon: Timer },
-  { id: 'article_note', label: 'Articles',     icon: Newspaper },
+const TABS: { id: ResourceType; label: string; icon: typeof BookOpen; slug: string }[] = [
+  { id: 'flashcards',    label: 'Flashcards',  icon: BookOpen,     slug: 'flashcards' },
+  { id: 'grade_calc',   label: 'Grade Calc',   icon: Calculator,   slug: 'grade-calculator' },
+  { id: 'workout',      label: 'Workout',      icon: Dumbbell,     slug: 'workout' },
+  { id: 'meal',         label: 'Meal',         icon: Utensils,     slug: 'meal' },
+  { id: 'repo_scan',    label: 'Repos',        icon: GitBranch,    slug: 'repo-scanner' },
+  { id: 'habit_streak', label: 'Habits',       icon: Target,       slug: 'habits' },
+  { id: 'race_pace',    label: 'Race Pace',    icon: Timer,        slug: 'race-pace' },
+  { id: 'article_note', label: 'Articles',     icon: Newspaper,    slug: 'articles' },
 ]
 
 function shortDate(iso: string): string {
@@ -422,7 +422,7 @@ function SavedPageContent() {
         ) : items.length === 0 ? (
           <div className="py-16 text-center">
             <p className="text-sm text-muted-foreground">No saved items yet.</p>
-            <Link href={`/resources?tab=${activeTab}`} className="mt-2 block text-xs text-primary hover:underline">
+            <Link href={`/resources/${TABS.find((t) => t.id === activeTab)?.slug ?? ''}`} className="mt-2 block text-xs text-primary hover:underline">
               Open the tool →
             </Link>
           </div>
