@@ -73,25 +73,65 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
     async jwt({ token, account, user }) {
       if (account?.provider === 'google') {
-        return { ...token, googleId: account.providerAccountId }
-      }
-      if (account?.provider === 'github') {
+        // Resolve profiles.id UUID immediately on sign-in so session.user.id
+        // is always a valid UUID downstream — no per-route resolution needed.
+        const providerId = account.providerAccountId
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('google_id', providerId)
+          .maybeSingle()
         return {
           ...token,
-          googleId:    `github_${account.providerAccountId}`,
+          googleId: providerId,
+          sub: profile?.id ?? token.sub,
+        }
+      }
+      if (account?.provider === 'github') {
+        const providerId = `github_${account.providerAccountId}`
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('google_id', providerId)
+          .maybeSingle()
+        return {
+          ...token,
+          googleId: providerId,
+          sub: profile?.id ?? token.sub,
           githubToken: account.access_token,
         }
       }
       if (account?.provider === 'credentials' && user?.id) {
-        return { ...token, googleId: user.id }
+        // credentials authorize() returns profiles.google_id as user.id.
+        // Resolve to UUID here too.
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('google_id', user.id)
+          .maybeSingle()
+        return {
+          ...token,
+          googleId: user.id,
+          sub: profile?.id ?? token.sub,
+        }
       }
       return token
     },
 
     async session({ session, token }) {
-      if (session.user && token.googleId) {
+      if (session.user) {
+        // session.user.id stays as the provider account ID (google_id) for
+        // backward compat — 7+ route files use it as google_id directly.
         const u = session.user as typeof session.user & { id?: string }
         u.id = token.googleId as string
+
+        // Expose the resolved profiles.id UUID as a separate field.
+        // NB: for old sessions (pre-deploy), token.sub is the default
+        // NextAuth sub claim (non-UUID), so internalUserId may not be a
+        // valid UUID yet. Routes consuming it should still fall back to
+        // resolveResourceUserId() until all JWTs have been refreshed.
+        const s = session as typeof session & { internalUserId?: string }
+        s.internalUserId = (token.sub ?? token.googleId) as string
       }
       if (token.githubToken) {
         const s = session as typeof session & { githubToken?: string }
