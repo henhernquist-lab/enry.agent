@@ -18,7 +18,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const { data, error } = await supabase
     .from('resources')
-    .select('*')
+    .select('id, user_id, type, source, title, payload, created_at, updated_at')
     .eq('id', id)
     .eq('user_id', uid)
     .maybeSingle()
@@ -67,7 +67,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     })
     .eq('id', id)
     .eq('user_id', uid)
-    .select('id, type, title, payload, created_at, updated_at')
+    .select('id, user_id, type, source, title, payload, created_at, updated_at')
     .single()
 
   if (error) return Response.json({ error: 'Failed to update' }, { status: 500 })

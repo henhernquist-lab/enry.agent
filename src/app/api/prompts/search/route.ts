@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/embeddings'
 import { resolveResourceUserId } from '@/lib/resource-user'
+import type { ResourceSource } from '@/lib/resource-source'
 
 export const maxDuration = 30
 
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
 
   const body = await req.json()
   const query = typeof body.query === 'string' ? body.query.trim() : ''
+  const source = (typeof body.source === 'string' ? body.source : null) as ResourceSource | null
 
   if (!query) return Response.json({ error: 'query required' }, { status: 400 })
 
@@ -23,13 +25,15 @@ export async function POST(req: Request) {
 
   if (!embedding) {
     // Fallback to recency listing — embedding unavailable
-    const { data } = await supabase
+    let fallback = supabase
       .from('resources')
-      .select('id, type, title, payload, created_at, updated_at')
+      .select('id, type, source, title, payload, created_at, updated_at')
       .eq('user_id', uid)
       .eq('type', 'prompt')
       .order('created_at', { ascending: false })
       .limit(20)
+    if (source) fallback = fallback.eq('source', source)
+    const { data } = await fallback
     return Response.json({ resources: data ?? [], semantic: false })
   }
 
@@ -45,5 +49,18 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Search failed' }, { status: 500 })
   }
 
-  return Response.json({ resources: data ?? [], semantic: true })
+  // match_prompts predates the `source` column and doesn't filter by it —
+  // post-filter here so semantic search can't leak daily_auto/featured rows
+  // into a source-scoped view (e.g. "Mine").
+  let results = data ?? []
+  if (source && results.length > 0) {
+    const { data: sourceRows } = await supabase
+      .from('resources')
+      .select('id, source')
+      .in('id', results.map((r: { id: string }) => r.id))
+    const allowed = new Set((sourceRows ?? []).filter((r) => r.source === source).map((r) => r.id))
+    results = results.filter((r: { id: string }) => allowed.has(r.id))
+  }
+
+  return Response.json({ resources: results, semantic: true })
 }

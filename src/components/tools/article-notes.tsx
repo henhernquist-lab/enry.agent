@@ -21,6 +21,7 @@ import {
   Brain,
 } from 'lucide-react'
 import type { Resource, ArticleNotePayload } from '@/lib/resources'
+import { isArchived, type ResourceSource } from '@/lib/resource-source'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -500,9 +501,11 @@ export function ArticleNoteCard({ resource, onOpen, onDelete }: ArticleNoteCardP
 interface ArticleNotesSavedListProps {
   refreshKey: number
   onStudyAll: (cards: { q: string; a: string }[]) => void
+  source?: ResourceSource
+  excludeArchived?: boolean
 }
 
-export function ArticleNotesSavedList({ refreshKey, onStudyAll }: ArticleNotesSavedListProps) {
+export function ArticleNotesSavedList({ refreshKey, onStudyAll, source = 'user', excludeArchived = false }: ArticleNotesSavedListProps) {
   const [items, setItems] = useState<Resource<ArticleNotePayload>[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Resource<ArticleNotePayload> | null>(null)
@@ -515,12 +518,12 @@ export function ArticleNotesSavedList({ refreshKey, onStudyAll }: ArticleNotesSa
 
   useEffect(() => {
     setLoading(true)
-    fetch('/api/resources?type=article_note')
+    fetch(`/api/resources?type=article_note&source=${source}`)
       .then((r) => r.json())
       .then((d) => setItems(d.resources ?? []))
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [refreshKey])
+  }, [refreshKey, source])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -535,7 +538,7 @@ export function ArticleNotesSavedList({ refreshKey, onStudyAll }: ArticleNotesSa
         const res = await fetch('/api/article-notes/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: searchQuery }),
+          body: JSON.stringify({ query: searchQuery, source }),
         })
         const data = await res.json()
         if (res.ok) {
@@ -549,11 +552,13 @@ export function ArticleNotesSavedList({ refreshKey, onStudyAll }: ArticleNotesSa
       }
     }, 500)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [searchQuery])
+  }, [searchQuery, source])
+
+  const scoped = excludeArchived ? items.filter((r) => !isArchived(r.created_at)) : items
 
   const displayed = semanticResults !== null ? semanticResults : (
     searchQuery.trim()
-      ? items.filter((r) => {
+      ? scoped.filter((r) => {
           const p = r.payload as ArticleNotePayload
           const q = searchQuery.toLowerCase()
           return (
@@ -563,7 +568,7 @@ export function ArticleNotesSavedList({ refreshKey, onStudyAll }: ArticleNotesSa
             p.tags.some((t) => t.includes(q))
           )
         })
-      : items
+      : scoped
   )
 
   const handleDelete = useCallback((id: string) => {
@@ -571,7 +576,7 @@ export function ArticleNotesSavedList({ refreshKey, onStudyAll }: ArticleNotesSa
     if (selected?.id === id) setSelected(null)
   }, [selected])
 
-  const allFlashcards = items.flatMap((r) => (r.payload as ArticleNotePayload).flashcards ?? [])
+  const allFlashcards = scoped.flatMap((r) => (r.payload as ArticleNotePayload).flashcards ?? [])
 
   return (
     <>

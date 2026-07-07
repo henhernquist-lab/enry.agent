@@ -27,14 +27,15 @@ import {
   ArrowUpDown,
   AlertCircle,
   Brain,
+  Sun,
+  Archive,
 } from 'lucide-react'
-import SEED_PROMPTS from '@/scripts/seed-prompts'
-import type { SeedPrompt } from '@/scripts/seed-prompts'
 import type { Resource, PromptPayload } from '@/lib/resources'
+import { isArchived, type ResourceSource } from '@/lib/resource-source'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORIES: { id: SeedPrompt['category']; label: string; icon: typeof Code2 }[] = [
+const CATEGORIES: { id: PromptPayload['category']; label: string; icon: typeof Code2 }[] = [
   { id: 'coding',   label: 'Coding',   icon: Code2 },
   { id: 'writing',  label: 'Writing',  icon: PenLine },
   { id: 'study',    label: 'Study',    icon: BookOpen },
@@ -114,91 +115,11 @@ function CopyButton({ text, onCopy }: { text: string; onCopy?: () => void }) {
   )
 }
 
-// ─── Seed prompt card (Library tab) ───────────────────────────────────────────
+// ─── Prompt card (used by Main / Daily / Mine) ────────────────────────────────
 
-function SeedPromptCard({ prompt, index }: { prompt: SeedPrompt; index: number }) {
-  const [expanded, setExpanded] = useState(false)
-  const Icon = CATEGORY_ICONS[prompt.category]
-  const style = catStyle(prompt.category)
-  const snippet = prompt.body.slice(0, 180).replace(/\n/g, ' ').trim()
+export type UserPrompt = Resource<PromptPayload>
 
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.025, type: 'spring', stiffness: 300, damping: 28 }}
-      className="overflow-hidden rounded border border-border bg-surface-secondary transition-colors duration-200 hover:border-border/80"
-    >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-start gap-3 p-4 text-left"
-        aria-expanded={expanded}
-      >
-        <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border ${style}`}>
-          <Icon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="text-sm font-semibold text-foreground">{prompt.title}</h3>
-            <ChevronRight className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
-          </div>
-          <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{snippet}…</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider ${style}`}>
-              {prompt.category}
-            </span>
-            {prompt.tags.slice(0, 3).map((t) => (
-              <span key={t} className={`rounded border px-1.5 py-0.5 font-mono text-[9px] ${tagColor(t)}`}>{t}</span>
-            ))}
-            {prompt.tags.length > 3 && (
-              <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
-                +{prompt.tags.length - 3}
-              </span>
-            )}
-          </div>
-        </div>
-      </button>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-border/50 px-4 pb-4 pt-3">
-              {prompt.notes && (
-                <div className="mb-3 flex items-start gap-2 rounded border border-accent/20 bg-accent/5 px-2.5 py-2">
-                  <Sparkles className="mt-0.5 h-3 w-3 flex-shrink-0 text-accent" />
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">{prompt.notes}</p>
-                </div>
-              )}
-              <div className="mb-3 max-h-80 overflow-y-auto rounded border border-border/50 bg-surface-base p-3 font-mono text-[11px] leading-relaxed text-foreground scrollbar-hidden whitespace-pre-wrap">
-                {prompt.body}
-              </div>
-              <div className="flex items-center justify-between">
-                <CopyButton text={prompt.body} />
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <Tag className="h-3 w-3" />
-                  {prompt.tags.length} tag{prompt.tags.length !== 1 ? 's' : ''}
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  )
-}
-
-// ─── User prompt card (My Prompts tab) ────────────────────────────────────────
-
-type UserPrompt = Resource<PromptPayload>
-
-function UserPromptCard({
+export function PromptCard({
   prompt,
   index,
   onEdit,
@@ -206,8 +127,8 @@ function UserPromptCard({
 }: {
   prompt: UserPrompt
   index: number
-  onEdit: (p: UserPrompt) => void
-  onDelete: (id: string) => void
+  onEdit?: (p: UserPrompt) => void
+  onDelete?: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -222,7 +143,7 @@ function UserPromptCard({
   const handleDelete = useCallback(async () => {
     setDeleting(true)
     await fetch(`/api/resources/${prompt.id}`, { method: 'DELETE' })
-    onDelete(prompt.id)
+    onDelete?.(prompt.id)
   }, [prompt.id, onDelete])
 
   const snippet = p.body.slice(0, 180).replace(/\n/g, ' ').trim()
@@ -248,21 +169,25 @@ function UserPromptCard({
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-sm font-semibold text-foreground">{prompt.title}</h3>
             <div className="flex items-center gap-1">
-              <button
-                onClick={(e) => { e.stopPropagation(); onEdit(prompt) }}
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
-                aria-label="Edit"
-              >
-                <Pencil className="h-3 w-3" />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleDelete() }}
-                disabled={deleting}
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-[#ff4d4d]"
-                aria-label="Delete"
-              >
-                {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-              </button>
+              {onEdit && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onEdit(prompt) }}
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                  aria-label="Edit"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDelete() }}
+                  disabled={deleting}
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-[#ff4d4d]"
+                  aria-label="Delete"
+                >
+                  {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                </button>
+              )}
               <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
             </div>
           </div>
@@ -501,11 +426,29 @@ function PromptFormModal({
   )
 }
 
-// ─── My Prompts tab ───────────────────────────────────────────────────────────
+// ─── Generic prompt list tab (Main / Daily / Mine share this) ────────────────
 
 type SortKey = 'recent' | 'most-used' | 'alpha'
 
-function MyPromptsTab() {
+function PromptListTab({
+  source,
+  allowCreate = false,
+  allowEdit = false,
+  allowDelete = false,
+  excludeArchived = false,
+  archiveHref,
+  emptyTitle,
+  emptyDesc,
+}: {
+  source: ResourceSource
+  allowCreate?: boolean
+  allowEdit?: boolean
+  allowDelete?: boolean
+  excludeArchived?: boolean
+  archiveHref?: string
+  emptyTitle: string
+  emptyDesc: string
+}) {
   const [prompts, setPrompts] = useState<UserPrompt[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -519,12 +462,13 @@ function MyPromptsTab() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    fetch('/api/resources?type=prompt')
+    setLoading(true)
+    fetch(`/api/resources?type=prompt&source=${source}`)
       .then((r) => r.json())
       .then((d) => setPrompts(d.resources ?? []))
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [source])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -539,7 +483,7 @@ function MyPromptsTab() {
         const res = await fetch('/api/prompts/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: searchQuery }),
+          body: JSON.stringify({ query: searchQuery, source }),
         })
         const data = await res.json()
         if (res.ok) {
@@ -553,10 +497,12 @@ function MyPromptsTab() {
       }
     }, 500)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [searchQuery])
+  }, [searchQuery, source])
+
+  const scoped = excludeArchived ? prompts.filter((p) => !isArchived(p.created_at)) : prompts
 
   const displayed = useMemo(() => {
-    let items = semanticResults !== null ? semanticResults : prompts
+    let items = semanticResults !== null ? semanticResults : scoped
 
     if (semanticResults === null && searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
@@ -584,7 +530,7 @@ function MyPromptsTab() {
     }
 
     return items
-  }, [prompts, semanticResults, searchQuery, categoryFilter, sortBy])
+  }, [scoped, semanticResults, searchQuery, categoryFilter, sortBy])
 
   const openCreate = () => { setEditTarget(null); setFormMode('create') }
   const openEdit = (p: UserPrompt) => { setEditTarget(p); setFormMode('edit') }
@@ -649,13 +595,24 @@ function MyPromptsTab() {
               ))}
             </div>
 
-            <button
-              onClick={openCreate}
-              className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/15 px-3 py-1.5 font-mono text-[11px] font-medium text-primary transition-colors hover:bg-primary/25"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New
-            </button>
+            {allowCreate && (
+              <button
+                onClick={openCreate}
+                className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/15 px-3 py-1.5 font-mono text-[11px] font-medium text-primary transition-colors hover:bg-primary/25"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New
+              </button>
+            )}
+            {archiveHref && (
+              <Link
+                href={archiveHref}
+                className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                Archive
+              </Link>
+            )}
           </div>
 
           <div className="mx-auto mt-2 flex max-w-3xl gap-1.5 overflow-x-auto scrollbar-hidden">
@@ -686,15 +643,17 @@ function MyPromptsTab() {
         ) : prompts.length === 0 && !searchQuery ? (
           <div className="py-16 text-center">
             <BookMarked className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm font-medium text-foreground">No prompts saved yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">Save your best prompts here to copy them instantly.</p>
-            <button
-              onClick={openCreate}
-              className="mx-auto mt-4 flex items-center gap-1.5 rounded border border-primary/40 bg-primary/15 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Save your first prompt
-            </button>
+            <p className="text-sm font-medium text-foreground">{emptyTitle}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{emptyDesc}</p>
+            {allowCreate && (
+              <button
+                onClick={openCreate}
+                className="mx-auto mt-4 flex items-center gap-1.5 rounded border border-primary/40 bg-primary/15 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Save your first prompt
+              </button>
+            )}
           </div>
         ) : displayed.length === 0 ? (
           <div className="py-16 text-center">
@@ -718,7 +677,13 @@ function MyPromptsTab() {
             </p>
             <AnimatePresence mode="popLayout">
               {displayed.map((p, i) => (
-                <UserPromptCard key={p.id} prompt={p} index={i} onEdit={openEdit} onDelete={handleDelete} />
+                <PromptCard
+                  key={p.id}
+                  prompt={p}
+                  index={i}
+                  onEdit={allowEdit ? openEdit : undefined}
+                  onDelete={allowDelete ? handleDelete : undefined}
+                />
               ))}
             </AnimatePresence>
           </div>
@@ -739,113 +704,19 @@ function MyPromptsTab() {
   )
 }
 
-// ─── Library tab ──────────────────────────────────────────────────────────────
-
-function LibraryTab({
-  activeCategory,
-  searchQuery,
-  setSearchQuery,
-}: {
-  activeCategory: SeedPrompt['category'] | null
-  searchQuery: string
-  setSearchQuery: (q: string) => void
-}) {
-  const filtered = useMemo(() => {
-    let items = SEED_PROMPTS
-    if (activeCategory) items = items.filter((p) => p.category === activeCategory)
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
-      items = items.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.body.toLowerCase().includes(q) ||
-          p.tags.some((t) => t.toLowerCase().includes(q)) ||
-          p.notes.toLowerCase().includes(q),
-      )
-    }
-    return items
-  }, [activeCategory, searchQuery])
-
-  return (
-    <>
-      <div className="sticky top-[88px] z-10 border-b border-border/50 bg-surface-base px-4 py-3">
-        <div className="relative mx-auto max-w-3xl">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by title, tag, or content…"
-            className="w-full rounded border border-border bg-surface-elevated py-2 pl-9 pr-8 text-xs text-foreground placeholder-muted-foreground/50 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <main className="mx-auto max-w-3xl px-4 py-6">
-        {filtered.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-sm text-muted-foreground">
-              {searchQuery ? `No prompts match "${searchQuery}"` : 'No prompts in this category.'}
-            </p>
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="mt-2 text-xs text-primary hover:underline">Clear search</button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <p className="mb-4 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              {filtered.length} prompt{filtered.length !== 1 ? 's' : ''}
-              {activeCategory ? ` · ${activeCategory}` : ''}
-              {searchQuery ? ` · "${searchQuery}"` : ''}
-            </p>
-            <AnimatePresence mode="popLayout">
-              {filtered.map((p, i) => (
-                <SeedPromptCard key={p.title + p.category} prompt={p} index={i} />
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
-      </main>
-    </>
-  )
-}
-
 // ─── Main orchestrator ────────────────────────────────────────────────────────
 
-type TabId = 'library' | 'mine'
+type TabId = 'main' | 'daily' | 'mine'
 
 function PromptsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const activeTab = (searchParams.get('tab') === 'mine' ? 'mine' : 'library') as TabId
-  const rawCat = searchParams.get('category')
-  const validCats = new Set<string>(CATEGORIES.map((c) => c.id))
-  const activeCategory = (validCats.has(rawCat ?? '') ? rawCat : null) as SeedPrompt['category'] | null
-  const [libSearch, setLibSearch] = useState('')
+  const rawTab = searchParams.get('tab')
+  const activeTab = ((rawTab === 'daily' || rawTab === 'mine') ? rawTab : 'main') as TabId
 
   const setTab = (tab: TabId) => {
-    router.replace(tab === 'mine' ? '/prompts?tab=mine' : '/prompts')
-  }
-
-  const setCategory = (cat: string | null) => {
-    if (cat) router.replace(`/prompts?tab=library&category=${cat}`)
-    else router.replace('/prompts?tab=library')
-  }
-
-  const handleCatKeyDown = (e: React.KeyboardEvent) => {
-    const tabs = [{ id: null }, ...CATEGORIES] as const
-    const idx = tabs.findIndex((t) => t.id === activeCategory)
-    let next = idx
-    if (e.key === 'ArrowRight') next = (idx + 1) % tabs.length
-    else if (e.key === 'ArrowLeft') next = (idx - 1 + tabs.length) % tabs.length
-    else return
-    e.preventDefault()
-    setCategory(tabs[next].id as string | null)
+    router.replace(tab === 'main' ? '/prompts' : `/prompts?tab=${tab}`)
   }
 
   return (
@@ -860,20 +731,31 @@ function PromptsContent() {
           <div className="w-14" />
         </div>
 
-        {/* Tab + category row */}
+        {/* Tab row */}
         <div className="flex overflow-x-auto border-t border-border/50 scrollbar-hidden">
-          {/* Main tabs */}
           <button
-            onClick={() => setTab('library')}
+            onClick={() => setTab('main')}
             className={`relative flex flex-shrink-0 items-center gap-1.5 px-5 py-2.5 font-mono text-[11px] whitespace-nowrap transition-colors duration-200 ${
-              activeTab === 'library' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+              activeTab === 'main' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <Library className="h-3 w-3" />
-            Library
-            <span className="ml-0.5 text-[9px] opacity-60">{SEED_PROMPTS.length}</span>
-            {activeTab === 'library' && (
+            Main
+            {activeTab === 'main' && (
               <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-foreground" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+            )}
+          </button>
+
+          <button
+            onClick={() => setTab('daily')}
+            className={`relative flex flex-shrink-0 items-center gap-1.5 px-5 py-2.5 font-mono text-[11px] whitespace-nowrap transition-colors duration-200 ${
+              activeTab === 'daily' ? 'text-accent' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Sun className="h-3 w-3" />
+            Daily
+            {activeTab === 'daily' && (
+              <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
             )}
           </button>
 
@@ -884,68 +766,40 @@ function PromptsContent() {
             }`}
           >
             <BookMarked className="h-3 w-3" />
-            My Prompts
+            Mine
             {activeTab === 'mine' && (
               <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
             )}
           </button>
-
-          {/* Library category filter — only when on library tab */}
-          {activeTab === 'library' && (
-            <>
-              <div className="mx-1 my-auto h-4 w-px flex-shrink-0 bg-border/50" />
-              <div
-                className="flex overflow-x-auto scrollbar-hidden"
-                role="tablist"
-                aria-label="Prompt categories"
-                onKeyDown={handleCatKeyDown}
-              >
-                <button
-                  role="tab"
-                  aria-selected={activeCategory === null}
-                  tabIndex={activeCategory === null ? 0 : -1}
-                  onClick={() => setCategory(null)}
-                  className={`relative flex flex-shrink-0 items-center px-3 py-2.5 font-mono text-[11px] whitespace-nowrap transition-colors duration-200 ${
-                    activeCategory === null ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  All
-                  {activeCategory === null && (
-                    <motion.div layoutId="cat-indicator" className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-foreground" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                  )}
-                </button>
-                {CATEGORIES.map((cat) => {
-                  const Icon = cat.icon
-                  const active = activeCategory === cat.id
-                  return (
-                    <button
-                      key={cat.id}
-                      role="tab"
-                      aria-selected={active}
-                      tabIndex={active ? 0 : -1}
-                      onClick={() => setCategory(cat.id)}
-                      className={`relative flex flex-shrink-0 items-center gap-1.5 px-3 py-2.5 font-mono text-[11px] whitespace-nowrap transition-colors duration-200 ${
-                        active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      <Icon className="h-3 w-3" />
-                      {cat.label}
-                      {active && (
-                        <motion.div layoutId="cat-indicator" className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            </>
-          )}
         </div>
       </header>
 
-      {activeTab === 'library' ? (
-        <LibraryTab activeCategory={activeCategory} searchQuery={libSearch} setSearchQuery={setLibSearch} />
-      ) : (
-        <MyPromptsTab />
+      {activeTab === 'main' && (
+        <PromptListTab
+          source="featured"
+          emptyTitle="No featured prompts yet"
+          emptyDesc="Curated prompts show up here."
+        />
+      )}
+      {activeTab === 'daily' && (
+        <PromptListTab
+          source="daily_auto"
+          allowDelete
+          excludeArchived
+          archiveHref="/resources/prompts/archive"
+          emptyTitle="No daily prompts yet"
+          emptyDesc="New auto-generated prompts land here once the daily job runs."
+        />
+      )}
+      {activeTab === 'mine' && (
+        <PromptListTab
+          source="user"
+          allowCreate
+          allowEdit
+          allowDelete
+          emptyTitle="No prompts saved yet"
+          emptyDesc="Save your best prompts here to copy them instantly."
+        />
       )}
     </div>
   )

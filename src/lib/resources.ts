@@ -1,9 +1,12 @@
+import type { ResourceSource } from './resource-source'
+
 export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note'
 
 export interface Resource<T = unknown> {
   id: string
   user_id: string
   type: ResourceType
+  source: ResourceSource
   title: string
   payload: T
   created_at: string
@@ -103,9 +106,10 @@ export async function saveResource(
   }).catch((e) => console.error('[resources] save failed:', e))
 }
 
-export async function loadResources(type: ResourceType): Promise<Resource[]> {
+export async function loadResources(type: ResourceType, source?: ResourceSource): Promise<Resource[]> {
   try {
-    const res = await fetch(`/api/resources?type=${type}`)
+    const qs = source ? `&source=${source}` : ''
+    const res = await fetch(`/api/resources?type=${type}${qs}`)
     if (!res.ok) return []
     const data = await res.json()
     return data.resources ?? []

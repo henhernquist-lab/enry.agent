@@ -43,6 +43,7 @@ import {
   deleteResource,
   resourceSummary,
 } from '@/lib/resources'
+import type { ResourceSource } from '@/lib/resource-source'
 
 /* ─── Slug → type mapping ──────────────────────────────── */
 
@@ -261,7 +262,7 @@ function PayloadView({ resource }: { resource: Resource }) {
 
 /* ─── SavedList (generic, for all tools except article_note) ────────── */
 
-function SavedList({ type, refreshKey }: { type: ResourceType; refreshKey: number }) {
+function SavedList({ type, refreshKey, source }: { type: ResourceType; refreshKey: number; source?: ResourceSource }) {
   const [items, setItems] = useState<Resource[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Resource | null>(null)
@@ -269,8 +270,8 @@ function SavedList({ type, refreshKey }: { type: ResourceType; refreshKey: numbe
 
   useEffect(() => {
     setLoading(true)
-    loadResources(type).then((r) => { setItems(r); setLoading(false) })
-  }, [type, refreshKey])
+    loadResources(type, source).then((r) => { setItems(r); setLoading(false) })
+  }, [type, source, refreshKey])
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
@@ -420,6 +421,7 @@ function ToolPageContent() {
   const resourceType = SLUG_MAP[slug]
   const meta = SLUG_LABELS[slug]
   const [saveKey, setSaveKey] = useState(0)
+  const [articleTab, setArticleTab] = useState<'user' | 'daily_auto'>('user')
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -493,9 +495,37 @@ function ToolPageContent() {
             </div>
           )}
           {resourceType === 'article_note' ? (
-            <ArticleNotesSavedList refreshKey={saveKey} onStudyAll={() => {}} />
+            <>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-1 rounded border border-border bg-surface-elevated px-1 py-0.5">
+                  <button
+                    onClick={() => setArticleTab('user')}
+                    className={`rounded px-2.5 py-1 font-mono text-[10px] transition-colors ${articleTab === 'user' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Mine
+                  </button>
+                  <button
+                    onClick={() => setArticleTab('daily_auto')}
+                    className={`rounded px-2.5 py-1 font-mono text-[10px] transition-colors ${articleTab === 'daily_auto' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Daily
+                  </button>
+                </div>
+                {articleTab === 'daily_auto' && (
+                  <Link href="/resources/articles/archive" className="font-mono text-[10px] text-primary hover:underline">
+                    Archive →
+                  </Link>
+                )}
+              </div>
+              <ArticleNotesSavedList
+                refreshKey={saveKey}
+                onStudyAll={() => {}}
+                source={articleTab}
+                excludeArchived={articleTab === 'daily_auto'}
+              />
+            </>
           ) : (
-            <SavedList type={resourceType} refreshKey={saveKey} />
+            <SavedList type={resourceType} refreshKey={saveKey} source={resourceType === 'prompt' ? 'user' : undefined} />
           )}
         </div>
       </main>

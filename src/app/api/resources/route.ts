@@ -3,6 +3,9 @@ import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/embeddings'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import type { ResourceType } from '@/lib/resources'
+import type { ResourceSource } from '@/lib/resource-source'
+
+const VALID_SOURCES = new Set<ResourceSource>(['user', 'daily_auto', 'featured'])
 
 export const maxDuration = 30
 
@@ -32,18 +35,26 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url)
   const type = searchParams.get('type') as ResourceType | null
+  const source = searchParams.get('source') as ResourceSource | null
 
   if (!type || !VALID_TYPES.has(type)) {
     return Response.json({ error: 'Invalid type' }, { status: 400 })
   }
+  if (source && !VALID_SOURCES.has(source)) {
+    return Response.json({ error: 'Invalid source' }, { status: 400 })
+  }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('resources')
-    .select('id, type, title, payload, created_at, updated_at')
+    .select('id, type, source, title, payload, created_at, updated_at')
     .eq('user_id', uid)
     .eq('type', type)
     .order('created_at', { ascending: false })
-    .limit(type === 'prompt' ? 100 : 50)
+    .limit(source === 'daily_auto' ? 500 : type === 'prompt' ? 100 : 50)
+
+  if (source) query = query.eq('source', source)
+
+  const { data, error } = await query
 
   if (error) return Response.json({ error: 'Failed to fetch' }, { status: 500 })
   return Response.json({ resources: data ?? [] })
@@ -67,7 +78,7 @@ export async function POST(req: Request) {
   const { data, error } = await supabase
     .from('resources')
     .insert({ user_id: uid, type, title: title.trim().slice(0, 200), payload: payload ?? {} })
-    .select('id, type, title, payload, created_at, updated_at')
+    .select('id, type, source, title, payload, created_at, updated_at')
     .single()
 
   if (error) {
