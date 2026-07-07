@@ -77,7 +77,7 @@ export async function POST(req: Request) {
 
   const { data, error } = await supabase
     .from('resources')
-    .insert({ user_id: uid, type, title: title.trim().slice(0, 200), payload: payload ?? {} })
+    .insert({ user_id: uid, type, source: 'user', title: title.trim().slice(0, 200), payload: payload ?? {} })
     .select('id, type, source, title, payload, created_at, updated_at')
     .single()
 

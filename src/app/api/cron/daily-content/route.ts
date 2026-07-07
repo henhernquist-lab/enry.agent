@@ -6,7 +6,7 @@ import { generatePrompt, CATEGORY_ROTATION } from '@/lib/prompt-generation'
 import type { ArticleNotePayload, PromptPayload } from '@/lib/resources'
 import articleSources from '@/data/article-sources.json'
 
-export const maxDuration = 300
+export const maxDuration = 120
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL ?? ''
 

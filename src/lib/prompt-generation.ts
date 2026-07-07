@@ -35,11 +35,11 @@ export async function generatePrompt(category: PromptCategory): Promise<Generate
   try {
     const client = createOpenAI({
       baseURL: 'https://integrate.api.nvidia.com/v1',
-      apiKey: process.env.DEEPSEEK_API_KEY ?? '',
+      apiKey: process.env.QWEN_API_KEY ?? '',
     })
 
     const { text } = await generateText({
-      model: client.chat('deepseek-ai/deepseek-v4-pro'),
+      model: client.chat('qwen/qwen3.5-122b-a10b'),
       prompt: buildPrompt(category),
       temperature: 0.7,
       maxOutputTokens: 2048,

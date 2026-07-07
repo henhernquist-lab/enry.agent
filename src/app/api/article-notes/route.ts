@@ -52,6 +52,7 @@ export async function POST(req: Request) {
       .insert({
         user_id: uid,
         type: 'article_note',
+        source: 'user',
         title: articleTitle.slice(0, 200),
         payload,
       })
