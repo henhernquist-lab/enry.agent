@@ -50,7 +50,7 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       setRepo(data)
-      saveResource('repo_scan', data.name, data)
+      await saveResource('repo_scan', data.name, data).catch((e) => console.error('saveResource failed:', e))
       onSave?.()
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Failed to fetch repo')
@@ -79,7 +79,7 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
       setMessages((prev) => [...prev, { role: 'assistant', text: data.text ?? 'No response.' }])
     } catch (err) {
       console.error('repo chat failed:', err)
-      setMessages((prev) => [...prev, { role: 'assistant', text: 'Something went wrong.' }])
+      setMessages((prev) => [...prev, { role: 'assistant', text: 'Chat failed. Try again.' }])
     } finally {
       setThinking(false)
     }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Utensils, Trash2, AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertCircle, Utensils, Trash2, AlertTriangle, Loader2 } from 'lucide-react'
 import { ModalShell } from '@/components/automations/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource } from '@/lib/resources'
@@ -35,12 +35,13 @@ export function MealLogger({ onClose, mode = 'modal', onSave }: MealLoggerProps)
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
   const [estimating, setEstimating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const load = () =>
     fetch(`/api/tools/meals?date=${todayStr()}`)
       .then((r) => r.json())
       .then((d) => { setMeals(d.meals ?? []); setLoading(false) })
-      .catch(console.error)
+      .catch(() => { setError('Failed to load meals'); setLoading(false) })
 
   useEffect(() => { load() }, [])
 
@@ -58,6 +59,7 @@ export function MealLogger({ onClose, mode = 'modal', onSave }: MealLoggerProps)
     const text = input.trim()
     if (!text) return
     setEstimating(true)
+    setError(null)
     try {
       const res = await fetch('/api/automations/generate', {
         method: 'POST',
@@ -68,26 +70,36 @@ export function MealLogger({ onClose, mode = 'modal', onSave }: MealLoggerProps)
       })
       const data = await res.json()
       const macros = data.text ? parseMacros(data.text) : null
-      if (!macros) return
-      await fetch('/api/tools/meals', {
+      if (!macros) {
+        setError('Could not estimate macros — try adding explicit numbers like "calories: 400, protein: 30"')
+        return
+      }
+      const mealRes = await fetch('/api/tools/meals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: text, ...macros }),
       })
-      saveResource('meal', text.slice(0, 80), { description: text, ...macros })
+      if (!mealRes.ok) throw new Error(`Failed to save meal (${mealRes.status})`)
+      await saveResource('meal', text.slice(0, 80), { description: text, ...macros }).catch((e) => console.error('saveResource failed:', e))
       onSave?.()
       setInput('')
       await load()
     } catch (err) {
-      console.error('meal log failed:', err)
+      setError(err instanceof Error ? err.message : 'Failed to log meal')
     } finally {
       setEstimating(false)
     }
   }
 
   const handleDelete = async (id: string) => {
-    await fetch('/api/tools/meals', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
-    await load()
+    try {
+      setError(null)
+      const res = await fetch('/api/tools/meals', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+      if (!res.ok) throw new Error(`Delete failed (${res.status})`)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete meal')
+    }
   }
 
   const icon = <Utensils className="h-4 w-4 text-primary" />
@@ -129,7 +141,7 @@ export function MealLogger({ onClose, mode = 'modal', onSave }: MealLoggerProps)
       <div className="flex gap-2">
         <input
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => { setInput(e.target.value); setError(null) }}
           onKeyDown={(e) => e.key === 'Enter' && handleLog()}
           placeholder="e.g. 2 eggs and toast with butter"
           className="flex-1 rounded border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
@@ -143,6 +155,13 @@ export function MealLogger({ onClose, mode = 'modal', onSave }: MealLoggerProps)
           Log
         </button>
       </div>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded border border-[#ff4d4d]/30 bg-[#ff4d4d]/8 px-3 py-2 text-xs text-[#ff4d4d]">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          {error}
+        </div>
+      )}
 
       {meals.length === 0 ? (
         <p className="py-4 text-center text-xs text-muted-foreground">No meals logged today. Start tracking above.</p>

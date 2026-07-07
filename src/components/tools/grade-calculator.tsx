@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { GraduationCap, Plus, Trash2, Save } from 'lucide-react'
+import { AlertCircle, GraduationCap, Plus, Trash2, Save } from 'lucide-react'
 import { ModalShell } from '@/components/automations/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource } from '@/lib/resources'
@@ -60,6 +60,7 @@ export function GradeCalculator({ onClose, mode = 'modal', onSave }: GradeCalcul
   const [classes, setClasses] = useState<GradeClass[]>([newClass()])
   const [saving, setSaving] = useState(false)
   const [saveOk, setSaveOk] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/tools/grades')
@@ -70,7 +71,7 @@ export function GradeCalculator({ onClose, mode = 'modal', onSave }: GradeCalcul
           setClasses(data.grades.classes?.length ? data.grades.classes : [newClass()])
         }
       })
-      .catch(console.error)
+      .catch(() => setError('Failed to load saved grades'))
   }, [])
 
   const updateClass = (id: string, field: keyof GradeClass, value: string | number) => {
@@ -97,22 +98,27 @@ export function GradeCalculator({ onClose, mode = 'modal', onSave }: GradeCalcul
 
   const handleSave = async () => {
     setSaving(true)
+    setError(null)
     try {
-      await fetch('/api/tools/grades', {
+      const res = await fetch('/api/tools/grades', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ grades: { targetGpa, classes } }),
       })
-      saveResource('grade_calc', `GPA target ${targetGpa} — ${new Date().toLocaleDateString()}`, {
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `Save failed (${res.status})`)
+      }
+      await saveResource('grade_calc', `GPA target ${targetGpa} — ${new Date().toLocaleDateString()}`, {
         targetGpa,
         classes,
         weightedGpa,
-      })
+      }).catch((e) => console.error('saveResource failed:', e))
       onSave?.()
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 2000)
     } catch (err) {
-      console.error('grade save failed:', err)
+      setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setSaving(false)
     }
@@ -134,7 +140,7 @@ export function GradeCalculator({ onClose, mode = 'modal', onSave }: GradeCalcul
             max="4.0"
             step="0.1"
             value={targetGpa}
-            onChange={(e) => setTargetGpa(e.target.value)}
+            onChange={(e) => { setTargetGpa(e.target.value); setError(null) }}
             className="w-full bg-transparent text-center font-mono text-2xl font-semibold text-primary focus:outline-none"
           />
           <p className="text-[10px] text-muted-foreground">Target GPA</p>
@@ -198,6 +204,13 @@ export function GradeCalculator({ onClose, mode = 'modal', onSave }: GradeCalcul
       <div className="rounded border border-border bg-surface-elevated p-3 text-xs text-muted-foreground">
         <p>Scores labeled <span className="text-destructive">N/A</span> are mathematically impossible. <span className="text-primary">Locked</span> means you already have that GPA in this class.</p>
       </div>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded border border-[#ff4d4d]/30 bg-[#ff4d4d]/8 px-3 py-2 text-xs text-[#ff4d4d]">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          {error}
+        </div>
+      )}
 
       <button
         onClick={handleSave}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Dumbbell, Plus, Trash2, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertCircle, Dumbbell, Plus, Trash2, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react'
 import { ModalShell } from '@/components/automations/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource } from '@/lib/resources'
@@ -55,8 +55,9 @@ export function WorkoutLoggerTool({ onClose, mode = 'modal', onSave }: WorkoutLo
   const [sets, setSets] = useState<SetEntry[]>([{ reps: 8, weight: 0 }])
   const [logging, setLogging] = useState(false)
   const [selectedEx, setSelectedEx] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const load = () => fetch('/api/tools/workouts').then((r) => r.json()).then((d) => { setWorkouts(d.workouts ?? []); setLoading(false) }).catch(console.error)
+  const load = () => fetch('/api/tools/workouts').then((r) => r.json()).then((d) => { setWorkouts(d.workouts ?? []); setLoading(false) }).catch(() => { setError('Failed to load workouts'); setLoading(false) })
   useEffect(() => { load() }, [])
 
   const exercises = useMemo(() => [...new Set(workouts.map((w) => w.exercise))], [workouts])
@@ -68,34 +69,42 @@ export function WorkoutLoggerTool({ onClose, mode = 'modal', onSave }: WorkoutLo
   const handleLog = async () => {
     if (!exercise.trim()) return
     setLogging(true)
+    setError(null)
     const exerciseName = exercise.trim()
     const currentSets = [...sets]
     const loggedAt = new Date().toISOString()
     try {
-      await fetch('/api/tools/workouts', {
+      const res = await fetch('/api/tools/workouts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ exercise: exerciseName, sets: currentSets }),
       })
+      if (!res.ok) throw new Error(`Failed to log workout (${res.status})`)
       setExercise('')
       setSets([{ reps: 8, weight: 0 }])
       await load()
-      saveResource(
+      await saveResource(
         'workout',
         `${exerciseName} — ${new Date().toLocaleDateString()}`,
         { exercise: exerciseName, sets: currentSets, logged_at: loggedAt },
-      )
+      ).catch((e) => console.error('saveResource failed:', e))
       onSave?.()
     } catch (err) {
-      console.error('log workout failed:', err)
+      setError(err instanceof Error ? err.message : 'Failed to log workout')
     } finally {
       setLogging(false)
     }
   }
 
   const handleDelete = async (id: string) => {
-    await fetch('/api/tools/workouts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
-    await load()
+    try {
+      setError(null)
+      const res = await fetch('/api/tools/workouts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+      if (!res.ok) throw new Error(`Delete failed (${res.status})`)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete workout')
+    }
   }
 
   const icon = <Dumbbell className="h-4 w-4 text-primary" />
@@ -107,7 +116,7 @@ export function WorkoutLoggerTool({ onClose, mode = 'modal', onSave }: WorkoutLo
       <div className="rounded border border-border bg-surface-elevated p-3">
         <input
           value={exercise}
-          onChange={(e) => setExercise(e.target.value)}
+          onChange={(e) => { setExercise(e.target.value); setError(null) }}
           placeholder="Exercise name (e.g. Bench Press)"
           className="mb-2 w-full rounded border border-border bg-surface-base px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 focus:border-primary/50 focus:outline-none"
         />
@@ -138,6 +147,13 @@ export function WorkoutLoggerTool({ onClose, mode = 'modal', onSave }: WorkoutLo
             Log workout
           </button>
         </div>
+
+        {error && (
+          <div className="mt-2 flex items-start gap-2 rounded border border-[#ff4d4d]/30 bg-[#ff4d4d]/8 px-3 py-2 text-xs text-[#ff4d4d]">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+            {error}
+          </div>
+        )}
       </div>
 
       {exercises.length === 0 ? (

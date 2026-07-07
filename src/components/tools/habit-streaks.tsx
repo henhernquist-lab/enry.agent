@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Target, Plus, Trash2, Flame, Loader2, Check } from 'lucide-react'
+import { AlertCircle, Target, Plus, Trash2, Flame, Loader2, Check } from 'lucide-react'
 import { ModalShell } from '@/components/automations/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource } from '@/lib/resources'
@@ -48,6 +48,7 @@ export function HabitStreaks({ onClose, mode = 'modal', onSave }: HabitStreaksPr
   const [newHabit, setNewHabit] = useState('')
   const [adding, setAdding] = useState(false)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const loadAll = async () => {
     const [habitsRes, logsRes] = await Promise.all([
@@ -71,6 +72,7 @@ export function HabitStreaks({ onClose, mode = 'modal', onSave }: HabitStreaksPr
     const name = newHabit.trim()
     if (!name) return
     setAdding(true)
+    setError(null)
     try {
       await fetch('/api/tools/habits', {
         method: 'POST',
@@ -80,7 +82,7 @@ export function HabitStreaks({ onClose, mode = 'modal', onSave }: HabitStreaksPr
       setNewHabit('')
       await loadAll()
     } catch (err) {
-      console.error('add habit failed:', err)
+      setError(err instanceof Error ? err.message : 'Failed to add habit')
     } finally {
       setAdding(false)
     }
@@ -88,6 +90,7 @@ export function HabitStreaks({ onClose, mode = 'modal', onSave }: HabitStreaksPr
 
   const handleToggle = async (habitId: string) => {
     setToggling(habitId)
+    setError(null)
     const habit = habits.find((h) => h.id === habitId)
     try {
       await fetch('/api/tools/habit-logs', {
@@ -98,28 +101,34 @@ export function HabitStreaks({ onClose, mode = 'modal', onSave }: HabitStreaksPr
       const { logs: newLogs } = await loadAll()
       if (habit) {
         const streak = calculateStreak(newLogs, habitId)
-        saveResource('habit_streak', `${habit.name} — ${today}`, {
+        await saveResource('habit_streak', `${habit.name} — ${today}`, {
           habit_id: habitId,
           habit_name: habit.name,
           checked_on: today,
           streak,
-        })
+        }).catch((e) => console.error('saveResource failed:', e))
         onSave?.()
       }
     } catch (err) {
-      console.error('toggle habit failed:', err)
+      setError(err instanceof Error ? err.message : 'Failed to toggle habit')
     } finally {
       setToggling(null)
     }
   }
 
   const handleDelete = async (id: string) => {
-    await fetch('/api/tools/habits', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    })
-    await loadAll()
+    try {
+      setError(null)
+      const res = await fetch('/api/tools/habits', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      if (!res.ok) throw new Error(`Delete failed (${res.status})`)
+      await loadAll()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete habit')
+    }
   }
 
   const icon = <Target className="h-4 w-4 text-primary" />
@@ -131,7 +140,7 @@ export function HabitStreaks({ onClose, mode = 'modal', onSave }: HabitStreaksPr
       <div className="flex gap-2">
         <input
           value={newHabit}
-          onChange={(e) => setNewHabit(e.target.value)}
+          onChange={(e) => { setNewHabit(e.target.value); setError(null) }}
           onKeyDown={(e) => e.key === 'Enter' && handleAddHabit()}
           placeholder="New habit (e.g. Read 20 pages)"
           className="flex-1 rounded border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 focus:border-primary/50 focus:outline-none"
@@ -145,6 +154,13 @@ export function HabitStreaks({ onClose, mode = 'modal', onSave }: HabitStreaksPr
           Add
         </button>
       </div>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded border border-[#ff4d4d]/30 bg-[#ff4d4d]/8 px-3 py-2 text-xs text-[#ff4d4d]">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          {error}
+        </div>
+      )}
 
       {habits.length === 0 ? (
         <p className="py-8 text-center text-xs text-muted-foreground">No habits yet. Add one above to start tracking.</p>

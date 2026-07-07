@@ -60,7 +60,7 @@ export function FlashcardGenerator({ onClose, mode = 'modal', onSave }: Flashcar
       const parsed = parseFlashcards(data.text)
       if (parsed.length === 0) throw new Error('Could not parse flashcards from response')
       setCards(parsed)
-      saveResource('flashcards', text.slice(0, 80), { notes: text, cards: parsed })
+      await saveResource('flashcards', text.slice(0, 80), { notes: text, cards: parsed }).catch((e) => console.error('saveResource failed:', e))
       onSave?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')
