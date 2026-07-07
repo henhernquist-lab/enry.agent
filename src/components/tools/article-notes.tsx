@@ -33,7 +33,7 @@ const STEPS = [
   'Saving…',
 ]
 
-const STEP_DELAYS = [0, 2000, 4500, 9500]
+const STEP_DELAYS = [0, 1500, 3000, 6500]
 
 // ─── ArticleNotes (ingest tool) ───────────────────────────────────────────────
 
@@ -48,14 +48,20 @@ export function ArticleNotes({ onSave }: ArticleNotesProps) {
   const [userNote, setUserNote] = useState('')
   const [status, setStatus] = useState<IngestStatus>('idle')
   const [stepIdx, setStepIdx] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [savedResource, setSavedResource] = useState<Resource<ArticleNotePayload> | null>(null)
 
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const clearTimers = () => {
     timersRef.current.forEach(clearTimeout)
     timersRef.current = []
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
   }
 
   const handleSubmit = useCallback(async () => {
@@ -71,6 +77,7 @@ export function ArticleNotes({ onSave }: ArticleNotesProps) {
 
     setStatus('loading')
     setStepIdx(0)
+    setElapsed(0)
     setError(null)
     clearTimers()
 
@@ -79,6 +86,7 @@ export function ArticleNotes({ onSave }: ArticleNotesProps) {
       const t = setTimeout(() => setStepIdx(i + 1), delay)
       timersRef.current.push(t)
     })
+    intervalRef.current = setInterval(() => setElapsed((s) => s + 1), 1000)
 
     try {
       const res = await fetch('/api/article-notes', {
@@ -124,6 +132,7 @@ export function ArticleNotes({ onSave }: ArticleNotesProps) {
         <div className="mb-4 flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
           <span className="font-mono text-xs text-primary">Processing</span>
+          <span className="font-mono text-xs text-muted-foreground">{elapsed}s</span>
         </div>
         <div className="space-y-2">
           {STEPS.map((step, i) => (
@@ -148,7 +157,7 @@ export function ArticleNotes({ onSave }: ArticleNotesProps) {
           ))}
         </div>
         <p className="mt-4 font-mono text-[10px] text-muted-foreground">
-          This usually takes 10–20 seconds
+          {elapsed < 20 ? 'This usually takes 5–15 seconds' : 'Still working — longer articles can take a bit more time'}
         </p>
       </div>
     )

@@ -6,7 +6,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { tavily } from '@tavily/core'
 import type { ArticleNotePayload } from '@/lib/resources'
 
-export const maxDuration = 60
+export const maxDuration = 120
 
 function userId(session: { user?: { id?: string } } | null): string | null {
   return (session?.user as { id?: string } | undefined)?.id ?? null
@@ -113,15 +113,18 @@ export async function POST(req: Request) {
     let processingFailed = false
 
     try {
+      // Qwen instead of the app-wide default (deepseek-v4-pro) — deepseek took
+      // 90s-3min on long articles, blowing past any reasonable request timeout.
       const client = createOpenAI({
         baseURL: 'https://integrate.api.nvidia.com/v1',
-        apiKey: process.env.DEEPSEEK_API_KEY ?? '',
+        apiKey: process.env.QWEN_API_KEY ?? '',
       })
 
       const { text } = await generateText({
-        model: client.chat('deepseek-ai/deepseek-v4-pro'),
+        model: client.chat('qwen/qwen3.5-122b-a10b'),
         prompt: buildPrompt(articleTitle, url, truncated),
         temperature: 0.1,
+        maxOutputTokens: 4096,
       })
 
       console.log('[article-notes] model responded, raw length:', text.length, 'preview:', text.slice(0, 120))
