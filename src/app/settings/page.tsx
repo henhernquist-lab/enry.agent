@@ -56,7 +56,7 @@ export default function SettingsPage() {
   }, [profile])
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-surface-base">
+    <div className="relative flex min-h-screen flex-col bg-transparent">
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute inset-0 grid-overlay opacity-30" />
@@ -90,7 +90,7 @@ export default function SettingsPage() {
               <User className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <h1 className="font-display text-xl font-bold text-foreground">Settings</h1>
+              <h1 className="font-display text-2xl font-bold leading-tight text-foreground">Settings</h1>
               <p className="font-mono text-xs text-muted-foreground">Manage your profile and preferences</p>
             </div>
           </div>

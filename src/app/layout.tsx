@@ -3,6 +3,7 @@ import { Space_Grotesk, Inter, IBM_Plex_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { SessionProvider } from 'next-auth/react'
 import { auth } from '@/lib/auth'
+import { AmbientBackground } from '@/components/ambient-background'
 import './globals.css'
 
 const spaceGrotesk = Space_Grotesk({
@@ -63,6 +64,7 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${ibmPlexMono.variable} bg-background`}>
       <body className="font-sans antialiased">
+        <AmbientBackground />
         <SessionProvider session={session}>
           {children}
         </SessionProvider>

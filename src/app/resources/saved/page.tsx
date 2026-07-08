@@ -352,7 +352,7 @@ function PayloadView({ resource }: { resource: Resource }) {
                   return (
                     <div key={i} className="rounded border border-border bg-surface-elevated/60 p-2.5 text-xs">
                       <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                        <span className={`flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase ${style.badge}`}>
+                        <span className={`flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider ${style.badge}`}>
                           <Icon className="h-2.5 w-2.5" />{issue.severity}
                         </span>
                         <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">{issue.category}</span>
@@ -505,7 +505,7 @@ function SavedPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-base">
+    <div className="min-h-screen bg-transparent">
       <header className="sticky top-0 z-20 border-b border-border bg-surface-secondary/95 backdrop-blur">
         <div className="flex h-11 items-center justify-between px-4">
           <Link

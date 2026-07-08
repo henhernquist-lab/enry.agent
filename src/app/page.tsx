@@ -23,6 +23,7 @@ import {
 import { loadProfileAsync, createDefaultProfile, saveProfile } from '@/lib/user-profile'
 import { OnboardingFlow } from '@/components/onboarding-flow'
 import { ProfileEditor } from '@/components/profile-editor'
+import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
 
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
@@ -176,7 +177,7 @@ export default function EnryAgentPage() {
   )
 
   return (
-    <div className="relative flex h-screen w-full overflow-hidden bg-surface-base">
+    <div className="relative flex h-screen w-full overflow-hidden bg-transparent">
       <GridBackground />
       <CornerAccents />
 
@@ -228,7 +229,9 @@ export default function EnryAgentPage() {
           activities={activities}
           streamingText={streamingText}
           currentModel={currentModel}
-        />
+        >
+          <QuickNotesWidget />
+        </RightPanel>
       </div>
     </div>
   )

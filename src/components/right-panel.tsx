@@ -13,6 +13,7 @@ interface RightPanelProps {
   activities: ActivityEvent[]
   streamingText: string
   currentModel: string
+  children?: React.ReactNode
 }
 
 const iconMap: Record<ActivityEvent['type'], typeof MessageCircle> = {
@@ -33,11 +34,17 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour12: false })
 }
 
-export function RightPanel({ agentStatus, activities, streamingText, currentModel }: RightPanelProps) {
+export function RightPanel({ agentStatus, activities, streamingText, currentModel, children }: RightPanelProps) {
   const isActive = agentStatus === 'thinking' || agentStatus === 'executing'
 
   return (
     <aside className="flex h-full w-[320px] flex-col border-l border-border bg-surface-secondary">
+      {children && (
+        <div className="border-b border-border p-4">
+          {children}
+        </div>
+      )}
+
       <div className="border-b border-border p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

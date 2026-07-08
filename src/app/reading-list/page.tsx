@@ -284,7 +284,7 @@ function ReadingListContent() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-base">
+    <div className="min-h-screen bg-transparent">
       {/* Sticky header */}
       <header className="sticky top-0 z-20 border-b border-border bg-surface-secondary/95 backdrop-blur">
         <div className="flex h-11 items-center justify-between px-4">

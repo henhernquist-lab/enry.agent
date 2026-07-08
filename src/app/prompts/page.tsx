@@ -720,7 +720,7 @@ function PromptsContent() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-base">
+    <div className="min-h-screen bg-transparent">
       <header className="sticky top-0 z-20 border-b border-border bg-surface-secondary/95 backdrop-blur">
         <div className="flex h-11 items-center justify-between px-4">
           <Link href="/" className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">

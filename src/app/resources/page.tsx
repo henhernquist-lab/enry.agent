@@ -157,7 +157,7 @@ function ResourcesContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-surface-base">
+    <div className="flex min-h-screen flex-col bg-transparent">
       {/* Sticky header */}
       <header className="sticky top-0 z-20 border-b border-border bg-surface-secondary/95 backdrop-blur">
         <div className="flex h-11 items-center justify-between px-4">
@@ -192,7 +192,7 @@ function ResourcesContent() {
       {/* Main content */}
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-8 lg:px-12 lg:py-10">
         <div className="mb-8">
-          <h1 className="text-lg font-bold tracking-tight text-foreground">Tools &amp; Resources</h1>
+          <h1 className="font-display text-2xl font-bold leading-tight tracking-tight text-foreground">Tools &amp; Resources</h1>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
             {TOOLS.length} tools ·{' '}
             {countsLoading ? '…' : `${totalSaved} saved across all tools`}

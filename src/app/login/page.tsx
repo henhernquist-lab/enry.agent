@@ -146,7 +146,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative flex h-screen w-full flex-col items-center justify-center overflow-hidden bg-[#080808]">
+    <div className="relative flex h-screen w-full flex-col items-center justify-center overflow-hidden bg-transparent">
       <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-25" />
 
       {/* Vignette */}
