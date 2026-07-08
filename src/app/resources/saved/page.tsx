@@ -19,6 +19,11 @@ import {
   Timer,
   Trophy,
   Newspaper,
+  ScanSearch,
+  ShieldAlert,
+  AlertTriangle,
+  Info,
+  ExternalLink,
 } from 'lucide-react'
 import {
   type Resource,
@@ -31,6 +36,8 @@ import {
   type HabitStreakPayload,
   type RacePacePayload,
   type ArticleNotePayload,
+  type RepoReviewPayload,
+  type RepoReviewIssue,
   loadResources,
   deleteResource,
   resourceSummary,
@@ -46,6 +53,7 @@ const TABS: { id: ResourceType; label: string; icon: typeof BookOpen; slug: stri
   { id: 'habit_streak', label: 'Habits',       icon: Target,       slug: 'habits' },
   { id: 'race_pace',    label: 'Race Pace',    icon: Timer,        slug: 'race-pace' },
   { id: 'article_note', label: 'Articles',     icon: Newspaper,    slug: 'articles' },
+  { id: 'repo_review',  label: 'Repo Reviews', icon: ScanSearch,   slug: 'repo-review' },
 ]
 
 function shortDate(iso: string): string {
@@ -278,6 +286,76 @@ function PayloadView({ resource }: { resource: Resource }) {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+    case 'repo_review': {
+      const p = resource.payload as RepoReviewPayload
+      const severityStyles: Record<RepoReviewIssue['severity'], { badge: string; icon: typeof AlertTriangle }> = {
+        high: { badge: 'border-destructive/40 bg-destructive/10 text-destructive', icon: ShieldAlert },
+        medium: { badge: 'border-warning/40 bg-warning/10 text-warning', icon: AlertTriangle },
+        low: { badge: 'border-border bg-surface-elevated text-muted-foreground', icon: Info },
+      }
+      return (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <a href={p.repo_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline">
+              {p.repo_full_name} <ExternalLink className="h-3 w-3" />
+            </a>
+            <span className="font-mono text-[10px] text-muted-foreground">{p.branch}</span>
+          </div>
+          {p.partial_sample && (
+            <p className="font-mono text-[10px] text-muted-foreground">
+              Partial sample — {p.files_analyzed.length} file{p.files_analyzed.length !== 1 ? 's' : ''} reviewed.
+            </p>
+          )}
+          <p className="text-xs leading-relaxed text-foreground">{p.overview}</p>
+          {p.strengths.length > 0 && (
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Strengths</p>
+              <ul className="space-y-1">
+                {p.strengths.map((s, i) => (
+                  <li key={i} className="text-xs text-muted-foreground">• {s}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {p.issues.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Issues</p>
+              {(['high', 'medium', 'low'] as const)
+                .flatMap((sev) => p.issues.filter((i) => i.severity === sev))
+                .map((issue, i) => {
+                  const style = severityStyles[issue.severity]
+                  const Icon = style.icon
+                  return (
+                    <div key={i} className="rounded border border-border bg-surface-elevated/60 p-2.5 text-xs">
+                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                        <span className={`flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase ${style.badge}`}>
+                          <Icon className="h-2.5 w-2.5" />{issue.severity}
+                        </span>
+                        <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">{issue.category}</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">{issue.file}</span>
+                      </div>
+                      <p className="text-foreground">{issue.description}</p>
+                      <p className="mt-1 text-muted-foreground">→ {issue.suggestion}</p>
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+          {p.refactor_priorities.length > 0 && (
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Do these first</p>
+              <ol className="space-y-1">
+                {p.refactor_priorities.map((r, i) => (
+                  <li key={i} className="flex gap-2 text-xs text-foreground">
+                    <span className="flex-shrink-0 font-mono text-[10px] text-primary">{i + 1}.</span>{r}
+                  </li>
+                ))}
+              </ol>
             </div>
           )}
         </div>

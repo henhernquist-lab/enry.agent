@@ -21,6 +21,10 @@ import {
   Newspaper,
   Check,
   Timer,
+  ScanSearch,
+  ShieldAlert,
+  Info,
+  ExternalLink,
 } from 'lucide-react'
 import { FlashcardGenerator } from '@/components/tools/flashcard-generator'
 import { GradeCalculator } from '@/components/tools/grade-calculator'
@@ -30,6 +34,7 @@ import { RepoScanner } from '@/components/tools/repo-scanner'
 import { HabitStreaks } from '@/components/tools/habit-streaks'
 import { ArticleNotes, ArticleNotesSavedList } from '@/components/tools/article-notes'
 import { RacePaceCalculator } from '@/components/tools/race-pace-calculator'
+import { RepoReviewer } from '@/components/tools/repo-reviewer'
 import {
   type Resource,
   type ResourceType,
@@ -41,6 +46,8 @@ import {
   type HabitStreakPayload,
   type PromptPayload,
   type ArticleNotePayload,
+  type RepoReviewPayload,
+  type RepoReviewIssue,
   loadResources,
   deleteResource,
   resourceSummary,
@@ -59,6 +66,7 @@ const SLUG_MAP: Record<string, ResourceType> = {
   'prompts':          'prompt',
   'articles':         'article_note',
   'race-pace':        'race_pace',
+  'repo-review':      'repo_review',
 }
 
 const SLUG_LABELS: Record<string, { name: string; icon: typeof BookOpen; desc: string }> = {
@@ -71,6 +79,7 @@ const SLUG_LABELS: Record<string, { name: string; icon: typeof BookOpen; desc: s
   'prompts':          { name: 'Prompt Library',      icon: BookMarked, desc: 'Browse and save reusable AI prompts' },
   'articles':         { name: 'Article Notes',       icon: Newspaper, desc: 'Save articles with AI summaries and flashcards' },
   'race-pace':        { name: 'Race Pace Calculator', icon: Timer, desc: 'Split targets and PR tracking' },
+  'repo-review':      { name: 'Repo Reviewer',       icon: ScanSearch, desc: 'AI code review for your GitHub repos' },
 }
 
 /* ─── Helpers ──────────────────────────────────────────── */
@@ -255,6 +264,76 @@ function PayloadView({ resource }: { resource: Resource }) {
           )}
           {ap.flashcards.length > 0 && (
             <p className="font-mono text-[10px] text-muted-foreground">{ap.flashcards.length} flashcard{ap.flashcards.length !== 1 ? 's' : ''}</p>
+          )}
+        </div>
+      )
+    }
+    case 'repo_review': {
+      const rp = p as unknown as RepoReviewPayload
+      const severityStyles: Record<RepoReviewIssue['severity'], { badge: string; icon: typeof AlertCircle }> = {
+        high: { badge: 'border-destructive/40 bg-destructive/10 text-destructive', icon: ShieldAlert },
+        medium: { badge: 'border-warning/40 bg-warning/10 text-warning', icon: AlertCircle },
+        low: { badge: 'border-border bg-surface-elevated text-muted-foreground', icon: Info },
+      }
+      return (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <a href={rp.repo_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline">
+              {rp.repo_full_name} <ExternalLink className="h-3 w-3" />
+            </a>
+            <span className="font-mono text-[10px] text-muted-foreground">{rp.branch}</span>
+          </div>
+          {rp.partial_sample && (
+            <p className="font-mono text-[10px] text-muted-foreground">
+              Partial sample — {rp.files_analyzed.length} file{rp.files_analyzed.length !== 1 ? 's' : ''} reviewed.
+            </p>
+          )}
+          <p className="text-xs leading-relaxed text-foreground">{rp.overview}</p>
+          {rp.strengths.length > 0 && (
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Strengths</p>
+              <ul className="space-y-1">
+                {rp.strengths.map((s, i) => (
+                  <li key={i} className="text-xs text-muted-foreground">• {s}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {rp.issues.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Issues</p>
+              {(['high', 'medium', 'low'] as const)
+                .flatMap((sev) => rp.issues.filter((i) => i.severity === sev))
+                .map((issue, i) => {
+                  const style = severityStyles[issue.severity]
+                  const Icon = style.icon
+                  return (
+                    <div key={i} className="rounded border border-border bg-surface-elevated/60 p-2.5 text-xs">
+                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                        <span className={`flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase ${style.badge}`}>
+                          <Icon className="h-2.5 w-2.5" />{issue.severity}
+                        </span>
+                        <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">{issue.category}</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">{issue.file}</span>
+                      </div>
+                      <p className="text-foreground">{issue.description}</p>
+                      <p className="mt-1 text-muted-foreground">→ {issue.suggestion}</p>
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+          {rp.refactor_priorities.length > 0 && (
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Do these first</p>
+              <ol className="space-y-1">
+                {rp.refactor_priorities.map((r, i) => (
+                  <li key={i} className="flex gap-2 text-xs text-foreground">
+                    <span className="flex-shrink-0 font-mono text-[10px] text-primary">{i + 1}.</span>{r}
+                  </li>
+                ))}
+              </ol>
+            </div>
           )}
         </div>
       )
@@ -490,6 +569,7 @@ function ToolPageContent() {
         {resourceType === 'habit_streak' && <HabitStreaks       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'article_note' && <ArticleNotes       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'race_pace'    && <RacePaceCalculator onClose={() => {}} mode="page" onSave={handleSave} />}
+        {resourceType === 'repo_review'  && <RepoReviewer       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'prompt'       && <PromptLibraryLauncher onSave={handleSave} />}
 
         {/* Saved items */}

@@ -89,6 +89,31 @@ export async function createIssue(
   }
 }
 
+export interface TreeEntry {
+  path: string
+  type: string
+  size: number
+}
+
+export async function getRepoTree(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<{ tree: TreeEntry[]; error: string | null }> {
+  try {
+    const res = await ghFetch(accessToken, `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`)
+    if (!res.ok) return { tree: [], error: `GitHub API error ${res.status}` }
+    const data = await res.json()
+    const tree = ((data.tree ?? []) as { path: string; type: string; size?: number }[])
+      .filter((f) => f.type === 'blob')
+      .map((f) => ({ path: f.path, type: f.type, size: f.size ?? 0 }))
+    return { tree, error: null }
+  } catch (e) {
+    return { tree: [], error: String(e) }
+  }
+}
+
 export async function getFileContent(
   accessToken: string,
   owner: string,

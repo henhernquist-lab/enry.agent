@@ -19,6 +19,7 @@ const VALID_TYPES = new Set<ResourceType>([
   'race_pace',
   'prompt',
   'article_note',
+  'repo_review',
 ])
 
 function userId(session: { user?: { id?: string } } | null): string | null {

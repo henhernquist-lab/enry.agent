@@ -21,6 +21,7 @@ import {
   Library,
   Circle,
   Timer,
+  ScanSearch,
 } from 'lucide-react'
 import type { ResourceType } from '@/lib/resources'
 import { loadResources } from '@/lib/resources'
@@ -45,6 +46,7 @@ const TOOLS: ToolDef[] = [
   { slug: 'prompts',          type: 'prompt',        name: 'Prompt Library',      desc: 'Browse and save reusable AI prompts',               icon: BookMarked },
   { slug: 'articles',         type: 'article_note',   name: 'Article Notes',       desc: 'Save articles with AI summaries and flashcards',    icon: Newspaper },
   { slug: 'race-pace',        type: 'race_pace',       name: 'Race Pace Calculator', desc: 'Split targets and PR tracking',                     icon: Timer },
+  { slug: 'repo-review',      type: 'repo_review',     name: 'Repo Reviewer',       desc: 'AI code review for your GitHub repos',              icon: ScanSearch },
 ]
 
 /* ─── Saved count fetcher ───────────────────────────────── */

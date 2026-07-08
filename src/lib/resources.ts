@@ -1,6 +1,6 @@
 import type { ResourceSource } from './resource-source'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review'
 
 export interface Resource<T = unknown> {
   id: string
@@ -94,6 +94,27 @@ export interface RacePacePayload {
   meet?: string
 }
 
+export interface RepoReviewIssue {
+  severity: 'high' | 'medium' | 'low'
+  category: 'security' | 'architecture' | 'code-smell' | 'dead-code' | 'inconsistency'
+  file: string
+  description: string
+  suggestion: string
+}
+
+export interface RepoReviewPayload {
+  repo_full_name: string
+  repo_url: string
+  branch: string
+  reviewed_at: string
+  files_analyzed: string[]
+  overview: string
+  strengths: string[]
+  issues: RepoReviewIssue[]
+  refactor_priorities: string[]
+  partial_sample?: boolean
+}
+
 export async function saveResource(
   type: ResourceType,
   title: string,
@@ -167,6 +188,12 @@ export function resourceSummary(resource: Resource): string {
       const an = p as unknown as ArticleNotePayload
       const fc = (an.flashcards ?? []).length
       return `${an.source_domain} · ${fc} card${fc !== 1 ? 's' : ''}`
+    }
+    case 'repo_review': {
+      const rp = p as unknown as RepoReviewPayload
+      const counts = { high: 0, medium: 0, low: 0 }
+      for (const issue of rp.issues ?? []) counts[issue.severity]++
+      return `${counts.high} high · ${counts.medium} medium · ${counts.low} low`
     }
     default:
       return ''
