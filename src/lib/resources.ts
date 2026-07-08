@@ -1,6 +1,6 @@
 import type { ResourceSource } from './resource-source'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file'
 
 export interface Resource<T = unknown> {
   id: string
@@ -138,6 +138,14 @@ export interface BellSchedulePayload {
   periods: { period: number; class_name: string; start_time: string; end_time: string }[]
 }
 
+export interface UploadedFilePayload {
+  filename: string
+  file_type: 'image' | 'pdf' | 'text'
+  storage_path: string
+  extracted_summary: string
+  uploaded_at: string
+}
+
 export async function saveResource(
   type: ResourceType,
   title: string,
@@ -255,6 +263,10 @@ export function resourceSummary(resource: Resource): string {
       const bp = p as unknown as BellSchedulePayload
       const n = (bp.periods ?? []).length
       return `${n} period${n !== 1 ? 's' : ''}`
+    }
+    case 'uploaded_file': {
+      const up = p as unknown as UploadedFilePayload
+      return `${up.file_type} · ${up.extracted_summary.slice(0, 50)}`
     }
     default:
       return ''

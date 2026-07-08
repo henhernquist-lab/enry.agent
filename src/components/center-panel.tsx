@@ -27,6 +27,10 @@ import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
 import { TypingText } from './typing-text'
 import { DailyBriefingRunner } from './automations/daily-briefing-runner'
+import { FileAttachmentChip, type PendingUpload } from './file-attachment-chip'
+import { FileAttachmentCard } from './file-attachment-card'
+import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploads'
+import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/attachment-marker'
 import { loadToggles } from '@/lib/builtin-automations'
 import type { ActivityEvent } from '@/lib/chat-history'
 import { loadProfile, profileToSystemPrompt } from '@/lib/user-profile'
@@ -67,6 +71,16 @@ function getTextContent(message: UIMessage): string {
 function getSources(message: UIMessage): SourceUrlUIPart[] {
   return message.parts.filter((p): p is SourceUrlUIPart => p.type === 'source-url')
 }
+
+function getDisplayInfo(message: UIMessage): { attachment: AttachmentMeta | null; displayText: string } {
+  return parseMessageText(getTextContent(message))
+}
+
+// The only two NIM models with native image input (confirmed against
+// docs/model-selection-guide.md and the @ai-sdk/openai provider's actual
+// image_url conversion path) — attaching a real image part to any other
+// model would be silently ignored or rejected, so we gate on this.
+const VISION_MODELS = new Set(['qwen/qwen3.5-122b-a10b', 'minimax/minimax-m3'])
 
 const MODELS = [
   { id: 'deepseek-ai/deepseek-v4-pro', label: 'V4 Pro', company: 'DeepSeek', desc: "Strongest free model. Best for complex tasks." },
@@ -127,9 +141,13 @@ export function CenterPanel({
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [uptimeMs, setUptimeMs] = useState(0)
   const [briefingEnabled, setBriefingEnabled] = useState(() => loadToggles().dailyBriefing)
+  const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
+  const [uploadResult, setUploadResult] = useState<AttachmentMeta | null>(null)
+  const [isDraggingFile, setIsDraggingFile] = useState(false)
   const modelDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // briefingEnabled initialized lazily; no mount-time setState required.
 
@@ -170,8 +188,13 @@ export function CenterPanel({
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault()
     const text = input.trim()
-    if (!text) return
-    onActivity({ type: 'user-sent', content: text, at: Date.now() })
+    if (!text && !uploadResult) return
+    if (pendingUpload?.status === 'uploading') return
+
+    const attachment = uploadResult
+    const finalText = attachment ? buildMessageText(attachment, text) : text
+
+    onActivity({ type: 'user-sent', content: text || `[Attached: ${attachment?.filename}]`, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
     const profile = loadProfile()
     console.log('[center-panel] Sending message — profile loaded:', profile ? `setupComplete=${profile.setupComplete}` : 'null')
@@ -182,8 +205,74 @@ export function CenterPanel({
     } else {
       console.log('[center-panel] No profile — skipping system prompt injection')
     }
-    sendMessage({ text }, { body })
+
+    // Only attach the raw image to the model when the selected model actually
+    // supports vision — otherwise the text description in finalText is the
+    // fallback that always works regardless of model.
+    const files = attachment && attachment.file_type === 'image' && attachment.image_url && VISION_MODELS.has(model)
+      ? [{ type: 'file' as const, mediaType: attachment.mime_type, filename: attachment.filename, url: attachment.image_url }]
+      : undefined
+
+    sendMessage({ text: finalText, ...(files ? { files } : {}) }, { body })
     setInput('')
+    setPendingUpload(null)
+    setUploadResult(null)
+  }
+
+  const handleFileSelected = async (file: File) => {
+    if (file.size > MAX_FILE_SIZE) {
+      setPendingUpload({ file, status: 'error', error: `Too large — max 10MB (${(file.size / (1024 * 1024)).toFixed(1)}MB)` })
+      return
+    }
+    const fileType = detectFileType(file.name)
+    if (!fileType) {
+      setPendingUpload({ file, status: 'error', error: `Unsupported type — use ${SUPPORTED_EXTENSIONS.slice(0, 6).join(', ')}...` })
+      return
+    }
+
+    setPendingUpload({ file, status: 'uploading', fileType })
+    setUploadResult(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/upload', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) {
+        setPendingUpload({ file, status: 'error', error: data.error || 'Upload failed', fileType })
+        return
+      }
+      setPendingUpload({ file, status: 'ready', fileType })
+      setUploadResult({
+        filename: data.filename,
+        file_type: data.file_type,
+        mime_type: data.mime_type,
+        size: data.size,
+        storage_path: data.storage_path,
+        extracted_summary: data.extracted_summary,
+        truncated: data.truncated,
+        image_url: data.image_url,
+      })
+    } catch {
+      setPendingUpload({ file, status: 'error', error: 'Network error — try again', fileType })
+    }
+  }
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) handleFileSelected(file)
+  }
+
+  const handleRemoveUpload = () => {
+    setPendingUpload(null)
+    setUploadResult(null)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDraggingFile(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleFileSelected(file)
   }
 
   const handlePrefillPrompt = (prompt: string, comingSoon?: boolean) => {
@@ -361,7 +450,7 @@ export function CenterPanel({
           {/* Messages */}
           <AnimatePresence>
             {messages.map((message, index) => {
-              const text = getTextContent(message)
+              const { attachment, displayText: text } = getDisplayInfo(message)
               const sources = getSources(message)
               const isCurrentStream =
                 isStreaming &&
@@ -376,6 +465,11 @@ export function CenterPanel({
                   className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
                 >
                                     <div className={`group max-w-[85%] ${message.role === 'user' ? 'text-right' : ''}`}>
+                    {message.role === 'user' && attachment && (
+                      <div className="text-left">
+                        <FileAttachmentCard attachment={attachment} />
+                      </div>
+                    )}
                     <div
                       className={`rounded border px-4 py-3 transition-colors duration-300 ${
                         message.role === 'assistant'
@@ -505,18 +599,35 @@ export function CenterPanel({
           </div>
         </div>
 
+        {/* Pending attachment chip */}
+        {pendingUpload && (
+          <div className="mx-auto max-w-3xl px-4 pt-2">
+            <FileAttachmentChip upload={pendingUpload} onRemove={handleRemoveUpload} />
+          </div>
+        )}
+
         {/* Main Input */}
         <form
           onSubmit={handleSubmit}
-          className="mx-auto flex max-w-3xl items-end gap-2 px-4 pt-2 pb-3"
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingFile(true) }}
+          onDragLeave={() => setIsDraggingFile(false)}
+          onDrop={handleDrop}
+          className={`mx-auto flex max-w-3xl items-end gap-2 rounded px-4 pt-2 pb-3 transition-colors ${isDraggingFile ? 'bg-primary/5 ring-1 ring-primary/40' : ''}`}
         >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={SUPPORTED_EXTENSIONS.map((e) => `.${e}`).join(',')}
+            onChange={handleFileInputChange}
+            className="hidden"
+          />
           <div className="relative flex-1">
             <textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Enter a command or ask anything..."
+              placeholder={isDraggingFile ? 'Drop file to attach…' : 'Enter a command or ask anything...'}
               rows={1}
               disabled={isStreaming}
               className="w-full resize-none rounded border border-border bg-surface-elevated px-4 py-3 pr-12 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-50"
@@ -524,6 +635,7 @@ export function CenterPanel({
             />
             <button
               type="button"
+              onClick={() => fileInputRef.current?.click()}
               className="absolute bottom-3 right-3 rounded p-1 text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
             >
               <Paperclip className="h-4 w-4" />
@@ -580,7 +692,7 @@ export function CenterPanel({
 
           <button
             type="submit"
-            disabled={!input.trim() || isStreaming}
+            disabled={(!input.trim() && !uploadResult) || isStreaming || pendingUpload?.status === 'uploading'}
             className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded border border-primary bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-muted-foreground"
           >
             <Send className="h-4 w-4" />

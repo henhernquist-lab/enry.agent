@@ -29,6 +29,10 @@ import {
   StickyNote,
   Bell,
   Star,
+  Paperclip,
+  FileText,
+  ImageIcon,
+  FileCode,
 } from 'lucide-react'
 import {
   type Resource,
@@ -47,6 +51,7 @@ import {
   type CheckinPayload,
   type NotePayload,
   type BellSchedulePayload,
+  type UploadedFilePayload,
   loadResources,
   deleteResource,
   resourceSummary,
@@ -67,6 +72,7 @@ const TABS: { id: ResourceType; label: string; icon: typeof BookOpen; slug: stri
   { id: 'checkin',      label: 'Check-ins',    icon: SmilePlus,    slug: 'checkin' },
   { id: 'note',         label: 'Notes',        icon: StickyNote,   slug: 'notes' },
   { id: 'bell_schedule', label: 'Schedule',    icon: Bell,         slug: 'schedule' },
+  { id: 'uploaded_file', label: 'Files',       icon: Paperclip,    slug: '' },
 ]
 
 function shortDate(iso: string): string {
@@ -414,6 +420,19 @@ function PayloadView({ resource }: { resource: Resource }) {
         </div>
       )
     }
+    case 'uploaded_file': {
+      const p = resource.payload as UploadedFilePayload
+      const Icon = p.file_type === 'image' ? ImageIcon : p.file_type === 'pdf' ? FileText : FileCode
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            <Icon className="h-3.5 w-3.5 text-primary" />
+            {p.file_type} · {shortDate(p.uploaded_at.slice(0, 10))}
+          </div>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{p.extracted_summary}</p>
+        </div>
+      )
+    }
     default:
       return <pre className="text-xs text-muted-foreground">{JSON.stringify(resource.payload, null, 2)}</pre>
   }
@@ -553,8 +572,11 @@ function SavedPageContent() {
         ) : items.length === 0 ? (
           <div className="py-16 text-center">
             <p className="text-sm text-muted-foreground">No saved items yet.</p>
-            <Link href={`/resources/${TABS.find((t) => t.id === activeTab)?.slug ?? ''}`} className="mt-2 block text-xs text-primary hover:underline">
-              Open the tool →
+            <Link
+              href={activeTab === 'uploaded_file' ? '/' : `/resources/${TABS.find((t) => t.id === activeTab)?.slug ?? ''}`}
+              className="mt-2 block text-xs text-primary hover:underline"
+            >
+              {activeTab === 'uploaded_file' ? 'Attach a file in chat →' : 'Open the tool →'}
             </Link>
           </div>
         ) : (

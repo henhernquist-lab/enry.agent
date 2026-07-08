@@ -24,6 +24,7 @@ const VALID_TYPES = new Set<ResourceType>([
   'checkin',
   'note',
   'bell_schedule',
+  'uploaded_file',
 ])
 
 function userId(session: { user?: { id?: string } } | null): string | null {
