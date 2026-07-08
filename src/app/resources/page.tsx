@@ -22,6 +22,10 @@ import {
   Circle,
   Timer,
   ScanSearch,
+  Hourglass,
+  SmilePlus,
+  StickyNote,
+  Bell,
 } from 'lucide-react'
 import type { ResourceType } from '@/lib/resources'
 import { loadResources } from '@/lib/resources'
@@ -47,6 +51,10 @@ const TOOLS: ToolDef[] = [
   { slug: 'articles',         type: 'article_note',   name: 'Article Notes',       desc: 'Save articles with AI summaries and flashcards',    icon: Newspaper },
   { slug: 'race-pace',        type: 'race_pace',       name: 'Race Pace Calculator', desc: 'Split targets and PR tracking',                     icon: Timer },
   { slug: 'repo-review',      type: 'repo_review',     name: 'Repo Reviewer',       desc: 'AI code review for your GitHub repos',              icon: ScanSearch },
+  { slug: 'countdown',        type: 'countdown',       name: 'Meet/Game Countdown', desc: 'Upcoming events with live day counts',              icon: Hourglass },
+  { slug: 'checkin',          type: 'checkin',         name: 'Daily Check-in',      desc: 'Rate your day, track the trend',                    icon: SmilePlus },
+  { slug: 'notes',            type: 'note',            name: 'Quick Notes',         desc: 'Fast capture, no fuss',                             icon: StickyNote },
+  { slug: 'schedule',         type: 'bell_schedule',   name: 'Bell Schedule',       desc: 'Current period and countdown to the next',          icon: Bell },
 ]
 
 /* ─── Saved count fetcher ───────────────────────────────── */

@@ -20,6 +20,10 @@ const VALID_TYPES = new Set<ResourceType>([
   'prompt',
   'article_note',
   'repo_review',
+  'countdown',
+  'checkin',
+  'note',
+  'bell_schedule',
 ])
 
 function userId(session: { user?: { id?: string } } | null): string | null {

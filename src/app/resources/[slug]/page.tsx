@@ -25,6 +25,11 @@ import {
   ShieldAlert,
   Info,
   ExternalLink,
+  Hourglass,
+  SmilePlus,
+  StickyNote,
+  Bell,
+  Star,
 } from 'lucide-react'
 import { FlashcardGenerator } from '@/components/tools/flashcard-generator'
 import { GradeCalculator } from '@/components/tools/grade-calculator'
@@ -35,6 +40,10 @@ import { HabitStreaks } from '@/components/tools/habit-streaks'
 import { ArticleNotes, ArticleNotesSavedList } from '@/components/tools/article-notes'
 import { RacePaceCalculator } from '@/components/tools/race-pace-calculator'
 import { RepoReviewer } from '@/components/tools/repo-reviewer'
+import { CountdownTracker } from '@/components/tools/countdown-tracker'
+import { DailyCheckin } from '@/components/tools/daily-checkin'
+import { QuickNotes } from '@/components/tools/quick-notes'
+import { BellSchedule } from '@/components/tools/bell-schedule'
 import {
   type Resource,
   type ResourceType,
@@ -48,6 +57,10 @@ import {
   type ArticleNotePayload,
   type RepoReviewPayload,
   type RepoReviewIssue,
+  type CountdownPayload,
+  type CheckinPayload,
+  type NotePayload,
+  type BellSchedulePayload,
   loadResources,
   deleteResource,
   resourceSummary,
@@ -67,6 +80,10 @@ const SLUG_MAP: Record<string, ResourceType> = {
   'articles':         'article_note',
   'race-pace':        'race_pace',
   'repo-review':      'repo_review',
+  'countdown':        'countdown',
+  'checkin':          'checkin',
+  'notes':            'note',
+  'schedule':         'bell_schedule',
 }
 
 const SLUG_LABELS: Record<string, { name: string; icon: typeof BookOpen; desc: string }> = {
@@ -80,6 +97,10 @@ const SLUG_LABELS: Record<string, { name: string; icon: typeof BookOpen; desc: s
   'articles':         { name: 'Article Notes',       icon: Newspaper, desc: 'Save articles with AI summaries and flashcards' },
   'race-pace':        { name: 'Race Pace Calculator', icon: Timer, desc: 'Split targets and PR tracking' },
   'repo-review':      { name: 'Repo Reviewer',       icon: ScanSearch, desc: 'AI code review for your GitHub repos' },
+  'countdown':        { name: 'Meet/Game Countdown', icon: Hourglass, desc: 'Upcoming events with live day counts' },
+  'checkin':          { name: 'Daily Check-in',      icon: SmilePlus, desc: 'Rate your day, track the trend' },
+  'notes':            { name: 'Quick Notes',         icon: StickyNote, desc: 'Fast capture, no fuss' },
+  'schedule':         { name: 'Bell Schedule',       icon: Bell, desc: 'Current period and countdown to the next' },
 }
 
 /* ─── Helpers ──────────────────────────────────────────── */
@@ -338,6 +359,46 @@ function PayloadView({ resource }: { resource: Resource }) {
         </div>
       )
     }
+    case 'note': {
+      const np = p as unknown as NotePayload
+      return <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{np.content}</p>
+    }
+    case 'countdown': {
+      const cp = p as unknown as CountdownPayload
+      return (
+        <div className="space-y-1.5 text-xs">
+          <p className="text-foreground">{cp.event_date} · {cp.event_type.replace('_', ' ')}</p>
+          {cp.location && <p className="text-muted-foreground">{cp.location}</p>}
+          {cp.notes && <p className="text-muted-foreground">{cp.notes}</p>}
+        </div>
+      )
+    }
+    case 'checkin': {
+      const cp = p as unknown as CheckinPayload
+      return (
+        <div className="space-y-1.5">
+          <div className="flex gap-0.5">
+            {([1, 2, 3, 4, 5] as const).map((n) => (
+              <Star key={n} className={`h-3.5 w-3.5 ${n <= cp.rating ? 'fill-current text-primary' : 'text-border'}`} />
+            ))}
+          </div>
+          {cp.note && <p className="text-xs text-muted-foreground">{cp.note}</p>}
+        </div>
+      )
+    }
+    case 'bell_schedule': {
+      const bp = p as unknown as BellSchedulePayload
+      return (
+        <div className="space-y-1">
+          {bp.periods.map((per) => (
+            <div key={per.period} className="flex items-center justify-between text-xs">
+              <span className="text-foreground">P{per.period} {per.class_name}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">{per.start_time}–{per.end_time}</span>
+            </div>
+          ))}
+        </div>
+      )
+    }
     default:
       return <pre className="text-xs text-muted-foreground">{JSON.stringify(resource.payload, null, 2)}</pre>
   }
@@ -571,8 +632,15 @@ function ToolPageContent() {
         {resourceType === 'race_pace'    && <RacePaceCalculator onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'repo_review'  && <RepoReviewer       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'prompt'       && <PromptLibraryLauncher onSave={handleSave} />}
+        {resourceType === 'countdown'    && <CountdownTracker   onClose={() => {}} mode="page" onSave={handleSave} />}
+        {resourceType === 'checkin'      && <DailyCheckin       onClose={() => {}} mode="page" onSave={handleSave} />}
+        {resourceType === 'note'         && <QuickNotes         onClose={() => {}} mode="page" onSave={handleSave} />}
+        {resourceType === 'bell_schedule' && <BellSchedule      onClose={() => {}} mode="page" onSave={handleSave} />}
 
-        {/* Saved items */}
+        {/* Saved items — countdown, checkin, and bell_schedule render their own
+            list/read view above, so the generic reverse-chron browser is skipped
+            for those to avoid a redundant, differently-ordered duplicate. */}
+        {!(['countdown', 'checkin', 'bell_schedule'] as ResourceType[]).includes(resourceType) && (
         <div>
           {resourceType !== 'article_note' && (
             <div className="mb-3 flex items-center justify-between">
@@ -613,6 +681,7 @@ function ToolPageContent() {
             <SavedList type={resourceType} refreshKey={saveKey} source={resourceType === 'prompt' ? 'user' : undefined} />
           )}
         </div>
+        )}
       </main>
     </div>
   )

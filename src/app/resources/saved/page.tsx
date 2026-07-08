@@ -24,6 +24,11 @@ import {
   AlertTriangle,
   Info,
   ExternalLink,
+  Hourglass,
+  SmilePlus,
+  StickyNote,
+  Bell,
+  Star,
 } from 'lucide-react'
 import {
   type Resource,
@@ -38,6 +43,10 @@ import {
   type ArticleNotePayload,
   type RepoReviewPayload,
   type RepoReviewIssue,
+  type CountdownPayload,
+  type CheckinPayload,
+  type NotePayload,
+  type BellSchedulePayload,
   loadResources,
   deleteResource,
   resourceSummary,
@@ -54,6 +63,10 @@ const TABS: { id: ResourceType; label: string; icon: typeof BookOpen; slug: stri
   { id: 'race_pace',    label: 'Race Pace',    icon: Timer,        slug: 'race-pace' },
   { id: 'article_note', label: 'Articles',     icon: Newspaper,    slug: 'articles' },
   { id: 'repo_review',  label: 'Repo Reviews', icon: ScanSearch,   slug: 'repo-review' },
+  { id: 'countdown',    label: 'Countdowns',   icon: Hourglass,    slug: 'countdown' },
+  { id: 'checkin',      label: 'Check-ins',    icon: SmilePlus,    slug: 'checkin' },
+  { id: 'note',         label: 'Notes',        icon: StickyNote,   slug: 'notes' },
+  { id: 'bell_schedule', label: 'Schedule',    icon: Bell,         slug: 'schedule' },
 ]
 
 function shortDate(iso: string): string {
@@ -358,6 +371,46 @@ function PayloadView({ resource }: { resource: Resource }) {
               </ol>
             </div>
           )}
+        </div>
+      )
+    }
+    case 'note': {
+      const p = resource.payload as NotePayload
+      return <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{p.content}</p>
+    }
+    case 'countdown': {
+      const p = resource.payload as CountdownPayload
+      return (
+        <div className="space-y-1.5 text-xs">
+          <p className="text-foreground">{p.event_date} · {p.event_type.replace('_', ' ')}</p>
+          {p.location && <p className="text-muted-foreground">{p.location}</p>}
+          {p.notes && <p className="text-muted-foreground">{p.notes}</p>}
+        </div>
+      )
+    }
+    case 'checkin': {
+      const p = resource.payload as CheckinPayload
+      return (
+        <div className="space-y-1.5">
+          <div className="flex gap-0.5">
+            {([1, 2, 3, 4, 5] as const).map((n) => (
+              <Star key={n} className={`h-3.5 w-3.5 ${n <= p.rating ? 'fill-current text-primary' : 'text-border'}`} />
+            ))}
+          </div>
+          {p.note && <p className="text-xs text-muted-foreground">{p.note}</p>}
+        </div>
+      )
+    }
+    case 'bell_schedule': {
+      const p = resource.payload as BellSchedulePayload
+      return (
+        <div className="space-y-1">
+          {p.periods.map((per) => (
+            <div key={per.period} className="flex items-center justify-between text-xs">
+              <span className="text-foreground">P{per.period} {per.class_name}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">{per.start_time}–{per.end_time}</span>
+            </div>
+          ))}
         </div>
       )
     }

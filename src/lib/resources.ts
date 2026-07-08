@@ -1,6 +1,6 @@
 import type { ResourceSource } from './resource-source'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule'
 
 export interface Resource<T = unknown> {
   id: string
@@ -115,6 +115,29 @@ export interface RepoReviewPayload {
   partial_sample?: boolean
 }
 
+export interface CountdownPayload {
+  event_name: string
+  event_date: string
+  event_type: 'track_meet' | 'football_game' | 'other'
+  location?: string
+  notes?: string
+}
+
+export interface CheckinPayload {
+  date: string
+  rating: 1 | 2 | 3 | 4 | 5
+  note?: string
+}
+
+export interface NotePayload {
+  content: string
+  title?: string
+}
+
+export interface BellSchedulePayload {
+  periods: { period: number; class_name: string; start_time: string; end_time: string }[]
+}
+
 export async function saveResource(
   type: ResourceType,
   title: string,
@@ -141,6 +164,26 @@ export async function loadResources(type: ResourceType, source?: ResourceSource)
 
 export async function deleteResource(id: string): Promise<void> {
   await fetch(`/api/resources/${id}`, { method: 'DELETE' })
+}
+
+export async function updateResource(
+  id: string,
+  type: ResourceType,
+  title: string,
+  payload: unknown,
+): Promise<Resource | null> {
+  try {
+    const res = await fetch(`/api/resources/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, title, payload }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.resource ?? null
+  } catch {
+    return null
+  }
 }
 
 function fmtSecsShort(s: number): string {
@@ -194,6 +237,24 @@ export function resourceSummary(resource: Resource): string {
       const counts = { high: 0, medium: 0, low: 0 }
       for (const issue of rp.issues ?? []) counts[issue.severity]++
       return `${counts.high} high · ${counts.medium} medium · ${counts.low} low`
+    }
+    case 'countdown': {
+      const cp = p as unknown as CountdownPayload
+      const typeLabel = cp.event_type === 'track_meet' ? 'track meet' : cp.event_type === 'football_game' ? 'football game' : 'event'
+      return `${cp.event_date} · ${typeLabel}`
+    }
+    case 'checkin': {
+      const cp = p as unknown as CheckinPayload
+      return `${cp.rating}/5${cp.note ? ' · ' + cp.note.slice(0, 40) : ''}`
+    }
+    case 'note': {
+      const np = p as unknown as NotePayload
+      return np.content.slice(0, 60)
+    }
+    case 'bell_schedule': {
+      const bp = p as unknown as BellSchedulePayload
+      const n = (bp.periods ?? []).length
+      return `${n} period${n !== 1 ? 's' : ''}`
     }
     default:
       return ''
