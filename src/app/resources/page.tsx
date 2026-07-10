@@ -26,6 +26,10 @@ import {
   SmilePlus,
   StickyNote,
   Bell,
+  Aperture,
+  Briefcase,
+  Waypoints,
+  TerminalSquare,
 } from 'lucide-react'
 import type { ResourceType } from '@/lib/resources'
 import { loadResources } from '@/lib/resources'
@@ -56,6 +60,10 @@ const TOOLS: ToolDef[] = [
   { slug: 'checkin',          type: 'checkin',         name: 'Daily Check-in',      desc: 'Rate your day, track the trend',                    icon: SmilePlus },
   { slug: 'notes',            type: 'note',            name: 'Quick Notes',         desc: 'Fast capture, no fuss',                             icon: StickyNote },
   { slug: 'schedule',         type: 'bell_schedule',   name: 'Bell Schedule',       desc: 'Current period and countdown to the next',          icon: Bell },
+  { slug: 'briefing',         type: 'briefing',        name: 'Chief of Staff',      desc: 'Daily cross-tool briefing and suggested actions',   icon: Briefcase },
+  { slug: 'aperture',         type: 'aperture',        name: 'The Aperture',        desc: 'One question a day — an archive of your thinking',   icon: Aperture },
+  { slug: 'root-cause',       type: 'root_cause',      name: 'The Root Cause',      desc: '5-whys investigations grounded in your data',       icon: Waypoints },
+  { slug: 'terminal',         type: 'terminal_session', name: 'Live Terminal',      desc: 'Read-only sandboxed commands against your repos',    icon: TerminalSquare },
 ]
 
 /* ─── Saved count fetcher ───────────────────────────────── */

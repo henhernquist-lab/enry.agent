@@ -5,7 +5,6 @@ import type {
   CountdownPayload,
   RacePacePayload,
   PromptPayload,
-  WorkoutPayload,
   HabitStreakPayload,
   ArticleNotePayload,
 } from './resources'
@@ -251,12 +250,9 @@ function computeTrends(details: DetailRow[], activity: ToolActivity[]): Trends {
   const checkinTrajectory = trajectoryOf(checkinRatings.map((r) => r.rating))
 
   const raceTimes = byType(details, 'race_pace')
-    .map((r) => {
-      const p = r.payload as unknown as RacePacePayload
-      return { date: r.created_at.slice(0, 10), distance: p.distance, seconds: p.time_seconds, isPr: !!p.is_pr, mode: p.mode }
-    })
-    .filter((r) => r.mode === 'result')
-    .map(({ mode: _mode, ...rest }) => rest)
+    .map((r) => ({ row: r, p: r.payload as unknown as RacePacePayload }))
+    .filter(({ p }) => p.mode === 'result')
+    .map(({ row, p }) => ({ date: row.created_at.slice(0, 10), distance: p.distance, seconds: p.time_seconds, isPr: !!p.is_pr }))
     .slice(0, 10)
 
   const creationRateDelta = activity.reduce((sum, a) => sum + a.rateDelta, 0)

@@ -25,6 +25,11 @@ import {
   Bell,
   MessageSquarePlus,
   Loader2,
+  Aperture,
+  Briefcase,
+  Waypoints,
+  TerminalSquare,
+  AlertOctagon,
 } from 'lucide-react'
 
 interface NavItem {
@@ -57,6 +62,10 @@ const TOOL_ROUTES: NavItem[] = [
   { label: 'Daily Check-in', path: '/resources/checkin', icon: SmilePlus, keywords: 'mood rating' },
   { label: 'Quick Notes', path: '/resources/notes', icon: StickyNote, keywords: 'note memo' },
   { label: 'Bell Schedule', path: '/resources/schedule', icon: Bell, keywords: 'periods class schedule' },
+  { label: 'Chief of Staff', path: '/resources/briefing', icon: Briefcase, keywords: 'briefing daily observations actions' },
+  { label: 'The Aperture', path: '/resources/aperture', icon: Aperture, keywords: 'question daily reflection thinking' },
+  { label: 'The Root Cause', path: '/resources/root-cause', icon: Waypoints, keywords: 'failure investigation 5 whys' },
+  { label: 'Live Terminal', path: '/resources/terminal', icon: TerminalSquare, keywords: 'terminal shell command repo git' },
 ]
 
 interface QuickResult {
@@ -79,6 +88,8 @@ const ACTIONS: ActionItem[] = [
   { label: 'Log a workout', icon: Dumbbell, run: (router) => router.push('/resources/workout') },
   { label: 'Start a repo review', icon: ScanSearch, run: (router) => router.push('/resources/repo-review') },
   { label: 'Generate flashcards', icon: BookOpen, run: (router) => router.push('/resources/flashcards') },
+  { label: 'Something went wrong', icon: AlertOctagon, run: (router) => router.push('/resources/root-cause?start=1') },
+  { label: 'Open terminal', icon: TerminalSquare, run: () => window.dispatchEvent(new Event('enry:open-terminal')) },
   { label: 'View saved items', icon: Archive, run: (router) => router.push('/resources/saved') },
 ]
 

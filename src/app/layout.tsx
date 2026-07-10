@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth'
 import { AmbientBackground } from '@/components/ambient-background'
 import { CommandPalette, CommandPaletteHint } from '@/components/command-palette'
 import { PresenceIndicator } from '@/components/presence-indicator'
+import { TerminalOverlay } from '@/components/terminal/terminal-overlay'
 import './globals.css'
 
 const spaceGrotesk = Space_Grotesk({
@@ -72,6 +73,7 @@ export default async function RootLayout({
           <CommandPalette />
           <CommandPaletteHint />
           <PresenceIndicator />
+          <TerminalOverlay />
         </SessionProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
