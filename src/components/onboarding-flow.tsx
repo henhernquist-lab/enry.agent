@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, ChevronRight, Pencil, ArrowLeft, User, BookOpen, Dumbbell, Apple, Clock, Sliders, X } from 'lucide-react'
+import { Check, ChevronRight, Pencil, ArrowLeft, User, BookOpen, Dumbbell, Apple, Clock, Sliders, X, Loader2, AlertCircle } from 'lucide-react'
 import type { UserProfile, PriorityKey } from '@/lib/user-profile'
 import { createDefaultProfile, saveProfile } from '@/lib/user-profile'
 
@@ -264,10 +264,14 @@ function SummaryCard({
   profile,
   onEdit,
   onConfirm,
+  saving,
+  saveError,
 }: {
   profile: UserProfile
   onEdit: (key: keyof UserProfile | 'priorities') => void
   onConfirm: () => void
+  saving: boolean
+  saveError: boolean
 }) {
   const sections: { title: string; icon: React.ElementType; fields: { label: string; value: string; key: keyof UserProfile | 'priorities' }[] }[] = [
     {
@@ -355,17 +359,48 @@ function SummaryCard({
         ))}
       </div>
 
-      <motion.button
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.99 }}
-        onClick={onConfirm}
-        className="mt-6 w-full rounded-lg border border-primary bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-[0_0_20px_rgba(0,255,102,0.2)]"
-      >
-        <span className="flex items-center justify-center gap-2">
-          <Check className="h-4 w-4" />
-          Looks Good — Start Using enry
-        </span>
-      </motion.button>
+      <div className="mt-6 space-y-3">
+        {saveError && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-xs text-destructive"
+          >
+            <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+            <span>Failed to save — check your connection and try again.</span>
+          </motion.div>
+        )}
+        <motion.button
+          whileHover={saving ? {} : { scale: 1.01 }}
+          whileTap={saving ? {} : { scale: 0.99 }}
+          onClick={onConfirm}
+          disabled={saving}
+          className={`w-full rounded-lg border px-6 py-3 text-sm font-semibold transition-all ${
+            saveError
+              ? 'border-destructive/60 bg-destructive/10 text-destructive hover:bg-destructive/20'
+              : 'border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_20px_rgba(0,255,102,0.2)]'
+          } disabled:opacity-70`}
+        >
+          <span className="flex items-center justify-center gap-2">
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : saveError ? (
+              <>
+                <AlertCircle className="h-4 w-4" />
+                Retry
+              </>
+            ) : (
+              <>
+                <Check className="h-4 w-4" />
+                Looks Good — Start Using enry
+              </>
+            )}
+          </span>
+        </motion.button>
+      </div>
     </motion.div>
   )
 }
@@ -377,6 +412,8 @@ export function OnboardingFlow({ open, onComplete, onClose, onSkip }: Onboarding
   const [profile, setProfile] = useState<UserProfile>(createDefaultProfile())
   const [direction, setDirection] = useState(1) // 1 = forward, -1 = backward
   const [editingField, setEditingField] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(false)
 
   const currentQuestion = QUESTIONS[step]
   const isPriorityStep = step === QUESTIONS.length // Last step is priority ranking
@@ -434,6 +471,8 @@ export function OnboardingFlow({ open, onComplete, onClose, onSkip }: Onboarding
   }, [])
 
   const handleConfirm = useCallback(async () => {
+    setSaving(true)
+    setSaveError(false)
     const completed = {
       ...profile,
       setupComplete: true,
@@ -443,6 +482,8 @@ export function OnboardingFlow({ open, onComplete, onClose, onSkip }: Onboarding
     const ok = await saveProfile(completed)
     if (!ok) {
       console.error('[onboarding] Failed to save completed profile — keeping modal open for retry')
+      setSaving(false)
+      setSaveError(true)
       return // Don't close modal — user can retry
     }
     console.log('[onboarding] Profile saved successfully on completion')
@@ -462,6 +503,8 @@ export function OnboardingFlow({ open, onComplete, onClose, onSkip }: Onboarding
         setDirection(1)
         setProfile(createDefaultProfile())
         setEditingField(null)
+        setSaving(false)
+        setSaveError(false)
       }, 0)
     }
   }, [open])
@@ -640,6 +683,8 @@ export function OnboardingFlow({ open, onComplete, onClose, onSkip }: Onboarding
                   profile={profile}
                   onEdit={handleEdit}
                   onConfirm={handleConfirm}
+                  saving={saving}
+                  saveError={saveError}
                 />
               </motion.div>
             )}
