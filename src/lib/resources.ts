@@ -1,7 +1,7 @@
 import type { ResourceSource } from './resource-source'
 import { emitResourceSaved } from './resource-events'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session'
 
 export interface Resource<T = unknown> {
   id: string
@@ -147,6 +147,76 @@ export interface UploadedFilePayload {
   uploaded_at: string
 }
 
+export interface AperturePayload {
+  question: string
+  answer?: string
+  answered_at?: string
+  date: string // ISO date (YYYY-MM-DD), one per day
+  context_used: string[]
+}
+
+export interface BriefingObservation {
+  text: string
+  sources: string[]
+}
+
+export interface BriefingAction {
+  text: string
+  reason: string
+  completed: boolean
+}
+
+export interface BriefingFlag {
+  text: string
+  severity: 'low' | 'medium' | 'high'
+}
+
+export interface BriefingPayload {
+  date: string
+  observations: BriefingObservation[]
+  suggested_actions: BriefingAction[]
+  flag?: BriefingFlag
+  generated_at: string
+  refresh_count?: number
+}
+
+export interface CausalLayer {
+  layer: number
+  cause: string
+  evidence: string[]
+  accepted_by_user: boolean
+}
+
+export interface FailureSignature {
+  description: string
+  embedding?: number[]
+}
+
+export interface RootCausePayload {
+  failure_description: string
+  failure_date: string
+  domain: 'training' | 'academic' | 'project' | 'other'
+  causal_chain: CausalLayer[]
+  root_cause: string
+  preventions: string[]
+  failure_signature: FailureSignature
+  resolved_at: string
+}
+
+export interface TerminalCommand {
+  cmd: string
+  output: string
+  timestamp: string
+  exit_code: number
+}
+
+export interface TerminalSessionPayload {
+  repo: string
+  commands: TerminalCommand[]
+  session_start: string
+  session_end?: string
+}
+
 export async function saveResource(
   type: ResourceType,
   title: string,
@@ -271,6 +341,25 @@ export function resourceSummary(resource: Resource): string {
     case 'uploaded_file': {
       const up = p as unknown as UploadedFilePayload
       return `${up.file_type} · ${up.extracted_summary.slice(0, 50)}`
+    }
+    case 'aperture': {
+      const ap = p as unknown as AperturePayload
+      return ap.answer ? `${ap.date} · answered` : `${ap.date} · unanswered`
+    }
+    case 'briefing': {
+      const bp = p as unknown as BriefingPayload
+      const obs = (bp.observations ?? []).length
+      const acts = (bp.suggested_actions ?? []).length
+      return `${obs} observation${obs !== 1 ? 's' : ''} · ${acts} action${acts !== 1 ? 's' : ''}`
+    }
+    case 'root_cause': {
+      const rc = p as unknown as RootCausePayload
+      return `${rc.domain} · ${(rc.causal_chain ?? []).length} layers`
+    }
+    case 'terminal_session': {
+      const ts = p as unknown as TerminalSessionPayload
+      const n = (ts.commands ?? []).length
+      return `${ts.repo} · ${n} command${n !== 1 ? 's' : ''}`
     }
     default:
       return ''

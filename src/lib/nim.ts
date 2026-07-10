@@ -1,0 +1,46 @@
+import { createOpenAI } from '@ai-sdk/openai'
+
+// Shared NVIDIA NIM client factory. The default model is DeepSeek V4 Pro; the
+// Aperture, Chief of Staff, and Root Cause features all route through it.
+//
+// IMPORTANT: NIM only speaks the /v1/chat/completions API, so callers must use
+// `.chat(model)` on the returned client, never the client directly (which
+// defaults to the Responses API).
+
+export const DEFAULT_NIM_MODEL = 'deepseek-ai/deepseek-v4-pro'
+
+const MODEL_KEYS: Record<string, () => string> = {
+  'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
+  'minimax/minimax-m3': () => process.env.MINIMAX_API_KEY ?? '',
+  'qwen/qwen3.5-122b-a10b': () => process.env.QWEN_API_KEY ?? '',
+  'z-ai/glm-5.2': () => process.env.GLM_API_KEY ?? '',
+}
+
+export function nimClientFor(model: string = DEFAULT_NIM_MODEL) {
+  const apiKey = (MODEL_KEYS[model] ?? MODEL_KEYS[DEFAULT_NIM_MODEL])()
+  if (!apiKey) throw new Error(`No API key configured for NIM model ${model}`)
+  return createOpenAI({ baseURL: 'https://integrate.api.nvidia.com/v1', apiKey })
+}
+
+// Strips markdown code fences that models sometimes wrap JSON in, then parses.
+export function parseJsonLoose<T>(text: string): T | null {
+  const cleaned = text
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim()
+  try {
+    return JSON.parse(cleaned) as T
+  } catch {
+    // Fall back to the first balanced-looking {...} block.
+    const match = cleaned.match(/\{[\s\S]*\}/)
+    if (match) {
+      try {
+        return JSON.parse(match[0]) as T
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}

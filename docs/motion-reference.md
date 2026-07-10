@@ -391,6 +391,240 @@ ambient background spec exactly.
 
 ---
 
+## 6. CSS Transition vs. Framer Motion — Decision Guide
+
+Not everything needs Framer Motion. CSS transitions are free (zero JS
+overhead) and the right call for most micro-interactions. Use this flowchart:
+
+```
+Is the animation…
+  ├── A hover state (color, border, bg, shadow)?
+  │     → CSS transition. 120ms, ease [0.4, 0, 0.6, 1].
+  │
+  ├── An enter/exit animation (element mounts/unmounts)?
+  │     → Framer Motion (AnimatePresence). CSS can't animate unmount.
+  │
+  ├── A layout change (reorder, expand, tab switch)?
+  │     → Framer Motion layoutId or layout prop.
+  │
+  ├── A loading state (spinner, skeleton, shimmer)?
+  │     → CSS animation (@keyframes). Spinner is a mechanical loop —
+  │       Framer Motion is overkill for indefinite rotation.
+  │
+  ├── A route/page transition?
+  │     → Framer Motion (AnimatePresence in template.tsx).
+  │
+  ├── A simple toggle (show/hide with opacity)?
+  │     → CSS transition if it stays in the DOM. Framer Motion if
+  │       it conditionally renders (mounts/unmounts).
+  │
+  └── A data visualization update (chart, progress bar)?
+        → Framer Motion. Animate from previous value to new value.
+```
+
+### CSS transition syntax (canonical)
+
+```css
+/* Hover interactions — in globals.css or Tailwind arbitrary values */
+.transition-hover {
+  transition: color 120ms cubic-bezier(0.4, 0, 0.6, 1),
+              background-color 120ms cubic-bezier(0.4, 0, 0.6, 1),
+              border-color 120ms cubic-bezier(0.4, 0, 0.6, 1),
+              box-shadow 120ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+```
+
+**Current codebase issue:** Most hover transitions use Tailwind's default
+`transition-colors` which defaults to `150ms cubic-bezier(0.4, 0, 0.2, 1)`.
+This is close but not exact. Update to `120ms` explicitly or use the
+`duration-120` utility. The 30ms difference is imperceptible in isolation
+but contributes to a slightly heavier feel across the whole UI.
+
+### What should NOT use Framer Motion
+
+| Use case | Wrong approach | Right approach |
+| :--- | :--- | :--- |
+| Spinner | `<motion.div animate={{ rotate: 360 }}>` | CSS `@keyframes spin { 100% { transform: rotate(360deg) } }` with `animation: spin 1s linear infinite` |
+| Cursor blink | `<motion.span animate={{ opacity: [1,0,1] }}>` | CSS `@keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: 0 } }` with `animation: blink 600ms step-end infinite` |
+| Hover glow | `<motion.div whileHover={{ ... }}>` | CSS `transition: box-shadow 120ms …` with `:hover` |
+| Indeterminate progress bar | `<motion.div animate={{ x: … }}>` | CSS `@keyframes indeterminate { … }` — it never ends |
+
+**Rule of thumb:** If the animation has no React state dependency (doesn't
+respond to mount/unmount, doesn't transition between values, doesn't respond
+to gestures) — use CSS. Framer Motion's value is in state-driven animation.
+
+---
+
+## 7. Case Study: The Flashcard Flip
+
+The flashcard flip (`flashcard-generator.tsx`) is the only 3D transform in
+the app. It's worth studying because it's the exception that proves every
+other rule in this document.
+
+### Why it works
+
+1. **The interaction IS the animation.** A flashcard without a flip is just
+two static cards. The `rotateY` transform IS the feature. Unlike a decorative
+spin on a button, removing this animation removes the UX.
+
+2. **It's scoped to one component.** The `perspective` and `transform-style:
+preserve-3d` are isolated to the card container. They don't bleed into the
+rest of the layout.
+
+3. **It's triggered by explicit user action.** Clicking "Flip" is a deliberate
+act. The animation never auto-plays, never triggers on hover, never appears
+as a page load effect.
+
+4. **It's fast.** 300ms per flip direction. Long enough to track the rotation,
+short enough to not wait for it.
+
+### Implementation spec
+
+```tsx
+// Card container — establish 3D context
+<motion.div
+  style={{ perspective: 800 }}
+>
+  {/* Inner card — the flipping element */}
+  <motion.div
+    animate={{ rotateY: flipped ? 180 : 0 }}
+    transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
+    style={{ transformStyle: 'preserve-3d' }}
+  >
+    {/* Front face */}
+    <div style={{ backfaceVisibility: 'hidden' }}>
+      Question: {card.question}
+    </div>
+    {/* Back face — pre-rotated so it reads correctly when flipped */}
+    <div style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+      Answer: {card.answer}
+    </div>
+  </motion.div>
+</motion.div>
+```
+
+### Reduced motion fallback
+
+```tsx
+// No rotateY. Front and back swap via simple opacity crossfade.
+{prefersReduced ? (
+  <div>
+    {flipped ? card.answer : card.question}
+  </div>
+) : (
+  // … full 3D flip as above
+)}
+```
+
+### What NOT to do
+
+- Don't add `rotateX` flips. One axis is enough.
+- Don't animate the card scale during flip. It's a card, not a door.
+- Don't add a "bounce" at the end of the flip. The card stops flat.
+- Don't add sound effects. This is a tool, not a game.
+
+---
+
+## 8. Chat Streaming Animation Guidance
+
+The chat interface is the most animation-dense surface in the app. Messages
+enter, text streams, cursors blink, status dots pulse. These animations must
+feel like the app, not afterthoughts.
+
+### Message enter
+
+| Behavior | Spec |
+| :--- | :--- |
+| **User message** | Instant render. No animation. The user just typed it — they know it's there. |
+| **Assistant message** | Fade in from opacity 0 → 1 over 200ms as the first token arrives. No slide, no scale. The message appears where it belongs. |
+| **System message** (errors, status) | Opacity 0 → 1, 150ms. Minimal — these are functional, not conversational. |
+
+### Streaming text
+
+- **No typing indicator dots.** The streaming text itself IS the indicator.
+- **Cursor:** Blinking `|` at the end of the streamed text. CSS animation
+  (not Framer Motion): `animation: blink 600ms step-end infinite`. The cursor
+  appears as soon as streaming starts and disappears when streaming ends.
+- **Text reveal:** Text appears character-by-character via the streaming API.
+  No additional reveal animation. Don't double-animate the text.
+
+### Status indicator (presence pulse)
+
+The status dot already implements the spec from `presence-indicator-spec.md`.
+Key points:
+
+| State | Pulse behavior |
+| :--- | :--- |
+| **Online (idle)** | Slow breath: opacity cycles between 0.7 and 1.0 over 3s. `ease: [0.4, 0, 0.6, 1]`. |
+| **Thinking** | Faster pulse: opacity 0.3 → 1.0 over 1s. Includes a subtle scale pulse (1 → 1.15 → 1). |
+| **Executing** | Quickest pulse: opacity 0.2 → 1.0 over 500ms. |
+| **Offline / error** | Static, reduced opacity (0.4). No animation. |
+
+Current implementation in `presence-indicator.tsx` and `status-indicator.tsx`
+is correct — do not modify.
+
+### Activity feed (right panel)
+
+| Behavior | Spec |
+| :--- | :--- |
+| **New activity entry** | Slide in from right: `x: 10 → 0`, opacity 0 → 1, 150ms. Spring `{ stiffness: 300, damping: 28 }`. |
+| **Oldest entry removal** | Fade out over 100ms. No slide — the list shifts up via layout animation. |
+| **Streaming text preview** | The live text in the "Streaming" section updates in real time with no animation. Instant text replacement as new tokens arrive. |
+
+### Chat input
+
+| Behavior | Spec |
+| :--- | :--- |
+| **Focus glow** | `box-shadow` transition on the input container: 0 → 0 0 0 2px primary/30. 200ms, `ease: [0, 0, 0.2, 1]`. CSS transition, not Framer Motion. |
+| **Send button** | Scale 1 → 0.97 → 1 on click. Spring `{ stiffness: 300, damping: 28 }`. |
+| **Attachment chip** (file) | Scale 0.9 → 1, opacity 0 → 1, 150ms. Spring entrance. |
+| **Stop button** (during streaming) | Appears instantly (no animation). The user wants to stop — don't make them wait. |
+
+---
+
+## 9. Batch B Migration Checklist
+
+Issues found in the current codebase that should be fixed during the motion
+pass. Each item references this spec for the correct behavior.
+
+### Critical (animation correctness)
+
+- [ ] **`automations-section.tsx:87-89`** — animates `height: 0 → 'auto'` on expand/collapse. Replace with `opacity`-only animation. The content renders at full height, only opacity changes. (See §3: Anti-Patterns → Animated height from 0)
+- [ ] **`daily-briefing-card.tsx:18-19`** — same issue: `height: 0 → 'auto'`. Replace with opacity.
+- [ ] **`prompts/page.tsx:219-221`** — same issue: `height: 0 → 'auto'` on prompt detail expand. Replace with opacity.
+- [ ] **`article-notes.tsx:382-384`** — same issue: `height: 0 → 'auto'` on article detail expand.
+- [ ] **`countdown-tracker.tsx:218-220`** — same issue: `height: 0 → 'auto'` on event detail expand.
+- [ ] **Several AnimatePresence usages missing `mode="wait"`** — check `habit-streaks.tsx`, `daily-checkin.tsx`, `meal-logger.tsx`, `right-panel.tsx`. Add `mode="wait"` to prevent content flash. (See §3: Anti-Patterns → AnimatePresence without mode="wait")
+
+### Warning (inconsistent easing)
+
+- [ ] **`nutrition-tracker-panel.tsx:88`** — uses `ease: 'easeOut'` instead of explicit `[0, 0, 0.2, 1]`. Replace. (See §2: Easing Curves)
+- [ ] **`prompts/page.tsx:222`** — uses `ease: 'easeInOut'` instead of `[0.2, 0, 0, 1]`. Replace.
+- [ ] **`login/page.tsx:169`** — uses `ease: 'easeOut'` with 800ms duration. This is the login page (not tool UI), so it's acceptable, but consider reducing to 600ms and using explicit `[0, 0, 0.2, 1]` for consistency.
+- [ ] **Codebase has 4 different spring configs** (`stiffness: 200/300/350/400`, `damping: 26/28/30`). Search all `type: 'spring'` usages and consolidate to `{ stiffness: 300, damping: 28 }`. (See §2: Spring configs)
+
+### Polish (minor improvements)
+
+- [ ] **`resources/page.tsx:226`** — page transition uses `x: 30` and `x: -30`. Duration is correct (implied by spring, ~250ms). Verify the spring config matches the canonical one.
+- [ ] **`resources/page.tsx:240-241`** — card stagger uses `delay: i * 0.07` (70ms). The spec says 35ms. Update to `i * 0.035` for a faster cascade.
+- [ ] **`onboarding-flow.tsx:94-95`** — progress bar animates `width: 0 → width: '${pct}%'`. This is a progress bar — it's the exception where width animation is correct (functional, not decorative). No change needed, but add a comment explaining why it's exempt.
+- [ ] **All tool components** — add `useReducedMotion()` fallbacks to any animation that doesn't already have one. `animated-number.tsx` and `presence-indicator.tsx` already handle this correctly. Audit the rest.
+- [ ] **`command-palette.tsx:140-141`** — uses CSS `data-[state=open]:animate-in` classes (Tailwind animate utilities). These don't use Framer Motion. The durations are correct (150ms via `duration-150`). No change needed for Batch B — the Tailwind-based approach is actually the right call for cmdk's built-in animation hooks.
+
+### Verification steps (after migration)
+
+1. Open the app and toggle `prefers-reduced-motion: reduce` in DevTools. Verify:
+   - No animations play (all instant)
+   - Ambient background (traces, bloom, noise) is hidden
+   - Flashcard flip uses opacity crossfade instead of rotateY
+2. Navigate between pages. Each transition should complete in ≤250ms.
+3. Open/close modals (onboarding, profile editor, tool modals). Each should complete in ≤200ms.
+4. Hover over interactive elements. Transitions should feel immediate (120ms).
+5. Stream a chat response. The cursor should blink at 600ms intervals. No typing dots.
+6. Check the resources grid — card stagger should feel fast (35ms per card).
+
+---
+
 ## Quick Reference Card
 
 ```

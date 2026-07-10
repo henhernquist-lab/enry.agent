@@ -127,7 +127,7 @@ export function MealLogger({ onClose, mode = 'modal', onSave }: MealLoggerProps)
             className={`h-full ${proteinBehind ? 'bg-warning' : 'bg-primary'}`}
             initial={{ width: 0 }}
             animate={{ width: `${proteinPct}%` }}
-            transition={{ duration: 0.6, ease: 'easeOut' }}
+            transition={{ duration: 0.6, ease: [0, 0, 0.2, 1] }}
           />
         </div>
         {proteinBehind && (
@@ -165,8 +165,7 @@ export function MealLogger({ onClose, mode = 'modal', onSave }: MealLoggerProps)
 
       {meals.length === 0 ? (
         <p className="py-4 text-center text-xs text-muted-foreground">No meals logged today. Start tracking above.</p>
-      ) : (
-        <AnimatePresence>
+      ) : (            <AnimatePresence mode="popLayout">
           {meals.map((meal) => (
             <motion.div key={meal.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
               className="flex items-center justify-between rounded border border-border/50 bg-surface-elevated/50 px-2.5 py-1.5 text-xs">

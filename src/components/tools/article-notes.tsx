@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import {
   Link2,
   Loader2,
@@ -285,6 +285,7 @@ interface ArticleNoteDetailProps {
 }
 
 export function ArticleNoteDetail({ resource, onStudyThis }: ArticleNoteDetailProps) {
+  const reduceMotion = useReducedMotion()
   const p = resource.payload as ArticleNotePayload
   const [revealed, setRevealed] = useState<Set<number>>(new Set())
 
@@ -376,12 +377,12 @@ export function ArticleNoteDetail({ resource, onStudyThis }: ArticleNoteDetailPr
             {p.flashcards.map((fc, i) => (
               <div key={i} className="rounded border border-border bg-surface-elevated p-3">
                 <p className="text-xs font-medium text-foreground">{fc.q}</p>
-                <AnimatePresence>
+                  <AnimatePresence mode="wait">
                   {revealed.has(i) && (
                     <motion.p
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
+                      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                      animate={reduceMotion ? { opacity: 1 } : { opacity: 1, height: 'auto' }}
+                      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
                       className="mt-1.5 text-xs text-muted-foreground"
                     >
                       {fc.a}
@@ -627,7 +628,7 @@ export function ArticleNotesSavedList({ refreshKey, onStudyAll, source = 'user',
         </p>
       ) : (
         <div className="space-y-2">
-          <AnimatePresence>
+            <AnimatePresence mode="popLayout">
             {displayed.map((r) => (
               <ArticleNoteCard
                 key={r.id}

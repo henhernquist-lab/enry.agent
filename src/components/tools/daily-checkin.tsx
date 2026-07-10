@@ -121,7 +121,7 @@ export function DailyCheckin({ onClose, mode = 'modal', onSave }: DailyCheckinPr
       ) : (
         <div className="space-y-1.5">
           <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">History</p>
-          <AnimatePresence>
+            <AnimatePresence mode="popLayout">
             {sorted.map((entry) => {
               const p = entry.payload as CheckinPayload
               return (

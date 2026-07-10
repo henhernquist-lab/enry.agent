@@ -1,6 +1,6 @@
 'use client'
 
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { X } from 'lucide-react'
 import type { DailyBriefing } from '@/lib/daily-briefing'
 
@@ -11,13 +11,14 @@ interface DailyBriefingCardProps {
 }
 
 export function DailyBriefingCard({ briefing, loading, onDismiss }: DailyBriefingCardProps) {
+  const reduceMotion = useReducedMotion()
   return (
     <AnimatePresence>
       {(loading || (briefing && !briefing.dismissed)) && (
         <motion.div
-          initial={{ opacity: 0, y: -10, height: 0 }}
-          animate={{ opacity: 1, y: 0, height: 'auto' }}
-          exit={{ opacity: 0, height: 0 }}
+          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -10 }}
+          animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+          exit={reduceMotion ? { opacity: 0 } : { opacity: 0 }}
           className="mx-auto mb-4 max-w-3xl overflow-hidden rounded border border-primary/30 bg-primary/5 px-4 py-3"
         >
           <div className="flex items-start gap-3">

@@ -223,7 +223,7 @@ function ResourcesContent() {
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -30 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
               className="relative z-10 h-full"
             >
               <div
@@ -239,7 +239,7 @@ function ResourcesContent() {
                       href={`/resources/${tool.slug}`}
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.07, type: 'spring', stiffness: 300, damping: 26 }}
+                      transition={{ delay: i * 0.035, type: 'spring', stiffness: 300, damping: 28 }}
                       className="group flex flex-col gap-5 rounded-lg border border-border bg-surface-secondary p-6 shadow-sm shadow-black/20 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md hover:shadow-black/30 lg:p-7"
                     >
                       <div className="flex items-start gap-4">

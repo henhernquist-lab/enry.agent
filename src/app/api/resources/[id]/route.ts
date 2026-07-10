@@ -82,6 +82,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       .catch(console.error)
   }
 
+  // Re-embed an answered Aperture on question + answer so the archive is
+  // semantically searchable by what Henry actually wrote back.
+  if (type === 'aperture') {
+    const ap = payload as { question?: string; answer?: string }
+    const text = [ap.question, ap.answer].filter(Boolean).join('\n\n')
+    if (text) {
+      generateEmbedding(text)
+        .then((embedding) => {
+          if (embedding) supabase.from('resources').update({ embedding }).eq('id', id).then()
+        })
+        .catch(console.error)
+    }
+  }
+
   return Response.json({ resource: data })
 }
 

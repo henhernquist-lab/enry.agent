@@ -26,10 +26,11 @@ import { ProfileEditor } from '@/components/profile-editor'
 import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
 import { SystemStatusStrip } from '@/components/home/system-status-strip'
 import { ActivityChart } from '@/components/home/activity-chart'
+import { TodayBand } from '@/components/home/today-band'
 
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
-  const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'executing' | 'idle'>('online')
+  const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'streaming' | 'idle'>('online')
 
   // Conversations list (no messages — loaded separately on demand)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -216,18 +217,21 @@ export default function EnryAgentPage() {
           onClose={() => setShowProfileEditor(false)}
         />
 
-        <CenterPanel
-          key={activeId}
-          agentStatus={agentStatus}
-          setAgentStatus={setAgentStatus}
-          initialMessages={activeMessages}
-          conversationCount={conversations.length}
-          lastResponseMs={lastResponseMs}
-          onSaveMessages={handleSaveMessages}
-          onActivity={handleActivity}
-          onStreamUpdate={setStreamingText}
-          onModelChange={setCurrentModel}
-        />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {sessionStatus === 'authenticated' && <TodayBand />}
+          <CenterPanel
+            key={activeId}
+            agentStatus={agentStatus}
+            setAgentStatus={setAgentStatus}
+            initialMessages={activeMessages}
+            conversationCount={conversations.length}
+            lastResponseMs={lastResponseMs}
+            onSaveMessages={handleSaveMessages}
+            onActivity={handleActivity}
+            onStreamUpdate={setStreamingText}
+            onModelChange={setCurrentModel}
+          />
+        </div>
 
         <RightPanel
           agentStatus={agentStatus}

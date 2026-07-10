@@ -85,7 +85,7 @@ export function NutritionTrackerPanel({ onClose }: { onClose: () => void }) {
             className={`h-full ${proteinBehind ? 'bg-warning' : 'bg-primary'}`}
             initial={{ width: 0 }}
             animate={{ width: `${proteinPct}%` }}
-            transition={{ duration: 0.6, ease: 'easeOut' }}
+            transition={{ duration: 0.6, ease: [0, 0, 0.2, 1] }}
           />
         </div>
         {proteinBehind && (
@@ -119,7 +119,7 @@ export function NutritionTrackerPanel({ onClose }: { onClose: () => void }) {
         <p className="py-4 text-center text-xs text-muted-foreground">No meals logged today. Start tracking above.</p>
       ) : (
         <div className="space-y-1.5">
-          <AnimatePresence>
+          <AnimatePresence mode="popLayout">
             {today.map((entry) => (
               <motion.div
                 key={entry.id}

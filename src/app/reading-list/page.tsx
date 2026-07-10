@@ -335,7 +335,7 @@ function ReadingListContent() {
               <motion.div
                 layoutId="cat-indicator"
                 className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-foreground"
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 28 }}
               />
             )}
           </button>
@@ -361,7 +361,7 @@ function ReadingListContent() {
                   <motion.div
                     layoutId="cat-indicator"
                     className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary"
-                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 28 }}
                   />
                 )}
               </button>

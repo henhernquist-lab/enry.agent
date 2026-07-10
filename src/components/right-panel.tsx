@@ -9,7 +9,7 @@ import {
 import type { ActivityEvent } from '@/lib/chat-history'
 
 interface RightPanelProps {
-  agentStatus: 'online' | 'thinking' | 'executing' | 'idle'
+  agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
   activities: ActivityEvent[]
   streamingText: string
   currentModel: string
@@ -35,7 +35,7 @@ function formatTime(ts: number): string {
 }
 
 export function RightPanel({ agentStatus, activities, streamingText, currentModel, children }: RightPanelProps) {
-  const isActive = agentStatus === 'thinking' || agentStatus === 'executing'
+  const isActive = agentStatus === 'thinking' || agentStatus === 'streaming'
 
   return (
     <aside className="flex h-full w-[320px] flex-col border-l border-border bg-surface-secondary">
@@ -52,7 +52,7 @@ export function RightPanel({ agentStatus, activities, streamingText, currentMode
               <motion.span
                 className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-primary' : 'bg-muted-foreground'}`}
                 animate={isActive ? { opacity: [1, 0.4, 1], scale: [1, 1.4, 1] } : {}}
-                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: [0.05, 0.7, 0.1, 1] }}
               />
               {isActive && (
                 <span className="absolute h-3 w-3 rounded-full border border-primary/30" />
@@ -84,7 +84,7 @@ export function RightPanel({ agentStatus, activities, streamingText, currentMode
           <div className="relative">
             <div className="absolute bottom-0 left-[7px] top-0 w-px bg-border" />
             <div className="space-y-3">
-              <AnimatePresence initial={false}>
+              <AnimatePresence mode="popLayout" initial={false}>
                 {activities.map((item) => {
                   const Icon = iconMap[item.type]
                   return (

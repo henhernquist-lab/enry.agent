@@ -37,8 +37,8 @@ import type { ActivityEvent } from '@/lib/chat-history'
 import { loadProfile, profileToSystemPrompt } from '@/lib/user-profile'
 
 interface CenterPanelProps {
-  agentStatus: 'online' | 'thinking' | 'executing' | 'idle'
-  setAgentStatus: (status: 'online' | 'thinking' | 'executing' | 'idle') => void
+  agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
+  setAgentStatus: (status: 'online' | 'thinking' | 'streaming' | 'idle') => void
   initialMessages?: UIMessage[]
   conversationCount: number
   lastResponseMs: number | null
@@ -158,7 +158,7 @@ export function CenterPanel({
 
   useEffect(() => {
     if (status === 'submitted') setAgentStatus('thinking')
-    else if (status === 'streaming') setAgentStatus('executing')
+    else if (status === 'streaming') setAgentStatus('streaming')
     else setAgentStatus('online')
   }, [status, setAgentStatus])
 
@@ -399,7 +399,7 @@ export function CenterPanel({
               <motion.div
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
+                transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 28 }}
                 className="mb-6"
               >
                 <EnryLogo size="lg" />

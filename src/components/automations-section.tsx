@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import {
   Zap,
   Plus,
@@ -32,6 +32,7 @@ interface AutomationsSectionProps {
 }
 
 export function AutomationsSection({ onAutomationsChange }: AutomationsSectionProps) {
+  const reduceMotion = useReducedMotion()
   const [automations, setAutomations] = useState<Automation[]>(() => loadAutomations())
   const [expanded, setExpanded] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -84,11 +85,10 @@ export function AutomationsSection({ onAutomationsChange }: AutomationsSectionPr
       <AnimatePresence>
         {expanded && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0 }}
+            animate={reduceMotion ? { opacity: 1 } : { opacity: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.2 }}
           >
             {/* Create Button */}
             <button

@@ -37,7 +37,7 @@ export function AgentMark({ size = 'sm', animated = false }: AgentMarkProps) {
             '0 0 0px rgba(0,255,102,0)',
           ],
         }}
-        transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+        transition={{ duration: 1.6, repeat: Infinity, ease: [0.05, 0.7, 0.1, 1] }}
       >
         E
       </motion.span>

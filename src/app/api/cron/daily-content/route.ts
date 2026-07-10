@@ -3,6 +3,8 @@ import { generateEmbedding } from '@/lib/embeddings'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { processArticleUrl } from '@/lib/article-processing'
 import { generatePrompt, CATEGORY_ROTATION } from '@/lib/prompt-generation'
+import { generateApertureForUser } from '@/lib/aperture'
+import { generateBriefingForUser } from '@/lib/chief-of-staff'
 import type { ArticleNotePayload, PromptPayload } from '@/lib/resources'
 import articleSources from '@/data/article-sources.json'
 
@@ -42,7 +44,26 @@ export async function GET(req: Request) {
   const promptResults = await generateDailyPrompts(uid)
   const articleResults = await generateDailyArticles(uid)
 
-  return Response.json({ ok: true, prompts: promptResults, articles: articleResults })
+  // The Aperture generates first, then the Chief of Staff briefing (which can
+  // reference the day's question). Each is independently guarded so a failure
+  // in one never blocks the other — log, skip, retry next day.
+  let aperture: { status: string; id?: string } = { status: 'skipped' }
+  try {
+    aperture = await generateApertureForUser(uid)
+  } catch (err) {
+    console.error('[cron/daily-content] aperture threw:', err)
+    aperture = { status: 'error' }
+  }
+
+  let briefing: { status: string; id?: string } = { status: 'skipped' }
+  try {
+    briefing = await generateBriefingForUser(uid, 'cron')
+  } catch (err) {
+    console.error('[cron/daily-content] briefing threw:', err)
+    briefing = { status: 'error' }
+  }
+
+  return Response.json({ ok: true, prompts: promptResults, articles: articleResults, aperture, briefing })
 }
 
 async function generateDailyPrompts(uid: string): Promise<Array<{ category: string; status: string; id?: string }>> {

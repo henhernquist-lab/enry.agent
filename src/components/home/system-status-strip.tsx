@@ -35,7 +35,7 @@ function Dot({ pulsing }: { pulsing: boolean }) {
             initial={{ scale: 1, opacity: 0.6 }}
             animate={{ scale: 3.5, opacity: 0 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.6, ease: 'easeOut' }}
+            transition={{ duration: 0.6, ease: [0, 0, 0.2, 1] }}
           />
         )}
       </AnimatePresence>

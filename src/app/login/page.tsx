@@ -166,13 +166,13 @@ export default function LoginPage() {
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
+          transition={{ duration: 0.6, ease: [0, 0, 0.2, 1] }}
           className="flex flex-col items-center gap-6"
         >
           <motion.div
             className="flex h-20 w-20 items-center justify-center rounded-xl border border-primary/30 bg-surface-secondary"
             animate={{ boxShadow: ['0 0 8px rgba(0,255,102,0.1)', '0 0 24px rgba(0,255,102,0.25)', '0 0 8px rgba(0,255,102,0.1)'] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{ duration: 3, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
           >
             <svg viewBox="0 0 24 24" fill="none" className="h-12 w-12" stroke="currentColor" strokeWidth="1.5">
               <path d="M12 2L2 7L12 12L22 7L12 2Z" className="fill-primary/20 stroke-primary" />

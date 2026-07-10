@@ -219,7 +219,7 @@ export function PromptCard({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
             className="overflow-hidden"
           >
             <div className="border-t border-border/50 px-4 pb-4 pt-3">
@@ -329,7 +329,7 @@ function PromptFormModal({
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 20 }}
-        transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 28 }}
         className="w-full max-w-2xl rounded-t border border-border bg-surface-secondary p-6 sm:rounded"
       >
         <div className="mb-5 flex items-center justify-between">
@@ -742,7 +742,7 @@ function PromptsContent() {
             <Library className="h-3 w-3" />
             Main
             {activeTab === 'main' && (
-              <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-foreground" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+              <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-foreground" transition={{ type: 'spring', stiffness: 300, damping: 28 }} />
             )}
           </button>
 
@@ -755,7 +755,7 @@ function PromptsContent() {
             <Sun className="h-3 w-3" />
             Daily
             {activeTab === 'daily' && (
-              <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+              <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" transition={{ type: 'spring', stiffness: 300, damping: 28 }} />
             )}
           </button>
 
@@ -768,7 +768,7 @@ function PromptsContent() {
             <BookMarked className="h-3 w-3" />
             Mine
             {activeTab === 'mine' && (
-              <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+              <motion.div layoutId="tab-indicator" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 300, damping: 28 }} />
             )}
           </button>
         </div>

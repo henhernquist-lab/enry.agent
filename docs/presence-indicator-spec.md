@@ -313,7 +313,155 @@ to auto-revert to `online` after 3 seconds.
 
 ---
 
-## 8. Comparison: Current vs. Proposed
+## 8. Competitive Reference Notes
+
+### What the best products teach us
+
+| Product | What they do well | What to steal | What to avoid |
+| :--- | :--- | :--- | :--- |
+| **Superhuman** | Read-status dots are utility, not decoration. The dot exists because information exists — it's earned, not ambient. | High-contrast, binary clarity. The dot is either present or absent. No "almost there" ambiguity. | Don't copy the read-status positioning (overlaid on content). enry.agent's indicator is system chrome, not inline metadata. |
+| **Claude.ai** | Deliberately slow, organic cadence. The "thinking" state feels contemplative, not laggy. Uses descriptive verbs ("recombobulating") to humanize wait time. | The easing curve philosophy: slow, rhythmic, organic. The `[0.05, 0.7, 0.1, 1]` curve in §4 is our version of this. | Don't copy the whimsical text labels. "Recombobulating" works for Claude's brand; enry.agent is a tool, not a personality. Our labels are factual: "Thinking," "Responding." |
+| **ChatGPT** | Streaming cursor + pulsing dot creates a strong "live output" signal. The thinking indicator is a prelude to the cursor — they're a matched pair. | The thinking → streaming transition as a distinct rhythm change. Our asymmetric shimmer (§4, Streaming) borrows from this. | Don't copy the fast, mechanical pulse. ChatGPT's rhythm is high-energy because it's consumer-facing. enry.agent is a workspace tool — calmer is better. |
+| **Raycast** | Consistent, predictable component library. Every extension's loading state uses the same indicator — users never guess what a loader means. | Standardization as UX. One indicator, one set of rules, enforced everywhere. This spec is our version of Raycast's component library. | Don't copy Raycast's achromatic minimalism entirely. Raycast can be grayscale because it's an OS-level launcher. enry.agent benefits from subtle color to distinguish the 4 states. |
+| **macOS menu bar** | Icons that exist in peripheral vision without demanding attention. Monochrome, small, fixed position. | Positioning: fixed chrome, not overlaid on content. The indicator is part of the app frame. | Don't copy the icon density. macOS menu bar packs 15+ icons — we have exactly one. |
+| **Smart home status LEDs** | A single LED communicates device state: solid = on, slow blink = connecting, fast blink = error. Universally understood. | The LED metaphor: the indicator is hardware-like. It's infrastructure, not UI. This is the north star for the "chatbot test" in §5. | Don't copy the hardware aesthetic literally. No simulated LED bezel, no pixelated glow. The LED metaphor is conceptual, not visual. |
+
+### The throughline
+
+Across all references, the best indicators share three traits:
+1. **They're peripheral.** You see them without looking at them.
+2. **They're predictable.** Same rhythm, same position, every time.
+3. **They earn attention.** When they change, it means something changed.
+
+An indicator that's always moving is noise. An indicator that never moves
+is dead. The sweet spot — the entire point of this spec — is an indicator
+that moves just enough to prove it's alive, and changes its rhythm just
+enough to prove it's doing something useful.
+
+---
+
+## 9. The Presence Family
+
+enry.agent has three presence signals. They serve different purposes at
+different distances from the user's focus. They should feel like the same
+system, not three unrelated decorations.
+
+### Signal 1: Status Dot (sidebar header + center panel)
+
+**What it is:** The `StatusIndicator` component. 8px dot + ring + glow +
+text label. Rendered in the left sidebar header and center panel top bar.
+
+**When the user sees it:** At rest — scanning the app chrome, switching
+conversations, navigating tools. This is the primary presence signal.
+
+**States:** All 4 (Online, Thinking, Streaming, Error).
+
+**Distance from focus:** Medium. It's in the chrome, not the content area.
+The user glances at it when they want to know what the agent is doing.
+
+### Signal 2: Presence Dot (bottom-right corner)
+
+**What it is:** The `PresenceIndicator` component. 8px dot + subtle ring +
+static glow. Fixed to the bottom-right corner, always visible on
+authenticated pages. No text label (shows "Idle" / "Working…" on hover only).
+
+**When the user sees it:** In peripheral vision. Most of the time, the user
+doesn't consciously register it. It's the most "ambient" of the three signals.
+
+**States:** Binary only — idle vs. busy. No Thinking/Streaming/Error
+distinction. This is intentional: the corner dot is too far from focus to
+carry 4-state information. It signals "alive" (slow breath) or "working"
+(faster, brighter breath).
+
+**Distance from focus:** Far. Peripheral vision only. If the user is looking
+directly at it, they're not working.
+
+**Current implementation note:** The existing `presence-indicator.tsx` already
+gets this right. It uses `useAgentBusy()` for the binary state and has a
+hover tooltip for the text label. The timing values (§4) should be applied
+here: 3.5s breath for idle, 1.1s breath for busy. The existing easing is
+already correct (`[0.05, 0.7, 0.1, 1]`).
+
+### Signal 3: Agent Mark (chat avatar)
+
+**What it is:** The `AgentMark` component. The "E" monogram that appears as
+the agent's avatar in the chat. When the agent is streaming, the "E" gets a
+subtle pulsing green text-shadow glow.
+
+**When the user sees it:** When reading or composing chat messages. This is
+the closest presence signal to the user's focus — it's literally in the
+conversation.
+
+**States:** Binary — animated (streaming) or static (all other states).
+
+**Distance from focus:** Near. In the content area, adjacent to the message
+bubble. This is the most "interactive" feeling signal because it's part of
+the conversation flow.
+
+**Current implementation note:** The existing `agent-mark.tsx` uses
+`animate={{ textShadow: [...] }}` with a 1.6s cycle and `easeInOut`. This
+should be updated to use the explicit `[0.05, 0.7, 0.1, 1]` easing from the
+motion reference for consistency.
+
+### How they work together
+
+```
+┌─────────────────────────────────────────────────┐
+│  Sidebar          Chat area          Right panel│
+│                                                   │
+│  [● Online]  ←─ Signal 1 (Status Dot)            │
+│                Detailed: 4 states, text label     │
+│                                                   │
+│                User: "Write a function…"          │
+│                                                   │
+│                [E] ←─ Signal 3 (Agent Mark)       │
+│                Glowing = streaming                │
+│                                                   │
+│                                    [●] ←─ Signal 2│
+│                              (Presence Dot)       │
+│                              Binary: idle/busy    │
+└─────────────────────────────────────────────────┘
+```
+
+When the agent is thinking → streaming:
+- Signal 1: Dot turns cyan, ring speeds up, label changes to "Thinking"
+- Signal 2: Dot brightens, breath speeds up from 3.5s to 1.1s
+- Signal 3: (No change yet — agent hasn't started responding in chat)
+
+When tokens start streaming:
+- Signal 1: Dot turns green, asymmetric shimmer, label changes to "Responding"
+- Signal 2: Stays at busy rhythm (1.1s breath)
+- Signal 3: "E" monogram textShadow glow begins pulsing
+
+When streaming completes:
+- Signal 1: Returns to Online (green, slow breath)
+- Signal 2: Returns to idle (3.5s breath, dimmer glow)
+- Signal 3: Glow stops, returns to static
+
+All three transitions should feel like one system breathing — not three
+independent animations starting and stopping at different times.
+
+### Rules for the family
+
+1. **No indicator contradicts another.** If Signal 1 says "Online," Signal 2
+   must not be pulsing at the busy rhythm. They share the same source of truth
+   (`useAgentBusy()` / agent status).
+2. **No indicator draws more attention than it earns.** Signal 3 (agent mark)
+   is closest to focus, so its animation is the most restrained — a subtle
+   glow, not a pulse. Signal 1 is in the chrome, so it carries the most
+   information (4 states). Signal 2 is peripheral, so it's binary.
+3. **Reduced motion affects all three.** When `prefers-reduced-motion` is set,
+   all animations stop across all three signals. Colors and text labels still
+   change, but no breathing, pulsing, or glowing animates.
+4. **Error state is Signal 1 only.** The error flash (two red pulses, §4)
+   only plays on the Status Dot (Signal 1). The Presence Dot (Signal 2)
+   doesn't flash red — it stays at idle. The Agent Mark (Signal 3) doesn't
+   change. Error is a system-level event, not a conversation-level event,
+   so it belongs in the system chrome, not the chat area.
+
+---
+
+## 10. Comparison: Current vs. Proposed
 
 | Aspect | Current (status-indicator.tsx) | Proposed |
 | :--- | :--- | :--- |

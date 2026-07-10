@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Hourglass, Plus, Trash2, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { ModalShell } from '@/components/automations/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
@@ -161,7 +161,7 @@ export function CountdownTracker({ onClose, mode = 'modal', onSave }: CountdownT
           ) : (
             <div className="space-y-1.5">
               <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Upcoming</p>
-              <AnimatePresence>
+              <AnimatePresence mode="popLayout">
                 {upcoming.map((ev) => {
                   const p = ev.payload as CountdownPayload
                   const n = daysAway(p.event_date)
@@ -215,9 +215,9 @@ export function CountdownTracker({ onClose, mode = 'modal', onSave }: CountdownT
                   return (
                     <motion.div
                       key={ev.id}
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
                       className="flex items-center justify-between rounded border border-border/50 bg-surface-elevated/40 px-3 py-2 text-xs"
                     >
                       <div className="min-w-0 flex-1">

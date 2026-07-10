@@ -44,7 +44,7 @@ export function EnryLogo({ size = 'md', animated = true }: EnryLogoProps) {
           transition={{
             duration: 2.5,
             repeat: Infinity,
-            ease: 'easeInOut',
+            ease: [0.2, 0, 0, 1],
           }}
         >
           <svg viewBox="0 0 24 24" fill="none" className={svgSizes[size]} stroke="currentColor" strokeWidth="1.5">

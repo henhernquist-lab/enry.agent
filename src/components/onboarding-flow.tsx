@@ -93,7 +93,7 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
           className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.4, ease: 'easeOut' }}
+          transition={{ duration: 0.4, ease: [0, 0, 0.2, 1] }}
         />
       </div>
     </div>
@@ -634,7 +634,7 @@ export function OnboardingFlow({ open, onComplete, onClose, onSkip }: Onboarding
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
               >
                 <SummaryCard
                   profile={profile}

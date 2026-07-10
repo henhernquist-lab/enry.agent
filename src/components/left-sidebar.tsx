@@ -11,7 +11,7 @@ import Link from 'next/link'
 import { MessageSquarePlus, MessageSquare, Trash2, Download, X, User, Wrench, BookMarked, BookOpen } from 'lucide-react'
 
 interface LeftSidebarProps {
-  agentStatus: 'online' | 'thinking' | 'executing' | 'idle'
+  agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
   conversations: Conversation[]
   activeId: string
   onNewChat: () => void

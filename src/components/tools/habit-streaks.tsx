@@ -167,7 +167,7 @@ export function HabitStreaks({ onClose, mode = 'modal', onSave }: HabitStreaksPr
       ) : (
         <div className="space-y-2">
           <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Today — {today}</p>
-          <AnimatePresence>
+          <AnimatePresence mode="popLayout">
             {habits.map((habit) => {
               const streak = calculateStreak(logs, habit.id)
               const done = checkedToday.has(habit.id)
