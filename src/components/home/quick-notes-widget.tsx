@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { StickyNote, Loader2, Plus, ChevronRight, X } from 'lucide-react'
 import { saveResource, loadResources, deleteResource, type Resource, type NotePayload } from '@/lib/resources'
 
@@ -64,13 +65,13 @@ export function QuickNotesWidget({ onSave }: QuickNotesWidgetProps) {
           </h3>
         </div>
         {hasNotes && (
-          <a
+          <Link
             href="/resources/notes"
             className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground hover:text-primary transition-colors"
           >
             see all
             <ChevronRight className="h-3 w-3" />
-          </a>
+          </Link>
         )}
       </div>
 

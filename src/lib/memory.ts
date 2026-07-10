@@ -1,45 +1,15 @@
 import { supabase } from './supabase'
-
-const NIM_BASE_URL = 'https://integrate.api.nvidia.com/v1'
-const EMBEDDING_MODEL = 'baai/bge-m3'
-const EMBEDDING_DIMENSIONS = 1024
+import { generateEmbedding as sharedGenerateEmbedding, type EmbeddingInputType } from './embeddings'
 
 /**
- * Generate a 1024-dim embedding vector using NVIDIA NIM (baai/bge-m3).
+ * Thin throw-on-failure wrapper over the shared embeddings lib so this
+ * module's existing catch-based error handling keeps working. (This used to
+ * be a duplicate bge-m3 implementation on a different API key; both copies
+ * broke at once when bge-m3 started 500ing — one implementation now.)
  */
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.QWEN_API_KEY
-  if (!apiKey) {
-    throw new Error('QWEN_API_KEY is not set — required for NVIDIA NIM embeddings')
-  }
-
-  const res = await fetch(`${NIM_BASE_URL}/embeddings`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: EMBEDDING_MODEL,
-      input: [text],
-      encoding_format: 'float',
-    }),
-  })
-
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`NIM embedding request failed (${res.status}): ${body}`)
-  }
-
-  const data = await res.json()
-  const embedding = data?.data?.[0]?.embedding
-
-  if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_DIMENSIONS) {
-    throw new Error(
-      `Expected ${EMBEDDING_DIMENSIONS}-dim embedding, got ${embedding?.length ?? 'null'}`,
-    )
-  }
-
+export async function generateEmbedding(text: string, inputType: EmbeddingInputType = 'passage'): Promise<number[]> {
+  const embedding = await sharedGenerateEmbedding(text, inputType)
+  if (!embedding) throw new Error('NIM embedding request failed')
   return embedding
 }
 
@@ -89,7 +59,7 @@ export async function searchMemories(
 ): Promise<{ results: Array<{ id: string; content: string; similarity: number }>; error?: string }> {
   try {
     console.log('[memory] Searching memories for google_id:', googleId, 'query:', query.slice(0, 80))
-    const embedding = await generateEmbedding(query)
+    const embedding = await generateEmbedding(query, 'query')
 
     const { data, error } = await supabase.rpc('match_memories', {
       query_embedding: JSON.stringify(embedding),

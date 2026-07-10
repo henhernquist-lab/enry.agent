@@ -29,20 +29,20 @@ export async function POST(req: Request) {
     const query = typeof body.query === 'string' ? body.query.trim() : ''
     if (!query || query.length < 2) return Response.json({ results: [] })
 
-    const embedding = await generateEmbedding(query)
+    const embedding = await generateEmbedding(query, 'query')
     if (!embedding) return Response.json({ results: [] })
 
     const [promptsRes, articlesRes] = await Promise.all([
       supabase.rpc('match_prompts', {
         query_embedding: embedding,
         match_user_id: uid,
-        match_threshold: 0.3,
+        match_threshold: 0.25,
         match_count: 5,
       }),
       supabase.rpc('match_article_notes', {
         query_embedding: embedding,
         match_user_id: uid,
-        match_threshold: 0.3,
+        match_threshold: 0.25,
         match_count: 5,
       }),
     ])

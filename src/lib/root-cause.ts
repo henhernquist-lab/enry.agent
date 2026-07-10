@@ -330,7 +330,10 @@ export interface SignatureMatch {
   similarity: number
 }
 
-const MATCH_THRESHOLD = 0.86
+// Calibrated for nv-embedqa-e5-v5's score scale (its cosine similarities run
+// well below bge-m3's; 0.86 would never match). Signatures are compared
+// passage-to-passage; same-shape failures land roughly 0.6+. Tune with data.
+const MATCH_THRESHOLD = 0.6
 
 export async function matchPastFailures(
   userId: string,

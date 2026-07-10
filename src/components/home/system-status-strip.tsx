@@ -61,13 +61,15 @@ export function SystemStatusStrip() {
     }
   }, [])
 
-  // Initial load + 60s poll + refetch on window focus.
+  // Initial load + 60s poll + refetch on window focus. The initial fetch is
+  // deferred a tick so the effect body itself doesn't set state synchronously.
   useEffect(() => {
-    refetch()
+    const initial = setTimeout(refetch, 0)
     const interval = setInterval(refetch, 60_000)
     const onFocus = () => refetch()
     window.addEventListener('focus', onFocus)
     return () => {
+      clearTimeout(initial)
       clearInterval(interval)
       window.removeEventListener('focus', onFocus)
     }

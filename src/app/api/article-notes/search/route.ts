@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const source = (typeof body.source === 'string' ? body.source : null) as ResourceSource | null
   if (!query) return Response.json({ error: 'query required' }, { status: 400 })
 
-  const embedding = await generateEmbedding(query)
+  const embedding = await generateEmbedding(query, 'query')
 
   if (!embedding) {
     let fallback = supabase
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   const { data, error } = await supabase.rpc('match_article_notes', {
     query_embedding: embedding,
     match_user_id: uid,
-    match_threshold: 0.3,
+    match_threshold: 0.25,
     match_count: 15,
   })
 

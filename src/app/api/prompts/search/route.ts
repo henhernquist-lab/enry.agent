@@ -21,7 +21,7 @@ export async function POST(req: Request) {
 
   if (!query) return Response.json({ error: 'query required' }, { status: 400 })
 
-  const embedding = await generateEmbedding(query)
+  const embedding = await generateEmbedding(query, 'query')
 
   if (!embedding) {
     // Fallback to recency listing — embedding unavailable
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   const { data, error } = await supabase.rpc('match_prompts', {
     query_embedding: embedding,
     match_user_id: uid,
-    match_threshold: 0.3,
+    match_threshold: 0.25,
     match_count: 15,
   })
 
