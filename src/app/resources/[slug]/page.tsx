@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
@@ -411,10 +411,24 @@ function SavedList({ type, refreshKey, source }: { type: ResourceType; refreshKe
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Resource | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [pulsingId, setPulsingId] = useState<string | null>(null)
+  const knownIdsRef = useRef<Set<string> | null>(null)
 
   useEffect(() => {
     setLoading(true)
-    loadResources(type, source).then((r) => { setItems(r); setLoading(false) })
+    loadResources(type, source).then((r) => {
+      const prevIds = knownIdsRef.current
+      if (prevIds) {
+        const freshlyAdded = r.find((item) => !prevIds.has(item.id))
+        if (freshlyAdded) {
+          setPulsingId(freshlyAdded.id)
+          setTimeout(() => setPulsingId(null), 650)
+        }
+      }
+      knownIdsRef.current = new Set(r.map((item) => item.id))
+      setItems(r)
+      setLoading(false)
+    })
   }, [type, source, refreshKey])
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -439,7 +453,7 @@ function SavedList({ type, refreshKey, source }: { type: ResourceType; refreshKe
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelected(item)}
-              className="group flex cursor-pointer items-center justify-between rounded border border-border/60 bg-surface-elevated/60 px-3 py-2 transition-all duration-200 hover:border-primary/30 hover:bg-surface-elevated hover:shadow-sm"
+              className={`group flex cursor-pointer items-center justify-between rounded border border-border/60 bg-surface-elevated/60 px-3 py-2 transition-all duration-200 hover:border-primary/30 hover:bg-surface-elevated hover:shadow-sm ${item.id === pulsingId ? 'pulse-confirm' : ''}`}
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium text-foreground">{item.title}</p>

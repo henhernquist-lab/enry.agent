@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Timer, Flag, Trophy, Loader2 } from 'lucide-react'
 import { ModalShell } from '@/components/automations/modal-shell'
@@ -157,7 +158,8 @@ interface RacePaceCalculatorProps {
 }
 
 export function RacePaceCalculator({ onClose, mode = 'modal', onSave }: RacePaceCalculatorProps) {
-  const [tab, setTab] = useState<InternalMode>('calculator')
+  const searchParams = useSearchParams()
+  const [tab, setTab] = useState<InternalMode>(searchParams.get('tab') === 'log' ? 'log' : 'calculator')
 
   // Calculator state
   const [calcDist, setCalcDist] = useState('400m')

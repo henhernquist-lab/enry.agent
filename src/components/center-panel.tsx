@@ -32,6 +32,7 @@ import { FileAttachmentCard } from './file-attachment-card'
 import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploads'
 import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/attachment-marker'
 import { loadToggles } from '@/lib/builtin-automations'
+import { setAgentBusy } from '@/lib/agent-presence'
 import type { ActivityEvent } from '@/lib/chat-history'
 import { loadProfile, profileToSystemPrompt } from '@/lib/user-profile'
 
@@ -160,6 +161,24 @@ export function CenterPanel({
     else if (status === 'streaming') setAgentStatus('executing')
     else setAgentStatus('online')
   }, [status, setAgentStatus])
+
+  // Report chat activity to the global presence indicator. busyRef guards
+  // against double-counting setAgentBusy's increment/decrement across the
+  // 'submitted' -> 'streaming' transition, which is busy=true both times.
+  const busyRef = useRef(false)
+  useEffect(() => {
+    const nowBusy = status === 'submitted' || status === 'streaming'
+    if (nowBusy !== busyRef.current) {
+      setAgentBusy(nowBusy)
+      busyRef.current = nowBusy
+    }
+  }, [status])
+
+  // True unmount-only cleanup — releases the busy count if the component
+  // goes away mid-stream (e.g. navigating away).
+  useEffect(() => () => {
+    if (busyRef.current) setAgentBusy(false)
+  }, [])
 
   useEffect(() => {
     if (status !== 'streaming') return

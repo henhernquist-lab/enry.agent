@@ -4,6 +4,8 @@ import { Analytics } from '@vercel/analytics/next'
 import { SessionProvider } from 'next-auth/react'
 import { auth } from '@/lib/auth'
 import { AmbientBackground } from '@/components/ambient-background'
+import { CommandPalette, CommandPaletteHint } from '@/components/command-palette'
+import { PresenceIndicator } from '@/components/presence-indicator'
 import './globals.css'
 
 const spaceGrotesk = Space_Grotesk({
@@ -67,6 +69,9 @@ export default async function RootLayout({
         <AmbientBackground />
         <SessionProvider session={session}>
           {children}
+          <CommandPalette />
+          <CommandPaletteHint />
+          <PresenceIndicator />
         </SessionProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

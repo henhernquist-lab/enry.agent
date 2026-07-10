@@ -290,3 +290,44 @@
     animation: none !important;
   }
 }
+
+/* ── Button tap feedback ────────────────────────────────────────────
+   Global, CSS-only physical feedback — deliberately not Framer Motion.
+   Only 4 files use whileTap today; retrofitting Motion onto ~39 files'
+   worth of plain <button> elements would be high-effort, high-regression-
+   risk churn for a purely tactile detail. One rule, works everywhere,
+   including future buttons, without touching a single component. */
+@media (prefers-reduced-motion: no-preference) {
+  button:not(:disabled) {
+    transition: transform 0.1s cubic-bezier(0.4, 0, 0.6, 1);
+  }
+  button:not(:disabled):active {
+    transform: scale(0.98);
+  }
+}
+
+/* ── Save confirmation pulse ────────────────────────────────────────
+   Applied to a list/card row right after it's saved — one 600ms border+
+   background glow, then it's gone. Reuses the primary token only. */
+@keyframes pulse-confirm {
+  0% {
+    border-color: var(--border);
+    background-color: transparent;
+  }
+  30% {
+    border-color: rgba(0, 255, 102, 0.5);
+    background-color: rgba(0, 255, 102, 0.08);
+  }
+  100% {
+    border-color: var(--border);
+    background-color: transparent;
+  }
+}
+.pulse-confirm {
+  animation: pulse-confirm 0.6s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-confirm {
+    animation: none;
+  }
+}

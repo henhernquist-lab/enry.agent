@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import type { ResourceType } from '@/lib/resources'
 import { loadResources } from '@/lib/resources'
+import { AnimatedNumber } from '@/components/animated-number'
 
 /* ─── Tool Definitions ─────────────────────────────────── */
 
@@ -175,7 +176,7 @@ function ResourcesContent() {
             </span>
             {totalSaved > 0 && (
               <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
-                {totalSaved} saved
+                <AnimatedNumber value={totalSaved} /> saved
               </span>
             )}
           </div>
@@ -195,7 +196,7 @@ function ResourcesContent() {
           <h1 className="font-display text-2xl font-bold leading-tight tracking-tight text-foreground">Tools &amp; Resources</h1>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
             {TOOLS.length} tools ·{' '}
-            {countsLoading ? '…' : `${totalSaved} saved across all tools`}
+            {countsLoading ? '…' : <><AnimatedNumber value={totalSaved} /> saved across all tools</>}
           </p>
         </div>
 
@@ -268,7 +269,7 @@ function ResourcesContent() {
                           </div>
                         ) : count > 0 ? (
                           <span className="font-mono text-[10px] text-muted-foreground">
-                            {count} saved
+                            <AnimatedNumber value={count} /> saved
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground/50">

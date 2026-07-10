@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { StickyNote, Loader2, Check } from 'lucide-react'
 import { ModalShell } from '@/components/automations/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
@@ -22,6 +22,13 @@ export function QuickNotes({ onClose, mode = 'modal', onSave }: QuickNotesProps)
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const contentRef = useRef<HTMLTextAreaElement>(null)
+
+  // Autofocus on the dedicated page route — matches the command palette's
+  // "New note" action landing with the cursor ready to type.
+  useEffect(() => {
+    if (mode === 'page') contentRef.current?.focus()
+  }, [mode])
 
   const handleSave = async () => {
     if (!content.trim()) return
@@ -55,6 +62,7 @@ export function QuickNotes({ onClose, mode = 'modal', onSave }: QuickNotesProps)
         className={inputCls}
       />
       <textarea
+        ref={contentRef}
         value={content}
         onChange={(e) => setContent(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave() }}
