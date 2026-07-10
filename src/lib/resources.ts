@@ -1,7 +1,7 @@
 import type { ResourceSource } from './resource-source'
 import { emitResourceSaved } from './resource-events'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation'
 
 export interface Resource<T = unknown> {
   id: string
@@ -217,6 +217,20 @@ export interface TerminalSessionPayload {
   session_end?: string
 }
 
+export interface GhostMessage {
+  role: 'user' | 'ghost'
+  content: string
+}
+
+export interface GhostConversationPayload {
+  window_start: string
+  window_end: string
+  window_label: string
+  messages: GhostMessage[]
+  corpus_resource_ids: string[]
+  created_at: string
+}
+
 export async function saveResource(
   type: ResourceType,
   title: string,
@@ -360,6 +374,11 @@ export function resourceSummary(resource: Resource): string {
       const ts = p as unknown as TerminalSessionPayload
       const n = (ts.commands ?? []).length
       return `${ts.repo} · ${n} command${n !== 1 ? 's' : ''}`
+    }
+    case 'ghost_conversation': {
+      const gc = p as unknown as GhostConversationPayload
+      const n = (gc.messages ?? []).length
+      return `${gc.window_label} · ${n} message${n !== 1 ? 's' : ''}`
     }
     default:
       return ''

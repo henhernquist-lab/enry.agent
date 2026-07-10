@@ -30,6 +30,7 @@ import {
   Waypoints,
   TerminalSquare,
   AlertOctagon,
+  Ghost,
 } from 'lucide-react'
 
 interface NavItem {
@@ -66,6 +67,7 @@ const TOOL_ROUTES: NavItem[] = [
   { label: 'The Aperture', path: '/resources/aperture', icon: Aperture, keywords: 'question daily reflection thinking' },
   { label: 'The Root Cause', path: '/resources/root-cause', icon: Waypoints, keywords: 'failure investigation 5 whys' },
   { label: 'Live Terminal', path: '/resources/terminal', icon: TerminalSquare, keywords: 'terminal shell command repo git' },
+  { label: 'Ghost Mode', path: '/resources/ghost', icon: Ghost, keywords: 'past henry time window persona ghost' },
 ]
 
 interface QuickResult {
@@ -89,6 +91,7 @@ const ACTIONS: ActionItem[] = [
   { label: 'Start a repo review', icon: ScanSearch, run: (router) => router.push('/resources/repo-review') },
   { label: 'Generate flashcards', icon: BookOpen, run: (router) => router.push('/resources/flashcards') },
   { label: 'Something went wrong', icon: AlertOctagon, run: (router) => router.push('/resources/root-cause?start=1') },
+  { label: 'Talk to Past Henry', icon: Ghost, run: (router) => router.push('/resources/ghost') },
   { label: 'Open terminal', icon: TerminalSquare, run: () => window.dispatchEvent(new Event('enry:open-terminal')) },
   { label: 'View saved items', icon: Archive, run: (router) => router.push('/resources/saved') },
 ]

@@ -29,6 +29,7 @@ const VALID_TYPES = new Set<ResourceType>([
   'briefing',
   'root_cause',
   'terminal_session',
+  'ghost_conversation',
 ])
 
 function userId(session: { user?: { id?: string } } | null): string | null {

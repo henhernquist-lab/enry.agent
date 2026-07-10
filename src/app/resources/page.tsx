@@ -30,6 +30,7 @@ import {
   Briefcase,
   Waypoints,
   TerminalSquare,
+  Ghost,
 } from 'lucide-react'
 import type { ResourceType } from '@/lib/resources'
 import { loadResources } from '@/lib/resources'
@@ -64,6 +65,7 @@ const TOOLS: ToolDef[] = [
   { slug: 'aperture',         type: 'aperture',        name: 'The Aperture',        desc: 'One question a day — an archive of your thinking',   icon: Aperture },
   { slug: 'root-cause',       type: 'root_cause',      name: 'The Root Cause',      desc: '5-whys investigations grounded in your data',       icon: Waypoints },
   { slug: 'terminal',         type: 'terminal_session', name: 'Live Terminal',      desc: 'Read-only sandboxed commands against your repos',    icon: TerminalSquare },
+  { slug: 'ghost',            type: 'ghost_conversation', name: 'Ghost Mode',       desc: 'Talk to who you were — a past window of yourself',   icon: Ghost },
 ]
 
 /* ─── Saved count fetcher ───────────────────────────────── */
