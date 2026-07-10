@@ -1,7 +1,7 @@
 import type { ResourceSource } from './resource-source'
 import { emitResourceSaved } from './resource-events'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action'
 
 export interface Resource<T = unknown> {
   id: string
@@ -231,6 +231,18 @@ export interface GhostConversationPayload {
   created_at: string
 }
 
+export type GitHubActionType = 'create_file' | 'update_file' | 'create_branch' | 'create_pr' | 'create_repo'
+
+export interface GitHubActionPayload {
+  action: GitHubActionType
+  repo: string
+  branch?: string
+  file_path?: string
+  pr_url?: string
+  summary: string
+  timestamp: string
+}
+
 export async function saveResource(
   type: ResourceType,
   title: string,
@@ -379,6 +391,10 @@ export function resourceSummary(resource: Resource): string {
       const gc = p as unknown as GhostConversationPayload
       const n = (gc.messages ?? []).length
       return `${gc.window_label} · ${n} message${n !== 1 ? 's' : ''}`
+    }
+    case 'github_action': {
+      const ga = p as unknown as GitHubActionPayload
+      return `${ga.action} · ${ga.repo}`
     }
     default:
       return ''

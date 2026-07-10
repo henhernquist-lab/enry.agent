@@ -5,6 +5,10 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { saveMemory, searchMemories } from '@/lib/memory'
 import { listRepos, listIssues, createIssue, getFileContent } from '@/lib/github'
+import { createBranch, createFile, updateFile, createPR, createRepo } from '@/lib/github-write'
+import { resolveResourceUserId } from '@/lib/resource-user'
+import { supabase } from '@/lib/supabase'
+import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
   'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
@@ -36,6 +40,10 @@ export async function POST(req: Request) {
   const session = await auth()
   const googleId    = (session?.user as { id?: string })?.id
   const githubToken = (session as { githubToken?: string } | null)?.githubToken
+  const uid = await resolveResourceUserId(googleId ?? null)
+  if (!uid) {
+    console.warn('[chat/route] Could not resolve user UUID for audit trail — googleId:', googleId)
+  }
 
   const modelMessages = await convertToModelMessages(messages)
 
@@ -134,6 +142,18 @@ The following tools are available to you in this session:
 - github_read_file — read file or directory contents from a repo
 - github_create_issue — create a repo issue
 - github_list_issues — list repo issues
+- github_create_branch — create a new branch off the default branch
+- github_create_file — create a new file on a branch
+- github_update_file — edit an existing file on a branch
+- github_create_pull_request — open a PR from a head branch into base
+- github_create_repo — create a brand new repository
+
+GITHUB WRITE SAFETY RAILS — these are non-negotiable, enforced server-side:
+1. NEVER commit directly to main/master. All file changes go to a new branch first, then a PR.
+2. Every write tool has a "confirm" parameter. You MUST first call with confirm=false to see a preview. Present the preview to Henry. WAIT for his explicit "yes" / "go ahead" / "do it" before calling again with confirm=true. The tool returns a preview when called with confirm=false — only confirm=true actually executes.
+3. You cannot delete files, force-push, delete branches, or rewrite history — those capabilities don't exist.
+4. Every successful write is logged to an audit trail (github_action resource).
+5. If Henry says no or asks for changes, do not execute. Adjust and re-preview.
 
 Bound strictly to the above. If a task needs a tool not on this list, state that instead of improvising.
 
@@ -281,6 +301,198 @@ ${userProfile ? `\n${userProfile}` : ''}`,
               url: i.html_url,
             })),
           }
+        },
+      }),
+
+      // ─── GitHub write tools ──────────────────────────────────
+
+      github_create_branch: tool({
+        description: 'Create a new branch off the default branch. Use before making file changes — never commit directly to main/master.',
+        inputSchema: z.object({
+          owner: z.string().describe('Repository owner'),
+          repo: z.string().describe('Repository name'),
+          branch_name: z.string().describe('Name of the new branch, e.g. "fix/readme-typo"'),
+          confirm: z.boolean().describe('Set to false first to preview the action. Only set to true after Henry explicitly confirms.'),
+        }),
+        execute: async ({ owner, repo, branch_name, confirm }) => {
+          if (!githubToken) {
+            return { status: 'error', error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          if (!confirm) {
+            return {
+              status: 'preview',
+              action: 'create_branch',
+              repo: `${owner}/${repo}`,
+              branch: branch_name,
+              summary: `Create branch "${branch_name}" off the default branch in ${owner}/${repo}.`,
+            }
+          }
+          const result = await createBranch(githubToken, owner, repo, branch_name)
+          if (!result.ok) return { status: 'error', error: result.error }
+          // Audit trail
+          if (uid) {
+            const payload: GitHubActionPayload = { action: 'create_branch', repo: `${owner}/${repo}`, branch: branch_name, summary: `Created branch "${branch_name}"`, timestamp: new Date().toISOString() }
+            ;(async () => {
+              const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `Branch: ${branch_name}`, payload })
+              if (auditError) console.error('[chat] audit insert failed:', auditError)
+            })()
+          }
+          return { status: 'ok', repo: `${owner}/${repo}`, branch: branch_name }
+        },
+      }),
+
+      github_create_file: tool({
+        description: 'Create a new file in a GitHub repo on a branch. Never create files directly on main/master — always use a feature branch.',
+        inputSchema: z.object({
+          owner: z.string().describe('Repository owner'),
+          repo: z.string().describe('Repository name'),
+          path: z.string().describe('File path within the repo, e.g. "src/utils/helpers.ts"'),
+          content: z.string().describe('Full file contents'),
+          message: z.string().describe('Commit message describing the change'),
+          branch: z.string().describe('Branch to commit to (NOT main/master)'),
+          confirm: z.boolean().describe('Set to false first to preview the action. Only set to true after Henry explicitly confirms.'),
+        }),
+        execute: async ({ owner, repo, path, content, message, branch, confirm }) => {
+          if (!githubToken) {
+            return { status: 'error', error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          if (!confirm) {
+            return {
+              status: 'preview',
+              action: 'create_file',
+              repo: `${owner}/${repo}`,
+              branch,
+              file_path: path,
+              content_summary: content.slice(0, 500) + (content.length > 500 ? '…' : ''),
+              message,
+              summary: `Create "${path}" on branch "${branch}" in ${owner}/${repo}.`,
+            }
+          }
+          const result = await createFile(githubToken, owner, repo, path, content, message, branch)
+          if (!result.ok) return { status: 'error', error: result.error }
+          if (uid) {
+            const payload: GitHubActionPayload = { action: 'create_file', repo: `${owner}/${repo}`, branch, file_path: path, summary: `Created "${path}" on "${branch}"`, timestamp: new Date().toISOString() }
+            ;(async () => {
+              const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `Create: ${path}`, payload })
+              if (auditError) console.error('[chat] audit insert failed:', auditError)
+            })()
+          }
+          return { status: 'ok', repo: `${owner}/${repo}`, branch, file_path: path, url: result.url }
+        },
+      }),
+
+      github_update_file: tool({
+        description: 'Edit an existing file in a GitHub repo on a branch. Requires the file to exist. Never update files on main/master — always use a feature branch.',
+        inputSchema: z.object({
+          owner: z.string().describe('Repository owner'),
+          repo: z.string().describe('Repository name'),
+          path: z.string().describe('File path to update'),
+          content: z.string().describe('Replacement file contents (the complete file, not a diff)'),
+          message: z.string().describe('Commit message describing the change'),
+          branch: z.string().describe('Branch to commit to (NOT main/master)'),
+          confirm: z.boolean().describe('Set to false first to preview the action. Only set to true after Henry explicitly confirms.'),
+        }),
+        execute: async ({ owner, repo, path, content, message, branch, confirm }) => {
+          if (!githubToken) {
+            return { status: 'error', error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          if (!confirm) {
+            return {
+              status: 'preview',
+              action: 'update_file',
+              repo: `${owner}/${repo}`,
+              branch,
+              file_path: path,
+              content_summary: content.slice(0, 500) + (content.length > 500 ? '…' : ''),
+              message,
+              summary: `Update "${path}" on branch "${branch}" in ${owner}/${repo}.`,
+            }
+          }
+          const result = await updateFile(githubToken, owner, repo, path, content, message, branch)
+          if (!result.ok) return { status: 'error', error: result.error }
+          if (uid) {
+            const payload: GitHubActionPayload = { action: 'update_file', repo: `${owner}/${repo}`, branch, file_path: path, summary: `Updated "${path}" on "${branch}"`, timestamp: new Date().toISOString() }
+            ;(async () => {
+              const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `Update: ${path}`, payload })
+              if (auditError) console.error('[chat] audit insert failed:', auditError)
+            })()
+          }
+          return { status: 'ok', repo: `${owner}/${repo}`, branch, file_path: path, url: result.url }
+        },
+      }),
+
+      github_create_pull_request: tool({
+        description: 'Open a pull request from a working branch into base (usually main). Use after making file changes on a branch.',
+        inputSchema: z.object({
+          owner: z.string().describe('Repository owner'),
+          repo: z.string().describe('Repository name'),
+          title: z.string().describe('PR title'),
+          body: z.string().describe('PR description (markdown supported)'),
+          head_branch: z.string().describe('Source branch with the changes'),
+          base_branch: z.string().default('main').describe('Target branch, usually main'),
+          confirm: z.boolean().describe('Set to false first to preview the action. Only set to true after Henry explicitly confirms.'),
+        }),
+        execute: async ({ owner, repo, title, body, head_branch, base_branch, confirm }) => {
+          if (!githubToken) {
+            return { status: 'error', error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          if (!confirm) {
+            return {
+              status: 'preview',
+              action: 'create_pr',
+              repo: `${owner}/${repo}`,
+              title,
+              body,
+              head: head_branch,
+              base: base_branch,
+              summary: `Open PR: "${title}" from "${head_branch}" → "${base_branch}" in ${owner}/${repo}.`,
+            }
+          }
+          const result = await createPR(githubToken, owner, repo, title, body, head_branch, base_branch)
+          if (!result.ok) return { status: 'error', error: result.error }
+          if (uid) {
+            const payload: GitHubActionPayload = { action: 'create_pr', repo: `${owner}/${repo}`, branch: head_branch, pr_url: result.url, summary: `Opened PR #${result.number}: "${title}"`, timestamp: new Date().toISOString() }
+            ;(async () => {
+              const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `PR #${result.number}: ${title}`, payload })
+              if (auditError) console.error('[chat] audit insert failed:', auditError)
+            })()
+          }
+          return { status: 'ok', repo: `${owner}/${repo}`, pr_url: result.url, number: result.number, head: head_branch, base: base_branch }
+        },
+      }),
+
+      github_create_repo: tool({
+        description: 'Create a brand new GitHub repository under Henry\'s account. Always requires confirmation — repos are permanent.',
+        inputSchema: z.object({
+          name: z.string().describe('Repository name'),
+          description: z.string().describe('Short repo description'),
+          private: z.boolean().default(true).describe('Make the repo private? Default true.'),
+          confirm: z.boolean().describe('Set to false first to preview the action. Only set to true after Henry explicitly confirms.'),
+        }),
+        execute: async ({ name, description, private: isPrivate, confirm }) => {
+          if (!githubToken) {
+            return { status: 'error', error: 'GitHub not connected. Sign in with GitHub at /login to enable this.' }
+          }
+          if (!confirm) {
+            return {
+              status: 'preview',
+              action: 'create_repo',
+              name,
+              description,
+              private: isPrivate,
+              summary: `Create ${isPrivate ? 'private' : 'public'} repo "${name}": ${description || '(no description)'}.`,
+            }
+          }
+          const result = await createRepo(githubToken, name, description, isPrivate)
+          if (!result.ok) return { status: 'error', error: result.error }
+          if (uid) {
+            const payload: GitHubActionPayload = { action: 'create_repo', repo: name, summary: `Created ${isPrivate ? 'private' : 'public'} repo "${name}"`, timestamp: new Date().toISOString() }
+            ;(async () => {
+              const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `Repo: ${name}`, payload })
+              if (auditError) console.error('[chat] audit insert failed:', auditError)
+            })()
+          }
+          return { status: 'ok', name, url: result.url, private: isPrivate }
         },
       }),
     },
