@@ -1,4 +1,5 @@
 import type { ResourceSource } from './resource-source'
+import { emitResourceSaved } from './resource-events'
 
 export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file'
 
@@ -155,7 +156,9 @@ export async function saveResource(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type, title, payload }),
-  }).catch((e) => console.error('[resources] save failed:', e))
+  })
+    .then(() => emitResourceSaved())
+    .catch((e) => console.error('[resources] save failed:', e))
 }
 
 export async function loadResources(type: ResourceType, source?: ResourceSource): Promise<Resource[]> {
@@ -188,6 +191,7 @@ export async function updateResource(
     })
     if (!res.ok) return null
     const data = await res.json()
+    emitResourceSaved()
     return data.resource ?? null
   } catch {
     return null

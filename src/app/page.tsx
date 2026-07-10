@@ -24,6 +24,8 @@ import { loadProfileAsync, createDefaultProfile, saveProfile } from '@/lib/user-
 import { OnboardingFlow } from '@/components/onboarding-flow'
 import { ProfileEditor } from '@/components/profile-editor'
 import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
+import { SystemStatusStrip } from '@/components/home/system-status-strip'
+import { ActivityChart } from '@/components/home/activity-chart'
 
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
@@ -181,7 +183,10 @@ export default function EnryAgentPage() {
       <GridBackground />
       <CornerAccents />
 
-      <div className="relative z-10 flex h-full w-full">
+      <div className="relative z-10 flex h-full w-full flex-col">
+        <SystemStatusStrip />
+
+        <div className="flex min-h-0 w-full flex-1">
         <LeftSidebar
           agentStatus={agentStatus}
           conversations={conversations}
@@ -231,7 +236,11 @@ export default function EnryAgentPage() {
           currentModel={currentModel}
         >
           <QuickNotesWidget />
+          <div className="mt-4 border-t border-border pt-4">
+            <ActivityChart />
+          </div>
         </RightPanel>
+        </div>
       </div>
     </div>
   )
