@@ -210,8 +210,9 @@ function ResourcesContent() {
           </p>
         </div>
 
-        {/* Grid with page transition */}
-        <div className="relative flex-1 overflow-hidden">
+        {/* Grid with page transition — capped so cards don't look absurd on huge monitors.
+            250px ≈ sticky header (44px) + main padding (64px) + title area (88px) + pagination (52px) */}
+        <div className="relative flex-1 overflow-hidden" style={{ maxHeight: 'min(100vh - 250px, 900px)' }}>
           {/* Swipe gesture layer — sits behind the grid so links still click */}
           <div
             className="absolute inset-0 z-0"
@@ -238,7 +239,10 @@ function ResourcesContent() {
             >
               <div
                 className="grid h-full gap-4 lg:gap-5"
-                style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+                style={{
+                  gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                  gridTemplateRows: cols === 2 ? '1fr 1fr' : `repeat(${pageTools.length}, minmax(0, 1fr))`,
+                }}
               >
                 {pageTools.map((tool, i) => {
                   const Icon = tool.icon
@@ -250,7 +254,7 @@ function ResourcesContent() {
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.035, type: 'spring', stiffness: 300, damping: 28 }}
-                      className="group flex flex-col gap-5 rounded-lg border border-border bg-surface-secondary p-6 shadow-sm shadow-black/20 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md hover:shadow-black/30 lg:p-7"
+                      className="group flex h-full min-h-0 flex-col gap-5 rounded-lg border border-border bg-surface-secondary p-6 shadow-sm shadow-black/20 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md hover:shadow-black/30 lg:p-7"
                     >
                       <div className="flex items-start gap-4">
                         {/* Icon container with hover glow */}
