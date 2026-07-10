@@ -76,6 +76,10 @@ export async function generateBriefingForUser(
       prompt: `${stateText}\n\n## Today's Aperture question\n${aperture}\n\nProduce today's briefing now.`,
       temperature: 0.6,
       maxOutputTokens: 1500,
+      // Runs in the same cron route as prompt/article generation — see
+      // prompt-generation.ts for the hang this guards against.
+      timeout: 20_000,
+      maxRetries: 1,
     })
 
     const parsed = parseJsonLoose<GeneratedBriefing>(text)

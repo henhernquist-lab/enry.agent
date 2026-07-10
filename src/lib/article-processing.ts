@@ -107,6 +107,9 @@ export async function processArticleUrl(url: string): Promise<ProcessArticleResu
       prompt: buildPrompt(articleTitle, url, truncated),
       temperature: 0.1,
       maxOutputTokens: 4096,
+      // See prompt-generation.ts — same cron route, same unbounded-hang risk.
+      timeout: 30_000,
+      maxRetries: 1,
     })
 
     const cleaned = text

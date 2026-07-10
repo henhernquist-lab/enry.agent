@@ -43,6 +43,12 @@ export async function generatePrompt(category: PromptCategory): Promise<Generate
       prompt: buildPrompt(category),
       temperature: 0.7,
       maxOutputTokens: 2048,
+      // A hung NIM call previously ate the whole cron route's runtime (5+ min
+      // observed) with no error thrown — this call runs 3x in a loop, so an
+      // unbounded hang here silently starves everything after it, including
+      // Aperture/Chief of Staff. Fail fast instead.
+      timeout: 20_000,
+      maxRetries: 1,
     })
 
     const cleaned = text

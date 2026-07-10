@@ -72,6 +72,10 @@ export async function generateApertureForUser(
       prompt: `${stateText}\n\n## Recent Aperture questions (do not repeat these)\n${recent}\n\nGenerate today's question now.`,
       temperature: 0.8,
       maxOutputTokens: 800,
+      // Runs in the same cron route as prompt/article generation — see
+      // prompt-generation.ts for the hang this guards against.
+      timeout: 20_000,
+      maxRetries: 1,
     })
 
     const parsed = parseJsonLoose<GeneratedAperture>(text)
