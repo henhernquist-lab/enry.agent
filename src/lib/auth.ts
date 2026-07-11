@@ -54,7 +54,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const userId = account.provider === 'github'
           ? `github_${account.providerAccountId}`
           : account.providerAccountId
-        const { error } = await supabase
+
+        // Use a single upsert+select to atomically create-or-refresh the
+        // profile row AND get the UUID back. This eliminates the race between
+        // signIn (upsert) and jwt (select) that could cause the jwt callback
+        // to see no profile on fresh sign-ins.
+        //
+        // Strategy: upsert first, then select. If the upsert fails, block
+        // sign-in — a profile row is mandatory for every downstream route.
+        const { error: upsertErr } = await supabase
           .from('profiles')
           .upsert(
             {
@@ -66,7 +74,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             },
             { onConflict: 'google_id' },
           )
-        if (error) console.error('[auth] Supabase upsert error:', error)
+
+        if (upsertErr) {
+          console.error('[auth] profile upsert failed — blocking sign-in:', upsertErr)
+          // Return the error page URL so the user sees what happened instead
+          // of silently getting a broken session.
+          return '/login?error=profile_create_failed'
+        }
+
+        // Immediately after upsert, look up the UUID and attach it to the
+        // user object so the jwt callback can pick it up deterministically
+        // instead of doing its own (potentially stale) select.
+        const { data: created } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('google_id', userId)
+          .maybeSingle()
+
+        if (created?.id) {
+          // Stash the profiles.id UUID as a custom claim on the user. The jwt
+          // callback will read this and set token.sub = profiles.id UUID so
+          // session.internalUserId is always valid.
+          ;(user as Record<string, unknown>).profileId = created.id
+        }
       }
       return true
     },
@@ -97,15 +127,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       if (account?.provider === 'github') {
         const providerId = `github_${account.providerAccountId}`
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('google_id', providerId)
-          .maybeSingle()
+        // Prefer the profileId stashed by the signIn callback (atomic
+        // upsert+select). Fall back to a direct lookup for edge cases where
+        // signIn didn't run (e.g. account linking flows).
+        const resolvedSub =
+          ((user as Record<string, unknown> | undefined)?.profileId as string | undefined) ??
+          (await supabase
+            .from('profiles')
+            .select('id')
+            .eq('google_id', providerId)
+            .maybeSingle()
+            .then((r) => r.data?.id ?? undefined))
         return {
           ...token,
           googleId: providerId,
-          sub: profile?.id ?? token.sub,
+          sub: resolvedSub ?? token.sub,
           githubToken: account.access_token,
         }
       }
