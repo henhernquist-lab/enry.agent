@@ -41,8 +41,10 @@ export async function GET(req: Request) {
     return Response.json({ error: 'Owner profile not found' }, { status: 500 })
   }
 
-  const promptResults = await generateDailyPrompts(uid)
-  const articleResults = await generateDailyArticles(uid)
+  const [promptResults, articleResults] = await Promise.all([
+    generateDailyPrompts(uid),
+    generateDailyArticles(uid),
+  ])
 
   // The Aperture generates first, then the Chief of Staff briefing (which can
   // reference the day's question). Each is independently guarded so a failure
@@ -79,53 +81,53 @@ async function generateDailyPrompts(uid: string): Promise<Array<{ category: stri
 
   const results: Array<{ category: string; status: string; id?: string }> = []
 
-  for (let i = 0; i < 3; i++) {
+  const tasks = Array.from({ length: 3 }, (_, i) => {
     const category = CATEGORY_ROTATION[(cursor + i) % CATEGORY_ROTATION.length]
-    try {
-      const generated = await generatePrompt(category)
-      if (!generated) {
-        results.push({ category, status: 'generation_failed' })
-        continue
-      }
+    return generatePrompt(category)
+      .then(async (generated) => {
+        if (!generated) return { category, status: 'generation_failed' as const }
 
-      const payload: PromptPayload = {
-        body: generated.body,
-        category: generated.category,
-        tags: generated.tags,
-        notes: generated.notes || undefined,
-      }
+        const payload: PromptPayload = {
+          body: generated.body,
+          category: generated.category,
+          tags: generated.tags,
+          notes: generated.notes || undefined,
+        }
 
-      const { data, error } = await supabase
-        .from('resources')
-        .insert({
-          user_id: uid,
-          type: 'prompt',
-          source: 'daily_auto',
-          title: generated.title.slice(0, 200),
-          payload,
-        })
-        .select('id')
-        .single()
+        const { data, error } = await supabase
+          .from('resources')
+          .insert({
+            user_id: uid,
+            type: 'prompt',
+            source: 'daily_auto',
+            title: generated.title.slice(0, 200),
+            payload,
+          })
+          .select('id')
+          .single()
 
-      if (error) {
-        console.error('[cron/daily-content] prompt insert failed:', error)
-        results.push({ category, status: 'insert_failed' })
-        continue
-      }
+        if (error) {
+          console.error('[cron/daily-content] prompt insert failed:', error)
+          return { category, status: 'insert_failed' as const }
+        }
 
-      const embText = [generated.title, generated.body, ...generated.tags].filter(Boolean).join('\n\n')
-      generateEmbedding(embText)
-        .then((embedding) => {
-          if (embedding) supabase.from('resources').update({ embedding }).eq('id', data.id).then()
-        })
-        .catch((e) => console.error('[cron/daily-content] prompt embedding failed:', e))
+        const embText = [generated.title, generated.body, ...generated.tags].filter(Boolean).join('\n\n')
+        generateEmbedding(embText)
+          .then((embedding) => {
+            if (embedding) supabase.from('resources').update({ embedding }).eq('id', data.id).then()
+          })
+          .catch((e) => console.error('[cron/daily-content] prompt embedding failed:', e))
 
-      results.push({ category, status: 'ok', id: data.id })
-    } catch (err) {
-      console.error('[cron/daily-content] prompt generation threw for', category, err)
-      results.push({ category, status: 'error' })
-    }
-  }
+        return { category, status: 'ok' as const, id: data.id }
+      })
+      .catch((err) => {
+        console.error('[cron/daily-content] prompt generation threw for', category, err)
+        return { category, status: 'error' as const }
+      })
+  })
+
+  const settled = await Promise.all(tasks)
+  results.push(...settled)
 
   const newCursor = (cursor + 3) % CATEGORY_ROTATION.length
   await supabase
@@ -158,64 +160,66 @@ async function generateDailyArticles(uid: string): Promise<Array<{ url: string; 
   const picks = candidates.slice(0, 10)
   const results: Array<{ url: string; status: string; id?: string }> = []
 
-  for (const { url, topic } of picks) {
-    try {
-      const result = await processArticleUrl(url)
-      if (!result.ok) {
-        console.error('[cron/daily-content] article processing failed for', url, result.error)
-        results.push({ url, status: 'processing_failed' })
-        continue
-      }
+  const tasks = picks.map(({ url, topic }) =>
+    processArticleUrl(url)
+      .then(async (result) => {
+        if (!result.ok) {
+          console.error('[cron/daily-content] article processing failed for', url, result.error)
+          return { url, status: 'processing_failed' as const }
+        }
 
-      const { articleTitle, sourceDomain, rawTextLength, summary, keyClaims, flashcards, tags, processingFailed } = result.data
+        const { articleTitle, sourceDomain, rawTextLength, summary, keyClaims, flashcards, tags, processingFailed } = result.data
 
-      const payload: ArticleNotePayload = {
-        url,
-        source_domain: sourceDomain,
-        article_title: articleTitle,
-        fetched_at: new Date().toISOString(),
-        raw_text_length: rawTextLength,
-        summary,
-        key_claims: keyClaims,
-        flashcards,
-        tags,
-        topic: topic as ArticleNotePayload['topic'],
-        ...(processingFailed ? { processing_failed: true } : {}),
-      }
+        const payload: ArticleNotePayload = {
+          url,
+          source_domain: sourceDomain,
+          article_title: articleTitle,
+          fetched_at: new Date().toISOString(),
+          raw_text_length: rawTextLength,
+          summary,
+          key_claims: keyClaims,
+          flashcards,
+          tags,
+          topic: topic as ArticleNotePayload['topic'],
+          ...(processingFailed ? { processing_failed: true } : {}),
+        }
 
-      const { data, error } = await supabase
-        .from('resources')
-        .insert({
-          user_id: uid,
-          type: 'article_note',
-          source: 'daily_auto',
-          title: articleTitle.slice(0, 200),
-          payload,
-        })
-        .select('id')
-        .single()
-
-      if (error) {
-        console.error('[cron/daily-content] article insert failed:', error)
-        results.push({ url, status: 'insert_failed' })
-        continue
-      }
-
-      if (!processingFailed) {
-        const embText = [articleTitle, summary, ...tags].filter(Boolean).join('\n\n')
-        generateEmbedding(embText)
-          .then((embedding) => {
-            if (embedding) supabase.from('resources').update({ embedding }).eq('id', data.id).then()
+        const { data, error } = await supabase
+          .from('resources')
+          .insert({
+            user_id: uid,
+            type: 'article_note',
+            source: 'daily_auto',
+            title: articleTitle.slice(0, 200),
+            payload,
           })
-          .catch((e) => console.error('[cron/daily-content] article embedding failed:', e))
-      }
+          .select('id')
+          .single()
 
-      results.push({ url, status: 'ok', id: data.id })
-    } catch (err) {
-      console.error('[cron/daily-content] article processing threw for', url, err)
-      results.push({ url, status: 'error' })
-    }
-  }
+        if (error) {
+          console.error('[cron/daily-content] article insert failed:', error)
+          return { url, status: 'insert_failed' as const }
+        }
+
+        if (!processingFailed) {
+          const embText = [articleTitle, summary, ...tags].filter(Boolean).join('\n\n')
+          generateEmbedding(embText)
+            .then((embedding) => {
+              if (embedding) supabase.from('resources').update({ embedding }).eq('id', data.id).then()
+            })
+            .catch((e) => console.error('[cron/daily-content] article embedding failed:', e))
+        }
+
+        return { url, status: 'ok' as const, id: data.id }
+      })
+      .catch((err) => {
+        console.error('[cron/daily-content] article processing threw for', url, err)
+        return { url, status: 'error' as const }
+      }),
+  )
+
+  const settled = await Promise.all(tasks)
+  results.push(...settled)
 
   return results
 }
