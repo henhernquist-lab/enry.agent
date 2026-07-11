@@ -50,54 +50,80 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider === 'google' || account?.provider === 'github') {
-        const userId = account.provider === 'github'
-          ? `github_${account.providerAccountId}`
-          : account.providerAccountId
+      const now = new Date().toISOString()
 
-        // Use a single upsert+select to atomically create-or-refresh the
-        // profile row AND get the UUID back. This eliminates the race between
-        // signIn (upsert) and jwt (select) that could cause the jwt callback
-        // to see no profile on fresh sign-ins.
-        //
-        // Strategy: upsert first, then select. If the upsert fails, block
-        // sign-in — a profile row is mandatory for every downstream route.
+      if (account?.provider === 'google') {
+        // Upsert by google_id, then select the UUID back — atomic-ish
+        // create-or-refresh that also feeds the jwt callback a deterministic
+        // profileId (no race with a separate select there). Upsert failure
+        // blocks sign-in: a profile row is mandatory for every route.
+        const userId = account.providerAccountId
         const { error: upsertErr } = await supabase
           .from('profiles')
           .upsert(
-            {
-              google_id:  userId,
-              email:      user.email!,
-              name:       user.name,
-              avatar_url: user.image,
-              updated_at: new Date().toISOString(),
-            },
+            { google_id: userId, email: user.email!, name: user.name, avatar_url: user.image, updated_at: now },
             { onConflict: 'google_id' },
           )
-
         if (upsertErr) {
-          console.error('[auth] profile upsert failed — blocking sign-in:', upsertErr)
-          // Return the error page URL so the user sees what happened instead
-          // of silently getting a broken session.
+          console.error('[auth] google profile upsert failed — blocking sign-in:', upsertErr)
           return '/login?error=profile_create_failed'
         }
-
-        // Immediately after upsert, look up the UUID and attach it to the
-        // user object so the jwt callback can pick it up deterministically
-        // instead of doing its own (potentially stale) select.
         const { data: created } = await supabase
+          .from('profiles').select('id').eq('google_id', userId).maybeSingle()
+        if (created?.id) (user as Record<string, unknown>).profileId = created.id
+        return true
+      }
+
+      if (account?.provider === 'github') {
+        const githubId = account.providerAccountId // GitHub numeric id, e.g. "280165074"
+
+        // (a) Already linked? Match by github_id and REUSE that profile. This
+        //     is the path for a user who linked GitHub to an existing account
+        //     (see migration 007) — sign-in resolves to their real profile and
+        //     data instead of creating a new row. Refresh display fields only;
+        //     NEVER overwrite email or google_id — the profile's canonical
+        //     identity stays its Google/credentials identity, GitHub is just a
+        //     linked login method. (Not touching email also avoids colliding
+        //     with an existing row that shares this GitHub account's email.)
+        const { data: linked } = await supabase
           .from('profiles')
-          .select('id')
-          .eq('google_id', userId)
+          .select('id, google_id')
+          .eq('github_id', githubId)
           .maybeSingle()
 
-        if (created?.id) {
-          // Stash the profiles.id UUID as a custom claim on the user. The jwt
-          // callback will read this and set token.sub = profiles.id UUID so
-          // session.internalUserId is always valid.
-          ;(user as Record<string, unknown>).profileId = created.id
+        if (linked) {
+          await supabase
+            .from('profiles')
+            .update({ name: user.name, avatar_url: user.image, updated_at: now })
+            .eq('id', linked.id)
+          ;(user as Record<string, unknown>).profileId = linked.id
+          ;(user as Record<string, unknown>).linkedGoogleId = linked.google_id
+          return true
         }
+
+        // (b) Unlinked GitHub identity → create a standalone profile. Synthetic
+        //     google_id satisfies the NOT NULL/unique column; github_id stores
+        //     the real id so a future sign-in matches path (a).
+        const syntheticGoogleId = `github_${githubId}`
+        const { error: insErr } = await supabase
+          .from('profiles')
+          .upsert(
+            { google_id: syntheticGoogleId, github_id: githubId, email: user.email, name: user.name, avatar_url: user.image, updated_at: now },
+            { onConflict: 'google_id' },
+          )
+        if (insErr) {
+          console.error('[auth] github profile create failed — blocking sign-in:', insErr)
+          return '/login?error=profile_create_failed'
+        }
+        const { data: created } = await supabase
+          .from('profiles').select('id, google_id').eq('github_id', githubId).maybeSingle()
+        if (created?.id) {
+          ;(user as Record<string, unknown>).profileId = created.id
+          ;(user as Record<string, unknown>).linkedGoogleId = created.google_id
+        }
+        return true
       }
+
       return true
     },
 
@@ -129,22 +155,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
       }
       if (account?.provider === 'github') {
-        const providerId = `github_${account.providerAccountId}`
-        // Prefer the profileId stashed by the signIn callback (atomic
-        // upsert+select). Fall back to a direct lookup for edge cases where
-        // signIn didn't run (e.g. account linking flows).
-        const resolvedSub =
-          ((user as Record<string, unknown> | undefined)?.profileId as string | undefined) ??
-          (await supabase
-            .from('profiles')
-            .select('id')
-            .eq('google_id', providerId)
-            .maybeSingle()
-            .then((r) => r.data?.id ?? undefined))
+        // THE LINKING PIECE: googleId must be the LINKED profile's google_id
+        // (for a linked account, its Google sub — NOT github_<id>), so every
+        // downstream google_id lookup resolves to that profile and its data.
+        // Both linkedGoogleId and profileId are stashed by the signIn callback
+        // (match-by-github_id). Fall back to github_<id> only for the
+        // never-should-happen case where signIn didn't run.
+        const linkedGoogleId = (user as Record<string, unknown> | undefined)?.linkedGoogleId as string | undefined
+        const profileId = (user as Record<string, unknown> | undefined)?.profileId as string | undefined
         return {
           ...token,
-          googleId: providerId,
-          sub: resolvedSub ?? token.sub,
+          googleId: linkedGoogleId ?? `github_${account.providerAccountId}`,
+          sub: profileId ?? token.sub,
           githubToken: account.access_token,
         }
       }
