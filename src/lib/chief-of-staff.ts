@@ -76,9 +76,14 @@ export async function generateBriefingForUser(
       prompt: `${stateText}\n\n## Today's Aperture question\n${aperture}\n\nProduce today's briefing now.`,
       temperature: 0.6,
       maxOutputTokens: 1500,
-      // Runs in the same cron route as prompt/article generation — see
-      // prompt-generation.ts for the hang this guards against.
-      timeout: 20_000,
+      // Runs in the same cron route as prompt/article generation (see
+      // prompt-generation.ts for the hang this guards against), but this is
+      // the richest prompt in the pipeline (full snapshot + patterns text).
+      // 20s was measured too tight — real latency for a comparable shape ran
+      // 12-19s even on a simpler prompt, leaving no margin. 45s keeps a real
+      // ceiling (still far short of the multi-minute hang this exists to
+      // catch) while giving normal variance room to breathe.
+      timeout: 45_000,
       maxRetries: 1,
     })
 

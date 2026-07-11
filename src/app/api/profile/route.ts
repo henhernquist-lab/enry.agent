@@ -40,10 +40,26 @@ export async function PUT(req: Request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = (session.user as { id?: string }).id
+    let userId = (session.user as { id?: string }).id
     if (!userId) {
-      console.log('[profile/route PUT] No user id in session')
-      return Response.json({ error: 'No user id' }, { status: 400 })
+      console.log('[profile/route PUT] No user.id in session — trying internalUserId fallback')
+      // Fallback: use internalUserId (profiles.id UUID) to look up google_id
+      const internalUserId = (session as unknown as { internalUserId?: string }).internalUserId
+      if (internalUserId) {
+        const { data: fallbackProfile } = await supabase
+          .from('profiles')
+          .select('google_id')
+          .eq('id', internalUserId)
+          .maybeSingle()
+        if (fallbackProfile?.google_id) {
+          console.log('[profile/route PUT] Resolved google_id from internalUserId:', fallbackProfile.google_id)
+          userId = fallbackProfile.google_id
+        }
+      }
+      if (!userId) {
+        console.log('[profile/route PUT] No user id in session')
+        return Response.json({ error: 'No user id' }, { status: 400 })
+      }
     }
 
     let body: unknown
@@ -78,7 +94,8 @@ export async function PUT(req: Request) {
 
     if (error) {
       console.error('[profile/route PUT] Supabase upsert error:', error)
-      return Response.json({ error: 'Failed to save profile' }, { status: 500 })
+      // Include the upstream error detail so the client logs the real reason
+      return Response.json({ error: 'Failed to save profile', detail: error.message ?? String(error) }, { status: 500 })
     }
 
     console.log('[profile/route PUT] Profile saved successfully for google_id:', userId)

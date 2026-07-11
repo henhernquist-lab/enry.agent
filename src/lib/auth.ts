@@ -115,6 +115,54 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           sub: profile?.id ?? token.sub,
         }
       }
+
+      // ── Fallback: resolve missing googleId for old JWTs ──────────
+      // JWTs created before the googleId field was added (commit 90724b1)
+      // don't have token.googleId, which causes session.user.id to be
+      // undefined — and every route that uses it as google_id breaks.
+      // This recovery block runs once per old token, resolves googleId
+      // from the profiles table, and persists it in the refreshed JWT.
+      if (!token.googleId) {
+        try {
+          let resolvedGoogleId: string | null = null
+
+          // Strategy 1: token.sub may already be profiles.id UUID
+          // (post-fix tokens where the jwt callback resolved sub).
+          if (token.sub && typeof token.sub === 'string') {
+            const { data: profileBySub } = await supabase
+              .from('profiles')
+              .select('google_id')
+              .eq('id', token.sub)
+              .maybeSingle()
+            if (profileBySub?.google_id) {
+              resolvedGoogleId = profileBySub.google_id
+            }
+          }
+
+          // Strategy 2: fall back to email (pre-fix tokens, or sub
+          // didn't match a profiles.id — possible for old sessions).
+          if (!resolvedGoogleId && token.email && typeof token.email === 'string') {
+            const { data: profileByEmail } = await supabase
+              .from('profiles')
+              .select('google_id')
+              .eq('email', token.email)
+              .maybeSingle()
+            if (profileByEmail?.google_id) {
+              resolvedGoogleId = profileByEmail.google_id
+            }
+          }
+
+          if (resolvedGoogleId) {
+            console.log('[auth] Resolved missing googleId:', resolvedGoogleId, 'for', token.email ?? token.sub)
+            return { ...token, googleId: resolvedGoogleId }
+          }
+
+          console.warn('[auth] Could not resolve googleId — fallbacks exhausted for sub:', token.sub, 'email:', token.email)
+        } catch (err) {
+          console.error('[auth] Error resolving missing googleId:', err)
+        }
+      }
+
       return token
     },
 
@@ -126,10 +174,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         u.id = token.googleId as string
 
         // Expose the resolved profiles.id UUID as a separate field.
-        // NB: for old sessions (pre-deploy), token.sub is the default
-        // NextAuth sub claim (non-UUID), so internalUserId may not be a
-        // valid UUID yet. Routes consuming it should still fall back to
-        // resolveResourceUserId() until all JWTs have been refreshed.
         const s = session as typeof session & { internalUserId?: string }
         s.internalUserId = (token.sub ?? token.googleId) as string
       }

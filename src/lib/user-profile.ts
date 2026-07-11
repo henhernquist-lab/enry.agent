@@ -99,10 +99,11 @@ async function pushProfile(profile: UserProfile): Promise<boolean> {
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '(unreadable)')
-      console.error('[user-profile] Push profile failed:', res.status, res.statusText, body)
+      console.error('[user-profile] Push profile failed:', 'status:', res.status, 'body:', body)
       return false
     }
-    console.log('[user-profile] Push profile succeeded')
+    const body = await res.text()
+    console.log('[user-profile] Push profile succeeded, response:', body)
     return true
   } catch (err) {
     console.error('[user-profile] Push profile error:', err)

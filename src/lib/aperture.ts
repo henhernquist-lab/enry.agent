@@ -73,8 +73,9 @@ export async function generateApertureForUser(
       temperature: 0.8,
       maxOutputTokens: 800,
       // Runs in the same cron route as prompt/article generation — see
-      // prompt-generation.ts for the hang this guards against.
-      timeout: 20_000,
+      // prompt-generation.ts for the hang this guards against. Bumped
+      // alongside chief-of-staff.ts after 20s proved too tight in practice.
+      timeout: 45_000,
       maxRetries: 1,
     })
 
