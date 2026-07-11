@@ -27,6 +27,7 @@ import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
 import { SystemStatusStrip } from '@/components/home/system-status-strip'
 import { ActivityChart } from '@/components/home/activity-chart'
 import { TodayBand } from '@/components/home/today-band'
+import { TerminalLauncher } from '@/components/home/terminal-launcher'
 
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
@@ -240,6 +241,9 @@ export default function EnryAgentPage() {
           currentModel={currentModel}
         >
           <QuickNotesWidget />
+          <div className="mt-3">
+            <TerminalLauncher />
+          </div>
           <div className="mt-4 border-t border-border pt-4">
             <ActivityChart />
           </div>
