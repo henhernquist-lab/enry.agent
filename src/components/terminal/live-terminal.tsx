@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, Loader2, TerminalSquare } from 'lucide-react'
+import { ChevronDown, Loader2, TerminalSquare, GitBranch } from 'lucide-react'
+import { DiffView } from './diff-view'
 
 interface RepoOption {
   full_name: string
@@ -9,26 +10,39 @@ interface RepoOption {
   private: boolean
 }
 
+type CommandAction = 'propose_edit' | 'apply' | 'branch' | 'commit' | 'pr'
+
 interface Line {
   kind: 'command' | 'output' | 'system'
   repo?: string
+  branch?: string | null
   text: string
   exitCode?: number
+  action?: CommandAction
 }
 
 const ALLOWED_HINT = 'ls · cat · head · tail · grep · find · wc · tree · git log/status/diff/show/branch'
+const WRITE_HINT = 'edit <file> [instruction] · write <file> [instruction] · apply · branch <name> · commit "msg" · pr "title" "desc" — or just type what you want changed'
+
+function promptLabel(repo?: string | null, branch?: string | null): string {
+  return branch ? `➜ ${repo ?? ''} (${branch})` : `➜ ${repo ?? ''}`
+}
 
 export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
   const [repos, setRepos] = useState<RepoOption[]>([])
   const [repo, setRepo] = useState<string>('')
   const [repoMenuOpen, setRepoMenuOpen] = useState(false)
   const [lines, setLines] = useState<Line[]>([
-    { kind: 'system', text: 'enry terminal — read-only, sandboxed. Select a repo and run a command.' },
-    { kind: 'system', text: `allowed: ${ALLOWED_HINT}` },
+    { kind: 'system', text: 'enry terminal — sandboxed coding agent. Select a repo and run a command.' },
+    { kind: 'system', text: `read: ${ALLOWED_HINT}` },
+    { kind: 'system', text: `write: ${WRITE_HINT}` },
+    { kind: 'system', text: 'edit/write always show a diff first — nothing writes to disk until you type apply. Changes never touch main directly.' },
   ])
   const [input, setInput] = useState('')
   const [running, setRunning] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [currentBranch, setCurrentBranch] = useState<string | null>(null)
+  const [hasPendingDiff, setHasPendingDiff] = useState(false)
 
   const history = useRef<string[]>([])
   const historyIdx = useRef<number>(-1)
@@ -68,6 +82,8 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
   const selectRepo = useCallback((full: string) => {
     setRepo(full)
     setSessionId(null)
+    setCurrentBranch(null)
+    setHasPendingDiff(false)
     setRepoMenuOpen(false)
     inputRef.current?.focus()
   }, [])
@@ -82,7 +98,7 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
       }
       history.current.push(trimmed)
       historyIdx.current = history.current.length
-      setLines((l) => [...l, { kind: 'command', repo, text: trimmed }])
+      setLines((l) => [...l, { kind: 'command', repo, branch: currentBranch, text: trimmed }])
       setInput('')
       setRunning(true)
 
@@ -97,8 +113,10 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
         })
         const data = await res.json()
         if (data.session_id) setSessionId(data.session_id)
+        setCurrentBranch(data.current_branch ?? null)
+        setHasPendingDiff(!!data.has_pending_diff)
         const text = (data.output ?? data.error ?? '').toString()
-        setLines((l) => [...l, { kind: 'output', text: text || '(no output)', exitCode: data.exit_code ?? 0 }])
+        setLines((l) => [...l, { kind: 'output', text: text || '(no output)', exitCode: data.exit_code ?? 0, action: data.action }])
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
           setLines((l) => [...l, { kind: 'system', text: '^C (cancelled)' }])
@@ -110,7 +128,7 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
         abortRef.current = null
       }
     },
-    [repo, sessionId],
+    [repo, sessionId, currentBranch],
   )
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -120,7 +138,7 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
       if (running && abortRef.current) {
         abortRef.current.abort()
       } else if (input) {
-        setLines((l) => [...l, { kind: 'command', repo, text: input + '^C' }])
+        setLines((l) => [...l, { kind: 'command', repo, branch: currentBranch, text: input + '^C' }])
         setInput('')
       }
       return
@@ -159,6 +177,17 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
         <div className="flex items-center gap-2">
           <TerminalSquare className="h-3.5 w-3.5 text-primary" />
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">live terminal</span>
+          {currentBranch && (
+            <span className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[9px] text-muted-foreground">
+              <GitBranch className="h-2.5 w-2.5" />
+              {currentBranch}
+            </span>
+          )}
+          {hasPendingDiff && (
+            <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-warning">
+              pending diff
+            </span>
+          )}
         </div>
         <div ref={repoMenuRef} className="relative">
           <button
@@ -201,7 +230,7 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
           if (line.kind === 'command') {
             return (
               <div key={i} className="flex gap-2 whitespace-pre-wrap break-all">
-                <span className="flex-shrink-0 text-primary">➜ {line.repo}</span>
+                <span className="flex-shrink-0 text-primary">{promptLabel(line.repo, line.branch)}</span>
                 <span className="text-foreground">{line.text}</span>
               </div>
             )
@@ -213,10 +242,31 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
               </div>
             )
           }
+
+          const isFailure = !!line.exitCode && line.exitCode !== 0
+          if (line.action === 'propose_edit' && !isFailure) {
+            return (
+              <div key={i} className="mb-2">
+                <DiffView diffText={line.text} />
+                <div className="mt-1 inline-flex items-center gap-1.5 rounded border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-warning">
+                  proposed, not applied — type <span className="font-semibold">apply</span> to write
+                </div>
+              </div>
+            )
+          }
+          if (line.action === 'apply' && !isFailure) {
+            return (
+              <div key={i} className="mb-2 flex items-center gap-1.5 text-primary">
+                <span>✓</span>
+                <span className="whitespace-pre-wrap break-words">{line.text}</span>
+              </div>
+            )
+          }
+
           return (
             <pre
               key={i}
-              className={`mb-1 whitespace-pre-wrap break-words ${line.exitCode && line.exitCode !== 0 ? 'text-red-400/90' : 'text-foreground/80'}`}
+              className={`mb-1 whitespace-pre-wrap break-words ${isFailure ? 'text-red-400/90' : 'text-foreground/80'}`}
             >
               {line.text}
             </pre>
@@ -230,7 +280,7 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
 
         {/* Input line */}
         <div className="flex items-center gap-2">
-          <span className="flex-shrink-0 text-primary">➜ {repo}</span>
+          <span className="flex-shrink-0 text-primary">{promptLabel(repo, currentBranch)}</span>
           <input
             ref={inputRef}
             autoFocus={autoFocus}

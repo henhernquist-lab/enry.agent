@@ -208,6 +208,24 @@ export interface TerminalCommand {
   output: string
   timestamp: string
   exit_code: number
+  // Set for write-mode actions (edit/apply/write/branch/commit/pr and their
+  // natural-language equivalents) so the audit trail can be filtered to just
+  // the actions that actually touched code, separate from read-only lookups.
+  action?: 'propose_edit' | 'apply' | 'branch' | 'commit' | 'pr'
+}
+
+// A diff proposed by `edit`/`write` or a natural-language request, shown in
+// the terminal but not yet written anywhere. Cleared on apply or replaced by
+// the next proposal. Lives in the session row (not just client state) so a
+// page refresh doesn't lose it and the audit trail can show what was
+// proposed even if never applied.
+export interface PendingDiff {
+  file: string
+  diff: string // unified diff text
+  new_content: string
+  is_new_file: boolean
+  base_sha: string // real GitHub blob sha (first edit) or a content hash of the prior working-copy version (stacked edit)
+  proposed_at: string
 }
 
 export interface TerminalSessionPayload {
@@ -215,6 +233,9 @@ export interface TerminalSessionPayload {
   commands: TerminalCommand[]
   session_start: string
   session_end?: string
+  // Write mode (all optional — absent entirely for a read-only session).
+  current_branch?: string
+  pending_diff?: PendingDiff | null
 }
 
 export interface GhostMessage {

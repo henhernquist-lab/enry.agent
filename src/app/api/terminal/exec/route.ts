@@ -2,13 +2,17 @@ import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { validateCommand } from '@/lib/terminal/parse'
+import { parseMetaCommand, looksLikeMetaCommand, type MetaCommand } from '@/lib/terminal/meta-parse'
 import { ensureSnapshot } from '@/lib/terminal/snapshot'
 import { runCommand } from '@/lib/terminal/exec'
 import { runGit } from '@/lib/terminal/git-api'
-import { RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
+import { resolveExecutionDir } from '@/lib/terminal/working-copy'
+import { proposeEdit, applyEdit, createBranch, commitChanges, openPullRequest, type WriteOpsContext } from '@/lib/terminal/write-ops'
+import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
+import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
 
-export const maxDuration = 30
+export const maxDuration = 60
 
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/
 
@@ -47,7 +51,7 @@ export async function POST(req: Request) {
   const body = await req.json()
   const repo = String(body.repo ?? '').trim()
   const command = String(body.command ?? '')
-  const sessionId: string | null = body.session_id ?? null
+  const requestedSessionId: string | null = body.session_id ?? null
 
   if (!REPO_RE.test(repo)) {
     return Response.json({ error: 'Invalid repo. Use owner/name.' }, { status: 400 })
@@ -60,94 +64,208 @@ export async function POST(req: Request) {
     )
   }
 
-  // Validate BEFORE any execution or network call.
-  const parsed = validateCommand(command)
-  if (!parsed.ok) {
-    return Response.json({ blocked: true, output: parsed.error, exit_code: 126, session_id: sessionId })
-  }
+  // Session row must exist BEFORE dispatch (not after, as in the read-only
+  // build) — write actions need a durable session_id to read/write pending
+  // diff state and working files against.
+  const sessionId = await ensureSessionId(uid, repo, requestedSessionId)
+  if (!sessionId) return Response.json({ error: 'Could not start terminal session' }, { status: 500 })
 
   const [owner, name] = repo.split('/')
 
-  // Snapshot the repo (cached per head SHA).
   const snap = await ensureSnapshot(githubToken, owner, name)
   if (!snap.ok) {
     return Response.json({ output: snap.error, exit_code: 1, session_id: sessionId })
   }
 
-  // Execute: git → GitHub API; everything else → real binary / tree walk.
-  const result =
-    parsed.parsed.spec.executor === 'git'
-      ? await runGit(parsed.parsed, {
-          token: githubToken,
-          owner,
-          repo: name,
-          headSha: snap.headSha,
-          defaultBranch: snap.defaultBranch,
-        })
-      : await runCommand(parsed.parsed, snap.dir)
+  // Session-scoped writable overlay if this session has any applied-but-
+  // uncommitted files; otherwise the shared pristine snapshot directly.
+  const execDir = await resolveExecutionDir(sessionId, snap.dir)
+
+  const writeCtx: WriteOpsContext = {
+    accessToken: githubToken,
+    owner,
+    repo: name,
+    defaultBranch: snap.defaultBranch,
+    sessionId,
+    userId: uid,
+    snapshotDir: execDir,
+    pristineSnapshotDir: snap.dir,
+  }
+
+  const { result, action } = await dispatch(command, writeCtx, snap.headSha)
 
   const entry: TerminalCommand = {
     cmd: command,
     output: result.output,
     timestamp: new Date().toISOString(),
     exit_code: result.exitCode,
+    ...(action ? { action } : {}),
   }
 
-  const newSessionId = await persistCommand(uid, repo, entry, sessionId)
+  await appendCommand(uid, sessionId, entry)
 
-  return Response.json({ output: result.output, exit_code: result.exitCode, session_id: newSessionId })
+  // Read back the session's current write-mode state so the client's prompt
+  // line and pending/applied indicators reflect true persisted state, not
+  // just an inference from this one command's success — a stale-diff
+  // rejection or a fresh page load both need to resolve to the same truth.
+  const { current_branch, has_pending_diff } = await readWriteState(uid, sessionId)
+
+  return Response.json({
+    output: result.output,
+    exit_code: result.exitCode,
+    session_id: sessionId,
+    action,
+    current_branch,
+    has_pending_diff,
+  })
 }
 
-// One terminal_session row per session: created on the first command, appended
-// to (and session_end bumped) on each subsequent one.
-async function persistCommand(
-  uid: string,
-  repo: string,
-  entry: TerminalCommand,
-  sessionId: string | null,
-): Promise<string | null> {
-  try {
-    if (sessionId) {
-      const { data } = await supabase
-        .from('resources')
-        .select('payload')
-        .eq('id', sessionId)
-        .eq('user_id', uid)
-        .maybeSingle()
-      if (data) {
-        const payload = data.payload as TerminalSessionPayload
-        const updated: TerminalSessionPayload = {
-          ...payload,
-          commands: [...(payload.commands ?? []), entry].slice(-200),
-          session_end: entry.timestamp,
-        }
-        await supabase
-          .from('resources')
-          .update({ payload: updated, updated_at: new Date().toISOString() })
-          .eq('id', sessionId)
-          .eq('user_id', uid)
-        return sessionId
-      }
-    }
+async function readWriteState(uid: string, sessionId: string): Promise<{ current_branch?: string; has_pending_diff: boolean }> {
+  const { data } = await supabase
+    .from('resources')
+    .select('payload')
+    .eq('id', sessionId)
+    .eq('user_id', uid)
+    .maybeSingle()
+  const payload = data?.payload as TerminalSessionPayload | undefined
+  return { current_branch: payload?.current_branch, has_pending_diff: !!payload?.pending_diff }
+}
 
-    const payload: TerminalSessionPayload = {
-      repo,
-      commands: [entry],
-      session_start: entry.timestamp,
+interface DispatchResult {
+  result: { output: string; exitCode: number }
+  action?: TerminalCommand['action']
+}
+
+// Dispatch order, strictly: meta-command -> read-only allowlist -> natural
+// language. A command whose first word matches ANY known keyword (allowlisted
+// binary, blocked binary, git, or a meta keyword) is routed to its matching
+// validator and never falls through to NL — a blocked/malformed command must
+// stay blocked, never get reinterpreted as a natural-language request.
+async function dispatch(command: string, ctx: WriteOpsContext, headSha: string): Promise<DispatchResult> {
+  const meta = parseMetaCommand(command)
+  if (meta.ok) {
+    return { result: await runMeta(meta.command, ctx), action: metaAction(meta.command.kind) }
+  }
+  if ('error' in meta) {
+    // Recognized meta keyword, malformed usage — stays rejected, not NL.
+    return { result: { output: meta.error, exitCode: 126 } }
+  }
+
+  const parsed = validateCommand(command)
+  if (parsed.ok) {
+    const result =
+      parsed.parsed.spec.executor === 'git'
+        ? await runGit(parsed.parsed, { token: ctx.accessToken, owner: ctx.owner, repo: ctx.repo, headSha, defaultBranch: ctx.defaultBranch })
+        : await runCommand(parsed.parsed, ctx.snapshotDir)
+    return { result }
+  }
+
+  const firstToken = command.trim().split(/\s+/)[0] ?? ''
+  const isKnownFirstWord = firstToken === 'git' || firstToken in FILE_COMMANDS || BLOCKED_BINARIES.has(firstToken) || looksLikeMetaCommand(command)
+  if (isKnownFirstWord) {
+    return { result: { output: parsed.error, exitCode: 126 } }
+  }
+
+  // Genuinely unrecognized input -> treat as a natural-language coding
+  // request. resolveNLEditTarget enforces the coding-only scope boundary
+  // itself (refuses non-code requests) before any file is touched.
+  const nl = await resolveNLEditTarget(ctx, command)
+  if (!nl.ok) return { result: { output: nl.error, exitCode: 1 } }
+
+  const result = await proposeEdit(ctx, nl.target.file, command, nl.target.isNewFile)
+  return { result, action: 'propose_edit' }
+}
+
+function metaAction(kind: string): TerminalCommand['action'] | undefined {
+  switch (kind) {
+    case 'edit':
+    case 'write':
+      return 'propose_edit'
+    case 'apply':
+      return 'apply'
+    case 'branch':
+      return 'branch'
+    case 'commit':
+      return 'commit'
+    case 'pr':
+      return 'pr'
+    default:
+      return undefined
+  }
+}
+
+async function runMeta(
+  command: MetaCommand,
+  ctx: WriteOpsContext,
+): Promise<{ output: string; exitCode: number }> {
+  switch (command.kind) {
+    case 'edit':
+      return proposeEdit(ctx, command.file, command.instruction, false)
+    case 'write':
+      return proposeEdit(ctx, command.file, command.instruction, true)
+    case 'apply':
+      return applyEdit(ctx)
+    case 'branch':
+      return createBranch(ctx, command.name)
+    case 'commit':
+      return commitChanges(ctx, command.message)
+    case 'pr':
+      return openPullRequest(ctx, command.title, command.description)
+  }
+}
+
+// Get-or-create: on a brand new session (requestedSessionId is null), insert
+// a bare row immediately and return its id, so every downstream write-ops
+// call has a durable session_id to work with before the command even runs.
+async function ensureSessionId(uid: string, repo: string, requestedSessionId: string | null): Promise<string | null> {
+  if (requestedSessionId) {
+    const { data } = await supabase
+      .from('resources')
+      .select('id')
+      .eq('id', requestedSessionId)
+      .eq('user_id', uid)
+      .maybeSingle()
+    if (data) return data.id
+  }
+
+  const payload: TerminalSessionPayload = {
+    repo,
+    commands: [],
+    session_start: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('resources')
+    .insert({ user_id: uid, type: 'terminal_session', source: 'user', title: `Terminal — ${repo}`, payload })
+    .select('id')
+    .single()
+  if (error) {
+    console.error('[terminal] session insert failed:', error)
+    return null
+  }
+  return data.id
+}
+
+async function appendCommand(uid: string, sessionId: string, entry: TerminalCommand): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('resources')
+      .select('payload')
+      .eq('id', sessionId)
+      .eq('user_id', uid)
+      .maybeSingle()
+    if (!data) return
+    const payload = data.payload as TerminalSessionPayload
+    const updated: TerminalSessionPayload = {
+      ...payload,
+      commands: [...(payload.commands ?? []), entry].slice(-200),
       session_end: entry.timestamp,
     }
-    const { data, error } = await supabase
+    await supabase
       .from('resources')
-      .insert({ user_id: uid, type: 'terminal_session', source: 'user', title: `Terminal — ${repo}`, payload })
-      .select('id')
-      .single()
-    if (error) {
-      console.error('[terminal] session insert failed:', error)
-      return null
-    }
-    return data.id
+      .update({ payload: updated, updated_at: new Date().toISOString() })
+      .eq('id', sessionId)
+      .eq('user_id', uid)
   } catch (e) {
-    console.error('[terminal] persist failed:', e)
-    return sessionId
+    console.error('[terminal] append failed:', e)
   }
 }
