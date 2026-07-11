@@ -102,11 +102,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
 
     async jwt({ token, account, user }) {
-      // Always backfill googleId from token.sub — token.sub is the OAuth
-      // provider account ID that NextAuth sets on sign-in, and it survives
-      // across JWT refreshes. If googleId was never set (old JWT issued
-      // before this field was added), sub is the canonical fallback.
-      if (!token.googleId && token.sub) {
+      // Backfill googleId from token.sub ONLY when token.sub is a provider
+      // account ID (not a UUID). Old GitHub JWTs stored the profiles.id UUID
+      // in token.sub — copying that into googleId would break every route
+      // that queries google_id (the column stores "github_12345678", not the
+      // UUID). UUIDs are handled by the fallback at the bottom of this
+      // callback instead.
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      if (!token.googleId && token.sub && !UUID_RE.test(token.sub)) {
         token.googleId = token.sub as string
       }
 
