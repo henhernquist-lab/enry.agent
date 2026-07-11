@@ -72,6 +72,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
 
     async jwt({ token, account, user }) {
+      // Always backfill googleId from token.sub — token.sub is the OAuth
+      // provider account ID that NextAuth sets on sign-in, and it survives
+      // across JWT refreshes. If googleId was never set (old JWT issued
+      // before this field was added), sub is the canonical fallback.
+      if (!token.googleId && token.sub) {
+        token.googleId = token.sub as string
+      }
+
       if (account?.provider === 'google') {
         // Resolve profiles.id UUID immediately on sign-in so session.user.id
         // is always a valid UUID downstream — no per-route resolution needed.
@@ -171,7 +179,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // session.user.id stays as the provider account ID (google_id) for
         // backward compat — 7+ route files use it as google_id directly.
         const u = session.user as typeof session.user & { id?: string }
-        u.id = token.googleId as string
+        u.id = (token.googleId ?? token.sub) as string
 
         // Expose the resolved profiles.id UUID as a separate field.
         const s = session as typeof session & { internalUserId?: string }
