@@ -248,13 +248,24 @@ export async function saveResource(
   title: string,
   payload: unknown,
 ): Promise<void> {
-  fetch('/api/resources', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, title, payload }),
-  })
-    .then(() => emitResourceSaved())
-    .catch((e) => console.error('[resources] save failed:', e))
+  // Must actually await the write — callers do `await saveResource(...)`
+  // then immediately reload a list. Without this await, the function was
+  // returning before the network round-trip finished, so the reload could
+  // (and did, reproducibly) race ahead of the save and show a stale list.
+  try {
+    const res = await fetch('/api/resources', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, title, payload }),
+    })
+    if (!res.ok) {
+      console.error('[resources] save failed:', res.status, await res.text().catch(() => ''))
+      return
+    }
+    emitResourceSaved()
+  } catch (e) {
+    console.error('[resources] save failed:', e)
+  }
 }
 
 export async function loadResources(type: ResourceType, source?: ResourceSource): Promise<Resource[]> {
