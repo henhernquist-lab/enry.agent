@@ -20,8 +20,6 @@ import {
   type Automation,
   type AutomationRun,
 } from '@/lib/automations'
-import { loadProfileAsync, createDefaultProfile, saveProfile } from '@/lib/user-profile'
-import { OnboardingFlow } from '@/components/onboarding-flow'
 import { ProfileEditor } from '@/components/profile-editor'
 import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
 import { SystemStatusStrip } from '@/components/home/system-status-strip'
@@ -45,7 +43,6 @@ export default function EnryAgentPage() {
   const [streamingText, setStreamingText] = useState('')
   const [currentModel, setCurrentModel] = useState('deepseek-ai/deepseek-v4-pro')
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
-  const [showOnboarding, setShowOnboarding] = useState(false)
   const [showProfileEditor, setShowProfileEditor] = useState(false)
   const responseStartRef = useRef<number | null>(null)
 
@@ -83,11 +80,6 @@ export default function EnryAgentPage() {
       setActiveId(newConversationId())
       setActiveMessages(undefined)
       activeCreatedAtRef.current = Date.now()
-    })
-
-    // Load profile / show onboarding
-    loadProfileAsync().then((profile) => {
-      if (!profile?.setupComplete) setShowOnboarding(true)
     })
   }, [sessionStatus])
 
@@ -198,19 +190,6 @@ export default function EnryAgentPage() {
           onDeleteConversation={handleDeleteConversation}
           onAutomationsChange={handleAutomationsChange}
           onSetupProfile={() => setShowProfileEditor(true)}
-        />
-
-        <OnboardingFlow
-          open={showOnboarding}
-          onComplete={() => setShowOnboarding(false)}
-          onClose={() => setShowOnboarding(false)}
-          onSkip={() => {
-            const skipped = { ...createDefaultProfile(), setupComplete: true, setupDate: Date.now() }
-            saveProfile(skipped).then((ok) => {
-              if (!ok) console.error('[page:skip] Failed to save skipped profile')
-            })
-            setShowOnboarding(false)
-          }}
         />
 
         <ProfileEditor
