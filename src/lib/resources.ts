@@ -78,6 +78,7 @@ export interface ArticleNotePayload {
   key_claims: string[]
   flashcards: { q: string; a: string }[]
   tags: string[]
+  topic?: 'ai' | 'training' | 'writing' | 'building' | 'general'
   user_note?: string
   processing_failed?: boolean
 }

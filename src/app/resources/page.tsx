@@ -210,9 +210,8 @@ function ResourcesContent() {
           </p>
         </div>
 
-        {/* Grid with page transition — capped so cards don't look absurd on huge monitors.
-            250px ≈ sticky header (44px) + main padding (64px) + title area (88px) + pagination (52px) */}
-        <div className="relative flex-1 overflow-hidden" style={{ maxHeight: 'min(100vh - 250px, 900px)' }}>
+        {/* Grid with page transition — fills full available viewport height */}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* Swipe gesture layer — sits behind the grid so links still click */}
           <div
             className="absolute inset-0 z-0"

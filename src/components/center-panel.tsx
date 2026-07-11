@@ -34,7 +34,6 @@ import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/a
 import { loadToggles } from '@/lib/builtin-automations'
 import { setAgentBusy } from '@/lib/agent-presence'
 import type { ActivityEvent } from '@/lib/chat-history'
-import { loadProfile, profileToSystemPrompt } from '@/lib/user-profile'
 
 interface CenterPanelProps {
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
@@ -215,15 +214,7 @@ export function CenterPanel({
 
     onActivity({ type: 'user-sent', content: text || `[Attached: ${attachment?.filename}]`, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
-    const profile = loadProfile()
-    console.log('[center-panel] Sending message — profile loaded:', profile ? `setupComplete=${profile.setupComplete}` : 'null')
     const body: Record<string, unknown> = { model }
-    if (profile?.setupComplete) {
-      body.userProfile = profileToSystemPrompt(profile)
-      console.log('[center-panel] Injecting user profile into system prompt')
-    } else {
-      console.log('[center-panel] No profile — skipping system prompt injection')
-    }
 
     // Only attach the raw image to the model when the selected model actually
     // supports vision — otherwise the text description in finalText is the

@@ -20,7 +20,6 @@ import {
   type Automation,
   type AutomationRun,
 } from '@/lib/automations'
-import { ProfileEditor } from '@/components/profile-editor'
 import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
 import { SystemStatusStrip } from '@/components/home/system-status-strip'
 import { ActivityChart } from '@/components/home/activity-chart'
@@ -43,7 +42,6 @@ export default function EnryAgentPage() {
   const [streamingText, setStreamingText] = useState('')
   const [currentModel, setCurrentModel] = useState('deepseek-ai/deepseek-v4-pro')
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
-  const [showProfileEditor, setShowProfileEditor] = useState(false)
   const responseStartRef = useRef<number | null>(null)
 
   // ─── Automation scheduler lifecycle ─────────────────────────
@@ -189,12 +187,6 @@ export default function EnryAgentPage() {
           onSelectConversation={handleSelectConversation}
           onDeleteConversation={handleDeleteConversation}
           onAutomationsChange={handleAutomationsChange}
-          onSetupProfile={() => setShowProfileEditor(true)}
-        />
-
-        <ProfileEditor
-          open={showProfileEditor}
-          onClose={() => setShowProfileEditor(false)}
         />
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

@@ -8,7 +8,7 @@ import { AutomationsSection } from './automations-section'
 import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
 import Link from 'next/link'
-import { MessageSquarePlus, MessageSquare, Trash2, Download, X, User, Wrench, BookMarked, BookOpen } from 'lucide-react'
+import { MessageSquarePlus, MessageSquare, Trash2, Download, X, Wrench, BookMarked, BookOpen } from 'lucide-react'
 
 interface LeftSidebarProps {
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
@@ -18,7 +18,6 @@ interface LeftSidebarProps {
   onSelectConversation: (id: string) => void
   onDeleteConversation: (id: string) => void
   onAutomationsChange?: () => void
-  onSetupProfile?: () => void
 }
 
 function formatRelativeTime(ts: number): string {
@@ -41,7 +40,6 @@ export function LeftSidebar({
   onSelectConversation,
   onDeleteConversation,
   onAutomationsChange,
-  onSetupProfile,
 }: LeftSidebarProps) {
   const [showComingSoon, setShowComingSoon] = useState(false)
 
@@ -142,13 +140,6 @@ export function LeftSidebar({
           <BookOpen className="h-4 w-4" />
           Reading List
         </Link>
-        <button
-          onClick={() => onSetupProfile?.()}
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover:border-primary/60"
-        >
-          <User className="h-4 w-4" />
-          Profile
-        </button>
         <button
           onClick={() => setShowComingSoon(true)}
           className="flex w-full items-center justify-center gap-2 rounded border border-border bg-surface-elevated px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"

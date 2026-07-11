@@ -155,10 +155,10 @@ async function generateDailyArticles(uid: string): Promise<Array<{ url: string; 
     )
   }
 
-  const picks = candidates.slice(0, 3)
+  const picks = candidates.slice(0, 10)
   const results: Array<{ url: string; status: string; id?: string }> = []
 
-  for (const { url } of picks) {
+  for (const { url, topic } of picks) {
     try {
       const result = await processArticleUrl(url)
       if (!result.ok) {
@@ -179,6 +179,7 @@ async function generateDailyArticles(uid: string): Promise<Array<{ url: string; 
         key_claims: keyClaims,
         flashcards,
         tags,
+        topic: topic as ArticleNotePayload['topic'],
         ...(processingFailed ? { processing_failed: true } : {}),
       }
 
