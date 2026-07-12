@@ -66,7 +66,7 @@ const TOOL_ROUTES: NavItem[] = [
   { label: 'Chief of Staff', path: '/resources/briefing', icon: Briefcase, keywords: 'briefing daily observations actions' },
   { label: 'The Aperture', path: '/resources/aperture', icon: Aperture, keywords: 'question daily reflection thinking' },
   { label: 'The Root Cause', path: '/resources/root-cause', icon: Waypoints, keywords: 'failure investigation 5 whys' },
-  { label: 'Live Terminal', path: '/resources/terminal', icon: TerminalSquare, keywords: 'terminal shell command repo git' },
+  { label: 'Coding Agent', path: '/agent', icon: TerminalSquare, keywords: 'coding agent terminal shell command repo git edit diff pr' },
   { label: 'Ghost Mode', path: '/resources/ghost', icon: Ghost, keywords: 'past henry time window persona ghost' },
 ]
 

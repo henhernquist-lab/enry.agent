@@ -1,28 +1,24 @@
-// Colors a unified diff string for the terminal — green additions, red
-// deletions, muted hunk headers/context. The diff text itself is generated
-// server-side (src/lib/terminal/diff.ts, the `diff` package) so this only
-// needs to classify lines, not parse diff semantics.
+// Colors a unified diff string - green additions, red deletions, muted hunk
+// headers. The diff text is generated server-side (src/lib/terminal/diff.ts,
+// the `diff` package), so this only classifies lines. The Index:, ===, and
+// ---/+++ preamble lines that createTwoFilesPatch emits are dropped - the
+// filename already lives in the card header above the diff, so repeating it is
+// noise (git's own diff view hides them too).
 export function DiffView({ diffText }: { diffText: string }) {
-  const lines = diffText.split('\n')
+  const lines = diffText.split('\n').filter(
+    (l) => !l.startsWith('Index:') && !l.startsWith('===') && !l.startsWith('--- ') && !l.startsWith('+++ '),
+  )
 
   return (
-    <pre className="mb-1 overflow-x-auto whitespace-pre break-words">
+    <pre className="mb-1 overflow-x-auto whitespace-pre break-words text-[12px] leading-relaxed">
       {lines.map((line, i) => {
-        let className = 'text-foreground/70'
-        if (line.startsWith('+++') || line.startsWith('---')) {
-          className = 'text-muted-foreground'
-        } else if (line.startsWith('+')) {
-          className = 'text-primary'
-        } else if (line.startsWith('-')) {
-          className = 'text-red-400'
-        } else if (line.startsWith('@@')) {
-          className = 'text-accent'
-        } else if (line.startsWith('Index:') || line.startsWith('====')) {
-          className = 'text-muted-foreground/70'
-        }
+        let className = 'text-foreground/60'
+        if (line.startsWith('+')) className = 'text-primary'
+        else if (line.startsWith('-')) className = 'text-red-400'
+        else if (line.startsWith('@@')) className = 'text-accent'
         return (
           <div key={i} className={className}>
-            {line || ' '}
+            {line || ' '}
           </div>
         )
       })}

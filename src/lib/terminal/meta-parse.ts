@@ -15,13 +15,14 @@ export type MetaCommand =
   | { kind: 'edit'; file: string; instruction: string }
   | { kind: 'write'; file: string; instruction: string }
   | { kind: 'apply' }
+  | { kind: 'discard' }
   | { kind: 'branch'; name: string }
   | { kind: 'commit'; message: string }
   | { kind: 'pr'; title: string; description: string }
 
 export type MetaParseResult = { ok: true; command: MetaCommand } | { ok: false; error: string } | { ok: false; notMeta: true }
 
-const META_KEYWORDS = new Set(['edit', 'write', 'apply', 'branch', 'commit', 'pr'])
+const META_KEYWORDS = new Set(['edit', 'write', 'apply', 'discard', 'branch', 'commit', 'pr'])
 
 // A conservative, real-git-compatible branch name charset. No spaces, no
 // leading '-' (flag-injection lookalike), no '..', doesn't end in '.lock'.
@@ -60,6 +61,10 @@ export function parseMetaCommand(raw: string): MetaParseResult {
     case 'apply': {
       if (rest.length !== 0) return { ok: false, error: 'Usage: apply (no arguments)' }
       return { ok: true, command: { kind: 'apply' } }
+    }
+    case 'discard': {
+      if (rest.length !== 0) return { ok: false, error: 'Usage: discard (no arguments)' }
+      return { ok: true, command: { kind: 'discard' } }
     }
     case 'branch': {
       if (rest.length !== 1 || !rest[0]) return { ok: false, error: 'Usage: branch <name>' }

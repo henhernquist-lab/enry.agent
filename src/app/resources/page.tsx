@@ -44,6 +44,7 @@ interface ToolDef {
   name: string
   desc: string
   icon: typeof BookOpen
+  href?: string // override the default /resources/<slug> destination
 }
 
 const TOOLS: ToolDef[] = [
@@ -64,7 +65,7 @@ const TOOLS: ToolDef[] = [
   { slug: 'briefing',         type: 'briefing',        name: 'Chief of Staff',      desc: 'Daily cross-tool briefing and suggested actions',   icon: Briefcase },
   { slug: 'aperture',         type: 'aperture',        name: 'The Aperture',        desc: 'One question a day — an archive of your thinking',   icon: Aperture },
   { slug: 'root-cause',       type: 'root_cause',      name: 'The Root Cause',      desc: '5-whys investigations grounded in your data',       icon: Waypoints },
-  { slug: 'terminal',         type: 'terminal_session', name: 'Live Terminal',      desc: 'Read-only sandboxed commands against your repos',    icon: TerminalSquare },
+  { slug: 'terminal',         type: 'terminal_session', name: 'Coding Agent',        desc: 'Describe a change; watch it plan, diff, and open a PR', icon: TerminalSquare, href: '/agent' },
   { slug: 'ghost',            type: 'ghost_conversation', name: 'Ghost Mode',       desc: 'Talk to who you were — a past window of yourself',   icon: Ghost },
 ]
 
@@ -249,7 +250,7 @@ function ResourcesContent() {
                   return (
                     <motion.a
                       key={tool.slug}
-                      href={`/resources/${tool.slug}`}
+                      href={tool.href ?? `/resources/${tool.slug}`}
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.035, type: 'spring', stiffness: 300, damping: 28 }}

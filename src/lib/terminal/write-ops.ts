@@ -35,11 +35,32 @@ export interface WriteOpsContext {
   // the pristine dir, and writing there would leak into every other session
   // sharing this repo+headSha's cache.
   pristineSnapshotDir: string
+  // Coding-agent controls (optional — absent falls back to the default model
+  // and balanced effort). model is one of the NIM model ids; effort maps to a
+  // temperature / token-budget / prompt-strategy tier.
+  model?: string
+  effort?: EffortLevel
+}
+
+export type EffortLevel = 'low' | 'medium' | 'high' | 'none'
+
+// Effort → generation parameters. Deeper effort spends more tokens and nudges
+// the model to reason about edge cases before proposing; quick effort is
+// terse and cheap. Temperature stays low throughout — this is code editing,
+// not brainstorming.
+const EFFORT_PARAMS: Record<EffortLevel, { temperature: number; maxOutputTokens: number; planDepth: string }> = {
+  low:    { temperature: 0.2, maxOutputTokens: 3000, planDepth: 'One sentence: what you will change. Skip rationale.' },
+  none:   { temperature: 0.3, maxOutputTokens: 4096, planDepth: '2-3 sentences: what you will change and why.' },
+  medium: { temperature: 0.3, maxOutputTokens: 5000, planDepth: '2-4 sentences: what you will change, why, and any risk you considered.' },
+  high:   { temperature: 0.4, maxOutputTokens: 8000, planDepth: 'A short paragraph: your reasoning, the approach you chose over alternatives, and edge cases you accounted for.' },
 }
 
 export interface WriteOpsResult {
   output: string
   exitCode: number
+  // A short plan/reasoning the agent produced before the diff (propose_edit
+  // only). Powers the collapsible "thinking" section in the cockpit UI.
+  reasoning?: string
 }
 
 // ── Session payload helpers ──────────────────────────────────────────────────
@@ -124,24 +145,37 @@ export async function proposeEdit(
     ? 'Create this file. Infer reasonable content from the file path and repository context.'
     : 'Review this file and propose your single best, most useful improvement — a real fix or a clear quality improvement, not a cosmetic no-op.')
 
-  const newContent = await generateFileContent(ctx, filePath, baseContent, effectiveInstruction, isNewFile)
-  if (newContent === null) return { output: `${isNewFile ? 'write' : 'edit'}: generation failed`, exitCode: 1 }
+  const generated = await generateFileContent(ctx, filePath, baseContent, effectiveInstruction, isNewFile)
+  if (generated === null) return { output: `${isNewFile ? 'write' : 'edit'}: generation failed`, exitCode: 1 }
 
-  const diff = generateDiff(filePath, baseContent, newContent)
+  const diff = generateDiff(filePath, baseContent, generated.content)
   const pending: PendingDiff = {
     file: filePath,
     diff,
-    new_content: newContent,
+    new_content: generated.content,
     is_new_file: isNewFile,
     base_sha: baseSha,
     proposed_at: new Date().toISOString(),
   }
   await saveSessionPayload(ctx.sessionId, ctx.userId, { pending_diff: pending })
 
-  return { output: diff || '(no changes proposed)', exitCode: 0 }
+  return { output: diff || '(no changes proposed)', exitCode: 0, reasoning: generated.reasoning }
 }
 
-const EDIT_SYSTEM_PROMPT = `You propose exactly one file's new full content for enry.agent's Live Terminal coding mode. You receive the target file's current content (empty for a new file) and an instruction. Output ONLY the complete new file content — no markdown fences, no explanation, no commentary before or after. If the instruction is not actually about code/file content, output the original content unchanged.`
+// The model emits its plan first, then a sentinel line, then the raw file
+// content. Splitting on a sentinel (rather than JSON) avoids escaping the
+// file's own code — which routinely contains quotes, braces, and backslashes
+// that would break JSON parsing.
+const CONTENT_SENTINEL = '===FILE==='
+const EDIT_SYSTEM_PROMPT = `You are enry's coding agent, proposing exactly one file's new full content.
+
+You receive the target file's current content (empty for a new file) and an instruction. Respond in TWO parts, in this exact order:
+
+1. A brief plan of what you're about to change. {{PLAN_DEPTH}}
+2. A line containing exactly ${CONTENT_SENTINEL} and nothing else.
+3. The complete new file content, raw — no markdown fences, no commentary, nothing after it.
+
+If the instruction is not actually about changing this file's content, put a one-line explanation in the plan and output the original content unchanged after the sentinel.`
 
 async function generateFileContent(
   ctx: WriteOpsContext,
@@ -149,19 +183,29 @@ async function generateFileContent(
   baseContent: string,
   instruction: string,
   isNewFile: boolean,
-): Promise<string | null> {
+): Promise<{ reasoning: string; content: string } | null> {
+  const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
   try {
-    const client = nimClientFor()
+    const client = nimClientFor(ctx.model)
     const { text } = await generateText({
-      model: client.chat(DEFAULT_NIM_MODEL),
-      system: EDIT_SYSTEM_PROMPT,
-      prompt: `File: ${filePath}\n${isNewFile ? '(new file — no existing content)' : `Current content:\n${baseContent}`}\n\nInstruction: ${instruction}\n\nOutput the complete new file content now.`,
-      temperature: 0.3,
-      maxOutputTokens: 4096,
+      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
+      system: EDIT_SYSTEM_PROMPT.replace('{{PLAN_DEPTH}}', effort.planDepth),
+      prompt: `File: ${filePath}\n${isNewFile ? '(new file — no existing content)' : `Current content:\n${baseContent}`}\n\nInstruction: ${instruction}\n\nProduce your plan, then ${CONTENT_SENTINEL}, then the complete new file content.`,
+      temperature: effort.temperature,
+      maxOutputTokens: effort.maxOutputTokens,
       timeout: 45_000,
       maxRetries: 1,
     })
-    return stripFences(text)
+
+    // Split plan from content on the sentinel. If the model omitted it, treat
+    // the whole response as content with no reasoning (degrades gracefully).
+    const idx = text.indexOf(CONTENT_SENTINEL)
+    if (idx === -1) {
+      return { reasoning: '', content: stripFences(text) }
+    }
+    const reasoning = text.slice(0, idx).trim()
+    const content = stripFences(text.slice(idx + CONTENT_SENTINEL.length).replace(/^\n/, ''))
+    return { reasoning, content }
   } catch (err) {
     console.error('[terminal/write-ops] generateFileContent threw:', err)
     return null
@@ -227,6 +271,17 @@ export async function applyEdit(ctx: WriteOpsContext): Promise<WriteOpsResult> {
 
   await saveSessionPayload(ctx.sessionId, ctx.userId, { pending_diff: null })
   return { output: `applied: ${pending.file} (working copy — not committed yet; run commit "<message>" when ready)`, exitCode: 0 }
+}
+
+// ── discard ───────────────────────────────────────────────────────────────────
+// Clears the pending diff without writing it. The pending diff lives in the
+// session row server-side, so a client-only discard would leave it appliable
+// by the next `apply` — this makes the discard authoritative.
+export async function discardEdit(ctx: WriteOpsContext): Promise<WriteOpsResult> {
+  const payload = await loadSessionPayload(ctx.sessionId, ctx.userId)
+  if (!payload?.pending_diff) return { output: 'discard: nothing pending.', exitCode: 0 }
+  await saveSessionPayload(ctx.sessionId, ctx.userId, { pending_diff: null })
+  return { output: `discarded proposed change to ${payload.pending_diff.file}`, exitCode: 0 }
 }
 
 // ── branch ────────────────────────────────────────────────────────────────────

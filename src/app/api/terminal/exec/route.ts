@@ -7,7 +7,7 @@ import { ensureSnapshot } from '@/lib/terminal/snapshot'
 import { runCommand } from '@/lib/terminal/exec'
 import { runGit } from '@/lib/terminal/git-api'
 import { resolveExecutionDir } from '@/lib/terminal/working-copy'
-import { proposeEdit, applyEdit, createBranch, commitChanges, openPullRequest, type WriteOpsContext } from '@/lib/terminal/write-ops'
+import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, type WriteOpsContext } from '@/lib/terminal/write-ops'
 import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
@@ -52,6 +52,8 @@ export async function POST(req: Request) {
   const repo = String(body.repo ?? '').trim()
   const command = String(body.command ?? '')
   const requestedSessionId: string | null = body.session_id ?? null
+  const model = typeof body.model === 'string' ? body.model : undefined
+  const effort = ['low', 'medium', 'high', 'none'].includes(body.effort) ? body.effort : undefined
 
   if (!REPO_RE.test(repo)) {
     return Response.json({ error: 'Invalid repo. Use owner/name.' }, { status: 400 })
@@ -90,6 +92,8 @@ export async function POST(req: Request) {
     userId: uid,
     snapshotDir: execDir,
     pristineSnapshotDir: snap.dir,
+    model,
+    effort,
   }
 
   const { result, action } = await dispatch(command, writeCtx, snap.headSha)
@@ -108,7 +112,7 @@ export async function POST(req: Request) {
   // line and pending/applied indicators reflect true persisted state, not
   // just an inference from this one command's success — a stale-diff
   // rejection or a fresh page load both need to resolve to the same truth.
-  const { current_branch, has_pending_diff } = await readWriteState(uid, sessionId)
+  const { current_branch, has_pending_diff, pending_file } = await readWriteState(uid, sessionId)
 
   return Response.json({
     output: result.output,
@@ -117,10 +121,12 @@ export async function POST(req: Request) {
     action,
     current_branch,
     has_pending_diff,
+    pending_file,
+    reasoning: result.reasoning ?? null,
   })
 }
 
-async function readWriteState(uid: string, sessionId: string): Promise<{ current_branch?: string; has_pending_diff: boolean }> {
+async function readWriteState(uid: string, sessionId: string): Promise<{ current_branch?: string; has_pending_diff: boolean; pending_file: string | null }> {
   const { data } = await supabase
     .from('resources')
     .select('payload')
@@ -128,11 +134,15 @@ async function readWriteState(uid: string, sessionId: string): Promise<{ current
     .eq('user_id', uid)
     .maybeSingle()
   const payload = data?.payload as TerminalSessionPayload | undefined
-  return { current_branch: payload?.current_branch, has_pending_diff: !!payload?.pending_diff }
+  return {
+    current_branch: payload?.current_branch,
+    has_pending_diff: !!payload?.pending_diff,
+    pending_file: payload?.pending_diff?.file ?? null,
+  }
 }
 
 interface DispatchResult {
-  result: { output: string; exitCode: number }
+  result: { output: string; exitCode: number; reasoning?: string }
   action?: TerminalCommand['action']
 }
 
@@ -183,6 +193,8 @@ function metaAction(kind: string): TerminalCommand['action'] | undefined {
       return 'propose_edit'
     case 'apply':
       return 'apply'
+    case 'discard':
+      return 'discard'
     case 'branch':
       return 'branch'
     case 'commit':
@@ -197,7 +209,7 @@ function metaAction(kind: string): TerminalCommand['action'] | undefined {
 async function runMeta(
   command: MetaCommand,
   ctx: WriteOpsContext,
-): Promise<{ output: string; exitCode: number }> {
+): Promise<{ output: string; exitCode: number; reasoning?: string }> {
   switch (command.kind) {
     case 'edit':
       return proposeEdit(ctx, command.file, command.instruction, false)
@@ -205,6 +217,8 @@ async function runMeta(
       return proposeEdit(ctx, command.file, command.instruction, true)
     case 'apply':
       return applyEdit(ctx)
+    case 'discard':
+      return discardEdit(ctx)
     case 'branch':
       return createBranch(ctx, command.name)
     case 'commit':
