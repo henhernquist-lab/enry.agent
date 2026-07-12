@@ -48,9 +48,9 @@ export async function resolveNLEditTarget(ctx: WriteOpsContext, instruction: str
   const fileList = tree.map((f) => f.path).slice(0, 500).join('\n')
 
   try {
-    const client = nimClientFor()
+    const client = nimClientFor(ctx.model)
     const { text } = await generateText({
-      model: client.chat(DEFAULT_NIM_MODEL),
+      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
       system: SCOPE_SYSTEM_PROMPT,
       prompt: `Repo files:\n${fileList}\n\nRequest: "${instruction}"\n\nDecide now.`,
       temperature: 0.2,
@@ -70,6 +70,7 @@ export async function resolveNLEditTarget(ctx: WriteOpsContext, instruction: str
     return { ok: true, target: { file: parsed.file, isNewFile: !!parsed.is_new_file } }
   } catch (err) {
     console.error('[terminal/nl-edit] resolution threw:', err)
-    return { ok: false, error: 'Request routing failed.' }
+    const detail = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: `Request routing failed: ${detail}` }
   }
 }

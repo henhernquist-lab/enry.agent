@@ -42,8 +42,17 @@ export function scanRawInput(raw: string): string | null {
 }
 
 // ─── Step 2: shell-free tokenizer ───────────────────────────────────────────
-// Whitespace split with '...' / "..." grouping only. No escape processing, no
-// variable expansion. Unbalanced quotes → error.
+// Whitespace split with "..." grouping only. No escape processing, no
+// variable expansion. Unbalanced double quotes → error.
+//
+// Deliberately double-quote-only, not '...' too: this parser also has to
+// tokenize free-text instructions (edit/write instructions, natural-language
+// requests) where a bare "'" is overwhelmingly an English apostrophe
+// ("doesn't", "the user's session"), not a shell quote. Treating it as a
+// grouping character turned every contraction into a false "unbalanced
+// quotes" rejection. Quoted commit/pr messages already use double quotes
+// (see meta-parse.ts usage strings), so single-quote grouping was never load-
+// bearing — dropping it removes the ambiguity for free.
 export function tokenize(raw: string): { tokens: string[] } | { error: string } {
   const tokens: string[] = []
   let i = 0
@@ -56,11 +65,10 @@ export function tokenize(raw: string): { tokens: string[] } | { error: string } 
     let token = ''
     while (i < n && raw[i] !== ' ' && raw[i] !== '\t') {
       const c = raw[i]
-      if (c === '"' || c === "'") {
-        const quote = c
+      if (c === '"') {
         i++
         const start = i
-        while (i < n && raw[i] !== quote) i++
+        while (i < n && raw[i] !== c) i++
         if (i >= n) return { error: 'Rejected: unbalanced quotes.' }
         token += raw.slice(start, i)
         i++ // skip closing quote
