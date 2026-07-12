@@ -91,6 +91,23 @@ const MODELS = [
 
 type ModelId = typeof MODELS[number]['id']
 
+// ─── Chatbot effort (3 levels, separate from coding agent's 5) ───
+
+const CHAT_EFFORTS = [
+  { id: 'low' as const,    label: 'Low',    desc: 'Minimal reasoning, fast' },
+  { id: 'medium' as const,  label: 'Medium', desc: 'Default reasoning depth' },
+  { id: 'high' as const,    label: 'High',   desc: 'Maximum reasoning, slower' },
+]
+
+type ChatEffortId = typeof CHAT_EFFORTS[number]['id']
+
+const CHAT_MODEL_DEFAULTS: Record<string, ChatEffortId> = {
+  'deepseek-ai/deepseek-v4-pro': 'medium',
+  'z-ai/glm-5.2':               'high',
+  'qwen/qwen3.5-122b-a10b':      'low',
+  'minimax/minimax-m3':          'medium',
+}
+
 const QUICK_ACTIONS = [
   { label: 'Search the web', glyph: '/', prompt: 'Search the web for ' },
   { label: 'Summarize a URL', glyph: '↗', prompt: 'Summarize the content at this URL: ' },
@@ -125,6 +142,8 @@ export function CenterPanel({
   onModelChange,
 }: CenterPanelProps) {
   const [model, setModel] = useState<ModelId>('deepseek-ai/deepseek-v4-pro')
+  const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS['deepseek-ai/deepseek-v4-pro'] ?? 'medium')
+  const [effortMenuOpen, setEffortMenuOpen] = useState(false)
   const { messages, sendMessage, status, error } = useChat({
     transport,
     messages: initialMessages,
@@ -144,6 +163,7 @@ export function CenterPanel({
   const [uploadResult, setUploadResult] = useState<AttachmentMeta | null>(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const modelDropdownRef = useRef<HTMLDivElement>(null)
+  const effortDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -202,6 +222,15 @@ export function CenterPanel({
     return () => document.removeEventListener('mousedown', handler)
   }, [modelOpen])
 
+  useEffect(() => {
+    if (!effortMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!effortDropdownRef.current?.contains(e.target as Node)) setEffortMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [effortMenuOpen])
+
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault()
     const text = input.trim()
@@ -213,7 +242,7 @@ export function CenterPanel({
 
     onActivity({ type: 'user-sent', content: text || `[Attached: ${attachment?.filename}]`, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
-    const body: Record<string, unknown> = { model }
+    const body: Record<string, unknown> = { model, effort: chatEffort }
 
     // Only attach the raw image to the model when the selected model actually
     // supports vision — otherwise the text description in finalText is the
@@ -294,6 +323,7 @@ export function CenterPanel({
 
   const handleModelSelect = (id: ModelId) => {
     setModel(id)
+    setChatEffort(CHAT_MODEL_DEFAULTS[id] ?? 'medium')
     onModelChange(id)
     setModelOpen(false)
   }
@@ -311,6 +341,7 @@ export function CenterPanel({
     setTimeout(() => setCopiedId(null), 2000)
   }
 
+  const currentChatEffort = CHAT_EFFORTS.find((e) => e.id === chatEffort)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
   return (
@@ -698,6 +729,35 @@ export function CenterPanel({
                         {m.desc}
                       </span>
                     </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Chat Effort Toggle — 3 levels, separate from coding agent's 5 */}
+          <div ref={effortDropdownRef} className="relative flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setEffortMenuOpen((o) => !o)}
+              className="flex h-12 items-center gap-1 rounded border border-border bg-surface-elevated px-2.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+            >
+              <Zap className="h-3 w-3" />{currentChatEffort?.label}
+              <ChevronDown className={`h-2.5 w-2.5 transition-transform ${effortMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {effortMenuOpen && (
+              <div className="absolute bottom-full right-0 z-50 mb-1 w-40 border border-border bg-surface-secondary shadow-xl">
+                {CHAT_EFFORTS.map((e) => (
+                  <button
+                    type="button"
+                    key={e.id}
+                    onClick={() => { setChatEffort(e.id); setEffortMenuOpen(false) }}
+                    className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                      chatEffort === e.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <span className="font-mono text-[10px] font-semibold">{e.label}</span>
+                    <span className="font-sans text-[9px] text-muted-foreground leading-tight">{e.desc}</span>
                   </button>
                 ))}
               </div>
