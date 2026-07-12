@@ -7,7 +7,7 @@ import { ensureSnapshot } from '@/lib/terminal/snapshot'
 import { runCommand } from '@/lib/terminal/exec'
 import { runGit } from '@/lib/terminal/git-api'
 import { resolveExecutionDir } from '@/lib/terminal/working-copy'
-import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, type WriteOpsContext } from '@/lib/terminal/write-ops'
+import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, type WriteOpsContext } from '@/lib/terminal/write-ops'
 import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
@@ -53,7 +53,12 @@ export async function POST(req: Request) {
   const command = String(body.command ?? '')
   const requestedSessionId: string | null = body.session_id ?? null
   const model = typeof body.model === 'string' ? body.model : undefined
-  const effort = ['low', 'medium', 'high', 'none'].includes(body.effort) ? body.effort : undefined
+  const effort = ['low', 'medium', 'high', 'none', 'deep'].includes(body.effort) ? body.effort : undefined
+  const mode = body.mode === 'manual' ? 'manual' as const : 'auto' as const
+  const proceed = body.proceed === true
+  const resolvedFile = typeof body.target_file === 'string' ? body.target_file : undefined
+  const resolvedIsNew = body.is_new_file === true
+  const resolvedInstruction = typeof body.instruction === 'string' ? body.instruction : undefined
 
   if (!REPO_RE.test(repo)) {
     return Response.json({ error: 'Invalid repo. Use owner/name.' }, { status: 400 })
@@ -94,9 +99,14 @@ export async function POST(req: Request) {
     pristineSnapshotDir: snap.dir,
     model,
     effort,
+    mode,
+    proceed,
+    resolvedFile,
+    resolvedIsNew,
+    resolvedInstruction,
   }
 
-  const { result, action } = await dispatch(command, writeCtx, snap.headSha)
+  const { result, action, planTarget } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false)
 
   const entry: TerminalCommand = {
     cmd: command,
@@ -123,6 +133,7 @@ export async function POST(req: Request) {
     has_pending_diff,
     pending_file,
     reasoning: result.reasoning ?? null,
+    ...(planTarget ? { target_file: planTarget.file, is_new_file: planTarget.isNewFile } : {}),
   })
 }
 
@@ -144,6 +155,7 @@ async function readWriteState(uid: string, sessionId: string): Promise<{ current
 interface DispatchResult {
   result: { output: string; exitCode: number; reasoning?: string }
   action?: TerminalCommand['action']
+  planTarget?: { file: string; isNewFile: boolean }
 }
 
 // Dispatch order, strictly: meta-command -> read-only allowlist -> natural
@@ -151,7 +163,7 @@ interface DispatchResult {
 // binary, blocked binary, git, or a meta keyword) is routed to its matching
 // validator and never falls through to NL — a blocked/malformed command must
 // stay blocked, never get reinterpreted as a natural-language request.
-async function dispatch(command: string, ctx: WriteOpsContext, headSha: string): Promise<DispatchResult> {
+async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false): Promise<DispatchResult> {
   const meta = parseMetaCommand(command)
   if (meta.ok) {
     return { result: await runMeta(meta.command, ctx), action: metaAction(meta.command.kind) }
@@ -182,7 +194,17 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string):
   const nl = await resolveNLEditTarget(ctx, command)
   if (!nl.ok) return { result: { output: nl.error, exitCode: 1 } }
 
-  const result = await proposeEdit(ctx, nl.target.file, command, nl.target.isNewFile)
+  if (ctx.mode === 'manual' && !ctx.proceed) {
+    // Manual mode, phase 1: generate a plan, no diff yet.
+    const planResult = await planEdit(ctx, nl.target.file, ctx.resolvedInstruction ?? command, nl.target.isNewFile)
+    return { result: planResult, action: 'plan', planTarget: nl.target }
+  }
+
+  // Auto mode, or manual mode phase 2 (proceed: true): generate the diff.
+  const file = ctx.resolvedFile ?? nl.target.file
+  const isNew = ctx.proceed ? (ctx.resolvedIsNew ?? false) : nl.target.isNewFile
+  const instr = ctx.resolvedInstruction ?? command
+  const result = await proposeEdit(ctx, file, instr, isNew)
   return { result, action: 'propose_edit' }
 }
 

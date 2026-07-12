@@ -212,7 +212,7 @@ export interface TerminalCommand {
   // Set for write-mode actions (edit/apply/write/branch/commit/pr and their
   // natural-language equivalents) so the audit trail can be filtered to just
   // the actions that actually touched code, separate from read-only lookups.
-  action?: 'propose_edit' | 'apply' | 'discard' | 'branch' | 'commit' | 'pr'
+  action?: 'propose_edit' | 'apply' | 'discard' | 'branch' | 'commit' | 'pr' | 'plan'
 }
 
 // A diff proposed by `edit`/`write` or a natural-language request, shown in

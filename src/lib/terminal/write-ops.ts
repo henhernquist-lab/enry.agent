@@ -40,9 +40,19 @@ export interface WriteOpsContext {
   // temperature / token-budget / prompt-strategy tier.
   model?: string
   effort?: EffortLevel
+  // Mode: 'auto' = propose diff directly (current behavior); 'manual' =
+  // generate a plan first, return to client for approval, then the client
+  // sends a second request with proceed:true to generate the actual diff.
+  mode?: 'auto' | 'manual'
+  proceed?: boolean
+  // Already-resolved target (set by dispatch when proceed:true in manual mode
+  // — skips the resolveNLEditTarget step).
+  resolvedFile?: string
+  resolvedIsNew?: boolean
+  resolvedInstruction?: string
 }
 
-export type EffortLevel = 'low' | 'medium' | 'high' | 'none'
+export type EffortLevel = 'low' | 'medium' | 'high' | 'none' | 'deep'
 
 // Effort → generation parameters. Deeper effort spends more tokens and nudges
 // the model to reason about edge cases before proposing; quick effort is
@@ -53,6 +63,7 @@ const EFFORT_PARAMS: Record<EffortLevel, { temperature: number; maxOutputTokens:
   none:   { temperature: 0.3, maxOutputTokens: 4096, planDepth: '2-3 sentences: what you will change and why.' },
   medium: { temperature: 0.3, maxOutputTokens: 5000, planDepth: '2-4 sentences: what you will change, why, and any risk you considered.' },
   high:   { temperature: 0.4, maxOutputTokens: 8000, planDepth: 'A short paragraph: your reasoning, the approach you chose over alternatives, and edge cases you accounted for.' },
+  deep:   { temperature: 0.5, maxOutputTokens: 12000, planDepth: 'A detailed multi-step plan: (1) what you will change and exactly where in the file, (2) your reasoning with code-level specifics, (3) the approach you chose over at least one alternative with justification, (4) edge cases and failure modes you accounted for, (5) potential side effects in the rest of the codebase.' },
 }
 
 export interface WriteOpsResult {
@@ -141,7 +152,7 @@ export async function proposeEdit(
     }
   }
 
-  const effectiveInstruction = instruction.trim() || (isNewFile
+  const effectiveInstruction = (ctx.resolvedInstruction ?? instruction).trim() || (isNewFile
     ? 'Create this file. Infer reasonable content from the file path and repository context.'
     : 'Review this file and propose your single best, most useful improvement — a real fix or a clear quality improvement, not a cosmetic no-op.')
 
@@ -282,6 +293,66 @@ export async function discardEdit(ctx: WriteOpsContext): Promise<WriteOpsResult>
   if (!payload?.pending_diff) return { output: 'discard: nothing pending.', exitCode: 0 }
   await saveSessionPayload(ctx.sessionId, ctx.userId, { pending_diff: null })
   return { output: `discarded proposed change to ${payload.pending_diff.file}`, exitCode: 0 }
+}
+
+// ── plan (manual-mode phase 1) ───────────────────────────────────────────────
+// Generates a reasoning plan for the change without producing a diff. The client
+// shows this plan to the user, who can then refine their instruction or click
+// Proceed to trigger the actual proposeEdit call.
+export async function planEdit(
+  ctx: WriteOpsContext,
+  filePath: string,
+  instruction: string,
+  isNewFile: boolean,
+): Promise<WriteOpsResult> {
+  const scopeError = await requireWriteScope(ctx)
+  if (scopeError) return { output: scopeError, exitCode: 1 }
+
+  const confined = confinePath(ctx.snapshotDir, filePath)
+  if (confined === null) return { output: `path escapes repository: "${filePath}"`, exitCode: 1 }
+
+  let baseContent = ''
+  if (!isNewFile) {
+    const working = await getWorkingFile(ctx.sessionId, filePath)
+    if (working) {
+      baseContent = working.content
+    } else {
+      const { content, error } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, filePath)
+      if (error || content === null) return { output: `plan: could not read "${filePath}": ${error ?? 'not found'}`, exitCode: 1 }
+      baseContent = content
+    }
+  }
+
+  const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
+  const PLAN_SYSTEM = `You are enry's coding agent, producing a plan BEFORE writing code.
+
+Given a file and an instruction, produce a clear, structured plan for what you will change.
+${effort.planDepth}
+
+Do NOT produce the actual file content — only the plan. Be specific about line ranges,
+function names, and structural changes if applicable. If the instruction is
+ambiguous, ask one or two clarifying questions at the end of your plan.
+
+If the instruction is not about changing code, say so in one sentence and refuse.
+
+Keep the plan under ${Math.round(effort.maxOutputTokens / 2)} words.`
+
+  try {
+    const client = nimClientFor(ctx.model)
+    const { text } = await generateText({
+      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
+      system: PLAN_SYSTEM,
+      prompt: `File: ${filePath}\n${isNewFile ? '(new file)' : `Current content (first 2000 chars):\n${baseContent.slice(0, 2000)}`}\n\nInstruction: ${instruction}\n\nProduce your plan.`,
+      temperature: effort.temperature,
+      maxOutputTokens: Math.round(effort.maxOutputTokens / 2),
+      timeout: 30_000,
+      maxRetries: 1,
+    })
+    return { output: `Plan for ${filePath}`, exitCode: 0, reasoning: text.trim() }
+  } catch (err) {
+    console.error('[terminal/write-ops] planEdit threw:', err)
+    return { output: `plan: generation failed — ${err instanceof Error ? err.message : String(err)}`, exitCode: 1 }
+  }
 }
 
 // ── branch ────────────────────────────────────────────────────────────────────
