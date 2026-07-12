@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   const command = String(body.command ?? '')
   const requestedSessionId: string | null = body.session_id ?? null
   const model = typeof body.model === 'string' ? body.model : undefined
-  const effort = ['low', 'medium', 'high', 'none', 'deep'].includes(body.effort) ? body.effort : undefined
+  const effort = ['low', 'medium', 'high'].includes(body.effort) ? body.effort : undefined
   const mode = body.mode === 'manual' ? 'manual' as const : 'auto' as const
   const proceed = body.proceed === true
   const resolvedFile = typeof body.target_file === 'string' ? body.target_file : undefined

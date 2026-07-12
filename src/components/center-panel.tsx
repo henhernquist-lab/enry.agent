@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
@@ -283,6 +284,8 @@ export function CenterPanel({
     if (file) handleFileSelected(file)
   }
 
+  const router = useRouter()
+
   const handlePrefillPrompt = (prompt: string, comingSoon?: boolean) => {
     if (comingSoon) return
     setInput(prompt)
@@ -419,7 +422,10 @@ export function CenterPanel({
                     transition={{ delay: 0.3 + index * 0.08 }}
                     whileHover={{ scale: 1.02, borderColor: 'rgba(0, 255, 102, 0.3)' }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => handlePrefillPrompt(card.prompt, card.comingSoon)}
+                    onClick={() => {
+                      if (card.label === 'Write code') router.push('/agent')
+                      else handlePrefillPrompt(card.prompt, card.comingSoon)
+                    }}
                     disabled={card.comingSoon}
                     aria-disabled={card.comingSoon}
                     aria-label={card.comingSoon ? `${card.label} (coming soon)` : `${card.label} - ${card.description}`}
@@ -582,13 +588,15 @@ export function CenterPanel({
       <div className="border-t border-border bg-surface-secondary">
         {/* Quick Action Buttons */}
         <div className="mx-auto max-w-3xl px-4 pt-3">
-          <div className="flex items-center gap-2">
-            {QUICK_ACTIONS.map((action) => (
-              <motion.button
-                key={action.label}
-                whileHover={{ scale: action.comingSoon ? 1 : 1.03 }}
-                whileTap={{ scale: action.comingSoon ? 1 : 0.97 }}
-                onClick={() => handlePrefillPrompt(action.prompt, action.comingSoon)}
+          <div className="flex items-center gap-2">              {QUICK_ACTIONS.map((action) => (
+                <motion.button
+                  key={action.label}
+                  whileHover={{ scale: action.comingSoon ? 1 : 1.03 }}
+                  whileTap={{ scale: action.comingSoon ? 1 : 0.97 }}
+                  onClick={() => {
+                    if (action.label === 'Write code') router.push('/agent')
+                    else handlePrefillPrompt(action.prompt, action.comingSoon)
+                  }}
                 disabled={action.comingSoon}
                 aria-disabled={action.comingSoon}
                 aria-label={action.comingSoon ? `${action.label} (coming soon)` : action.label}

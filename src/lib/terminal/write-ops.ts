@@ -52,7 +52,7 @@ export interface WriteOpsContext {
   resolvedInstruction?: string
 }
 
-export type EffortLevel = 'low' | 'medium' | 'high' | 'none' | 'deep'
+export type EffortLevel = 'low' | 'medium' | 'high'
 
 // Effort → generation parameters. Deeper effort spends more tokens and nudges
 // the model to reason about edge cases before proposing; quick effort is
@@ -60,10 +60,8 @@ export type EffortLevel = 'low' | 'medium' | 'high' | 'none' | 'deep'
 // not brainstorming.
 const EFFORT_PARAMS: Record<EffortLevel, { temperature: number; maxOutputTokens: number; planDepth: string }> = {
   low:    { temperature: 0.2, maxOutputTokens: 3000, planDepth: 'One sentence: what you will change. Skip rationale.' },
-  none:   { temperature: 0.3, maxOutputTokens: 4096, planDepth: '2-3 sentences: what you will change and why.' },
   medium: { temperature: 0.3, maxOutputTokens: 5000, planDepth: '2-4 sentences: what you will change, why, and any risk you considered.' },
   high:   { temperature: 0.4, maxOutputTokens: 8000, planDepth: 'A short paragraph: your reasoning, the approach you chose over alternatives, and edge cases you accounted for.' },
-  deep:   { temperature: 0.5, maxOutputTokens: 12000, planDepth: 'A detailed multi-step plan: (1) what you will change and exactly where in the file, (2) your reasoning with code-level specifics, (3) the approach you chose over at least one alternative with justification, (4) edge cases and failure modes you accounted for, (5) potential side effects in the rest of the codebase.' },
 }
 
 export interface WriteOpsResult {
@@ -195,7 +193,7 @@ async function generateFileContent(
   instruction: string,
   isNewFile: boolean,
 ): Promise<{ reasoning: string; content: string } | null> {
-  const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
+  const effort = EFFORT_PARAMS[ctx.effort ?? 'medium']
   try {
     const client = nimClientFor(ctx.model)
     const { text } = await generateText({
@@ -323,7 +321,7 @@ export async function planEdit(
     }
   }
 
-  const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
+  const effort = EFFORT_PARAMS[ctx.effort ?? 'medium']
   const PLAN_SYSTEM = `You are enry's coding agent, producing a plan BEFORE writing code.
 
 Given a file and an instruction, produce a clear, structured plan for what you will change.

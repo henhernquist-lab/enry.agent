@@ -5,7 +5,6 @@ import { SessionProvider } from 'next-auth/react'
 import { auth } from '@/lib/auth'
 import { AmbientBackground } from '@/components/ambient-background'
 import { CommandPalette, CommandPaletteHint } from '@/components/command-palette'
-import { PresenceIndicator } from '@/components/presence-indicator'
 import { TerminalOverlay } from '@/components/terminal/terminal-overlay'
 import './globals.css'
 
@@ -72,7 +71,6 @@ export default async function RootLayout({
           {children}
           <CommandPalette />
           <CommandPaletteHint />
-          <PresenceIndicator />
           <TerminalOverlay />
         </SessionProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}

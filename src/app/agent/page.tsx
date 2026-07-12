@@ -42,12 +42,20 @@ const MODELS = [
 ] as const
 
 const EFFORTS = [
-  { id: 'none' as const,    label: 'Auto',     desc: 'Default reasoning' },
-  { id: 'low' as const,     label: 'Quick',    desc: 'Minimal reasoning, fast' },
-  { id: 'medium' as const,  label: 'Balanced', desc: 'Moderate reasoning depth' },
-  { id: 'high' as const,    label: 'Deep',     desc: 'Maximum reasoning, slower' },
-  { id: 'deep' as const,    label: 'Extended', desc: 'Full codebase context, multi-step plan, thorough review' },
+  { id: 'low' as const,    label: 'Low',    desc: 'Minimal reasoning, fast' },
+  { id: 'medium' as const,  label: 'Medium', desc: 'Default reasoning depth' },
+  { id: 'high' as const,    label: 'High',   desc: 'Maximum reasoning, slower' },
 ]
+
+// Per-model default effort levels.
+const MODEL_DEFAULTS: Record<string, EffortId> = {
+  'deepseek-ai/deepseek-v4-pro': 'medium',
+  'z-ai/glm-5.2':               'high',
+  'qwen/qwen3.5-122b-a10b':      'low',
+  'minimax/minimax-m3':          'medium',
+}
+
+type EffortId = typeof EFFORTS[number]['id']
 
 // ─── File tree helpers ──────────────────────────────────────
 
@@ -148,46 +156,6 @@ function DiffBlock({ diffText }: { diffText: string }) {
   )
 }
 
-// ─── Deep reasoning step list ───────────────────────────────
-
-function DeepReasoningIndicator({ running }: { running: boolean }) {
-  const steps = ['Reading file', 'Analyzing structure', 'Considering approaches', 'Planning changes', 'Generating diff']
-  const [step, setStep] = useState(0)
-
-  useEffect(() => {
-    if (!running) { setStep(0); return }
-    const i = setInterval(() => setStep((s) => (s + 1) % steps.length), 1800)
-    return () => clearInterval(i)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running])
-
-  if (!running) return null
-
-  return (
-    <div className="mb-4 border-l-2 border-primary/20 pl-4">
-      <div className="mb-1 flex items-center gap-2">
-        <Loader2 className="h-3 w-3 animate-spin text-primary/40" />
-        <span className="font-mono text-[10px] uppercase tracking-wider text-primary/50">Extended reasoning</span>
-      </div>
-      <div className="space-y-1 mt-2">
-        {steps.map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
-            <span className={`font-mono text-[9px] ${
-              i < step ? 'text-primary' : i === step ? 'text-muted-foreground/60' : 'text-muted-foreground/25'
-            }`}>
-              {i < step ? <Check className="h-2.5 w-2.5 inline" /> : i === step ? '\u25b8' : '\u00b7'}
-            </span>
-            <span className={`font-mono text-[10px] ${
-              i < step ? 'text-primary/60' : i === step ? 'text-muted-foreground' : 'text-muted-foreground/30'
-            }`}>
-              {s}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 // ─── Page component ─────────────────────────────────────────
 
@@ -200,7 +168,7 @@ export default function AgentPage() {
   const [repoMenuOpen, setRepoMenuOpen] = useState(false)
   const [model, setModel] = useState<string>(MODELS[0].id)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
-  const [effort, setEffort] = useState<typeof EFFORTS[number]['id']>('none')
+  const [effort, setEffort] = useState<EffortId>(MODEL_DEFAULTS[MODELS[0].id] ?? 'medium')
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('auto')
   const [lines, setLines] = useState<ChatLine[]>([
@@ -232,7 +200,6 @@ export default function AgentPage() {
   const selectedRepo = repos.find((r) => r.full_name === repo)
   const currentModel = MODELS.find((m) => m.id === model)
   const currentEffort = EFFORTS.find((e) => e.id === effort)
-  const isDeep = effort === 'deep'
 
   // Auth guard
   useEffect(() => {
@@ -724,12 +691,9 @@ export default function AgentPage() {
                 return null
               })}
 
-              {/* FIX #4: Deep effort visual */}
-              {isDeep && <DeepReasoningIndicator running={running} />}
-
-              {/* Normal running indicator */}
+              {/* Running indicator */}
               <AnimatePresence>
-                {running && !isDeep && (
+                {running && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-4">
                     <div className="flex items-center gap-2">
                       <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/40" />
@@ -756,7 +720,7 @@ export default function AgentPage() {
                       <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
                         className="absolute bottom-full left-0 z-20 mb-1 w-52 rounded-md border border-border bg-surface-elevated shadow-lg">
                         {MODELS.map((m) => (
-                          <button key={m.id} onClick={() => { setModel(m.id); setModelMenuOpen(false); inputRef.current?.focus() }}
+                          <button key={m.id} onClick={() => { setModel(m.id); setEffort(MODEL_DEFAULTS[m.id] ?? 'medium'); setModelMenuOpen(false); inputRef.current?.focus() }}
                             className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${model === m.id ? 'text-primary' : 'text-foreground'}`}>
                             <span className="font-mono text-[10px] font-semibold">{m.label}</span>
                             <span className="font-sans text-[9px] text-muted-foreground">{m.desc}</span>
@@ -767,12 +731,10 @@ export default function AgentPage() {
                   </AnimatePresence>
                 </div>
 
-                {/* FIX #2: Effort toggle — now actually wired */}
+                {/* Effort toggle — 3 levels with per-model defaults */}
                 <div ref={effortMenuRef} className="relative flex-shrink-0">
                   <button onClick={() => setEffortMenuOpen((o) => !o)}
-                    className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
-                      isDeep ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-secondary text-muted-foreground'
-                    }`}>
+                    className="flex items-center gap-1 rounded border border-border bg-surface-secondary px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground">
                     <Zap className="h-3 w-3" />{currentEffort?.label}<ChevronDown className="h-2.5 w-2.5" />
                   </button>
                   <AnimatePresence>
@@ -782,8 +744,7 @@ export default function AgentPage() {
                         {EFFORTS.map((e) => (
                           <button key={e.id} onClick={() => { setEffort(e.id); setEffortMenuOpen(false); inputRef.current?.focus() }}
                             className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${effort === e.id ? 'text-primary' : 'text-foreground'}`}>
-                            <span className={`font-mono text-[10px] font-semibold ${e.id === 'deep' && effort === e.id ? 'text-primary' : ''}`}>
-                              {e.label}{e.id === 'deep' && <span className="font-normal text-muted-foreground/50"> \u2014 slow</span>}
+                            <span className="font-mono text-[10px] font-semibold">{e.label}
                             </span>
                             <span className="font-sans text-[9px] text-muted-foreground">{e.desc}</span>
                           </button>
