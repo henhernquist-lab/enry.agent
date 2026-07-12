@@ -26,12 +26,11 @@ import {
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
 import { TypingText } from './typing-text'
-import { DailyBriefingRunner } from './automations/daily-briefing-runner'
 import { FileAttachmentChip, type PendingUpload } from './file-attachment-chip'
 import { FileAttachmentCard } from './file-attachment-card'
 import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploads'
 import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/attachment-marker'
-import { loadToggles } from '@/lib/builtin-automations'
+
 import { setAgentBusy } from '@/lib/agent-presence'
 import type { ActivityEvent } from '@/lib/chat-history'
 
@@ -140,7 +139,6 @@ export function CenterPanel({
   const [modelOpen, setModelOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [uptimeMs, setUptimeMs] = useState(0)
-  const [briefingEnabled, setBriefingEnabled] = useState(() => loadToggles().dailyBriefing)
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
   const [uploadResult, setUploadResult] = useState<AttachmentMeta | null>(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
@@ -378,8 +376,6 @@ export function CenterPanel({
       {/* Messages Area */}
       <div className="relative flex-1 overflow-y-auto px-8 py-6 scrollbar-hidden">
         <div className="mx-auto max-w-3xl space-y-6">
-          <DailyBriefingRunner enabled={briefingEnabled} />
-
           {/* Welcome Section - shown when no messages */}
           {messages.length === 0 && (
             <motion.div
