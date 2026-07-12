@@ -451,7 +451,7 @@ export default function AgentPage() {
         <div key={node.path}>
           <button
             onClick={() => toggleDir(node.path)}
-            className="flex w-full items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground text-left"
+            className="flex w-full items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-primary/5 hover:text-primary text-left"
             style={{ paddingLeft: `${8 + indent}px` }}
           >
             <ChevronRight className={`h-3 w-3 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
@@ -467,7 +467,7 @@ export default function AgentPage() {
       <button
         key={node.path}
         onClick={() => fetchFileContent(node.path)}
-        className="flex w-full items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground text-left"
+        className="flex w-full items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-primary/5 hover:text-primary text-left"
         style={{ paddingLeft: `${8 + indent}px` }}
       >
         <span className="w-3 flex-shrink-0" />
@@ -502,12 +502,16 @@ export default function AgentPage() {
           </Link>
         </div>
 
-        {/* Repo selector */}
+        {/* Repo selector — green-tinted when a repo is active */}
         <div ref={repoMenuRef} className="relative">
           <button onClick={() => setRepoMenuOpen((o) => !o)}
-            className="flex items-center gap-1.5 rounded border border-border bg-surface-secondary px-2.5 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-primary/30">
-            {hasRepo ? (<>{selectedRepo?.private && <Lock className="h-2.5 w-2.5 text-muted-foreground" />}{repo}</>) : <span className="text-muted-foreground">Select repository</span>}
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            className={`flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+              hasRepo
+                ? 'border-primary/30 bg-primary/5 text-primary hover:bg-primary/10'
+                : 'border-border bg-surface-secondary text-muted-foreground hover:border-primary/30 hover:text-foreground'
+            }`}>
+            {hasRepo ? (<>{selectedRepo?.private && <Lock className="h-2.5 w-2.5 text-primary/50" />}{repo}</>) : <span>Select repository</span>}
+            <ChevronDown className={`h-3 w-3 transition-transform ${repoMenuOpen ? 'rotate-180' : ''}`} />
           </button>
           <AnimatePresence>
             {repoMenuOpen && (
@@ -539,7 +543,10 @@ export default function AgentPage() {
             </div>
             {hasRepo ? (
               <div className="mt-2 space-y-1">
-                <p className="truncate font-mono text-[11px] text-foreground">{repo}</p>
+                <button onClick={() => setRepoMenuOpen((o) => !o)}
+                  className="truncate font-mono text-[11px] text-primary transition-colors hover:text-primary/80 cursor-pointer text-left w-full">
+                  {repo}
+                </button>
                 <p className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
                   <GitBranch className="h-2.5 w-2.5" />
                   {currentBranch ?? selectedRepo?.default_branch ?? 'main'}
@@ -610,8 +617,8 @@ export default function AgentPage() {
                   return (
                     <div key={i} className="mb-4">
                       <div className="mb-1 flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-accent/60">
-                          <Eye className="h-3 w-3" /> {line.path}
+                        <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-primary/60">
+                          <Eye className="h-3 w-3 text-primary" /> {line.path}
                         </span>
                         <button onClick={() => setLines((l) => l.filter((_, j) => j !== i))}
                           className="rounded px-1 py-0.5 font-mono text-[9px] text-muted-foreground/40 transition-colors hover:text-muted-foreground">
@@ -786,11 +793,11 @@ export default function AgentPage() {
                   </AnimatePresence>
                 </div>
 
-                {/* FIX #3: Auto/Manual mode toggle — visually distinct */}
+                {/* FIX #3: Auto/Manual mode toggle — green when active */}
                 <button onClick={() => setMode(mode === 'auto' ? 'manual' : 'auto')} disabled={running}
                   className={`flex-shrink-0 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors disabled:opacity-40 ${
                     mode === 'manual'
-                      ? 'border-accent/30 bg-accent/5 text-accent hover:bg-accent/10'
+                      ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
                       : 'border-border bg-surface-secondary text-muted-foreground hover:border-primary/30 hover:text-foreground'
                   }`}
                   title={mode === 'manual' ? 'Manual: agent plans first, you approve before diff' : 'Auto: agent proposes diff immediately'}>
@@ -805,7 +812,11 @@ export default function AgentPage() {
                   style={{ maxHeight: '120px' }} />
 
                 <button onClick={handleSend} disabled={!input.trim() || running || !hasRepo}
-                  className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded border border-border bg-surface-secondary text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary disabled:opacity-30">
+                  className={`flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-30 ${
+                    input.trim() && !running && hasRepo
+                      ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
+                      : 'border-border bg-surface-secondary text-muted-foreground hover:border-primary/30 hover:text-primary'
+                  }`}>
                   {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
               </div>
