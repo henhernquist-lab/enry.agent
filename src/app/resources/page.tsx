@@ -44,7 +44,7 @@ interface ToolDef {
   name: string
   desc: string
   icon: typeof BookOpen
-  href?: string // override the default /resources/<slug> destination
+  href?: string
 }
 
 const TOOLS: ToolDef[] = [
@@ -134,7 +134,6 @@ function ResourcesContent() {
   const { cols, perPage, totalPages } = useGridLayout()
   const [page, setPage] = useState(0)
 
-  // Clamp page when layout changes
   useEffect(() => {
     setPage((p) => Math.min(p, totalPages - 1))
   }, [totalPages])
@@ -150,7 +149,6 @@ function ResourcesContent() {
   const goNext = () => setPage((p) => Math.min(p + 1, totalPages - 1))
   const goPrev = () => setPage((p) => Math.max(p - 1, 0))
 
-  // Keyboard navigation for page switching
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') goNext()
@@ -163,57 +161,86 @@ function ResourcesContent() {
   if (status === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface-base">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     )
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-transparent">
-      {/* Sticky header */}
-      <header className="sticky top-0 z-20 border-b border-border bg-surface-secondary/95 backdrop-blur">
-        <div className="flex h-11 items-center justify-between px-4">
+      {/* ── Header ─────────────────────────────────────────── */}
+      <header className="sticky top-0 z-20 border-b border-border/40 bg-surface-secondary/95 backdrop-blur">
+        <div className="flex h-11 items-center justify-between px-5">
+          {/* Left: back */}
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Chat
+            <ArrowLeft className="h-3 w-3" />
+            <span>[BACK]</span>
           </Link>
-          <div className="flex items-center gap-2">
-            <Library className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              resources
-            </span>
-            {totalSaved > 0 && (
-              <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
-                <AnimatedNumber value={totalSaved} /> saved
-              </span>
+
+          {/* Center: system block */}
+          <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <span className="text-muted-foreground/40">TOOLS &amp; RESOURCES</span>
+            <span className="text-border">·</span>
+            <span>{TOOLS.length} TOOLS</span>
+            {!countsLoading && totalSaved > 0 && (
+              <>
+                <span className="text-border">·</span>
+                <span className="text-primary">
+                  <AnimatedNumber value={totalSaved} /> SAVED
+                </span>
+              </>
+            )}
+            {countsLoading && (
+              <>
+                <span className="text-border">·</span>
+                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              </>
             )}
           </div>
+
+          {/* Right: saved link */}
           <Link
             href="/resources/saved"
-            className="flex items-center gap-1 text-xs text-primary hover:underline"
+            className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-primary"
           >
-            Saved
-            <ChevronRight className="h-3.5 w-3.5" />
+            <span>[SAVED]</span>
+            <ChevronRight className="h-3 w-3" />
           </Link>
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-8 lg:px-12 lg:py-10">
-        <div className="mb-8">
-          <h1 className="font-display text-2xl font-bold leading-tight tracking-tight text-foreground">Tools &amp; Resources</h1>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-            {TOOLS.length} tools ·{' '}
-            {countsLoading ? '…' : <><AnimatedNumber value={totalSaved} /> saved across all tools</>}
+      {/* ── Main content ───────────────────────────────────── */}
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-10 lg:px-12 lg:py-12">
+        {/* Section label */}
+        <div className="mb-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground/40">
+            /resources
           </p>
         </div>
 
-        {/* Grid with page transition — fills full available viewport height */}
+        <div className="mb-10">
+          <h1 className="font-display text-2xl font-bold leading-tight tracking-tight text-foreground">
+            Tools &amp; Resources
+          </h1>
+          <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            {TOOLS.length} tools
+            {!countsLoading && (
+              <>
+                {' · '}
+                <span className={totalSaved > 0 ? 'text-primary' : 'text-muted-foreground/60'}>
+                  <AnimatedNumber value={totalSaved} /> saved
+                </span>
+              </>
+            )}
+            {countsLoading && ' · loading…'}
+          </p>
+        </div>
+
+        {/* ── Grid ──────────────────────────────────────────── */}
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          {/* Swipe gesture layer — sits behind the grid so links still click */}
           <div
             className="absolute inset-0 z-0"
             onTouchStart={(e) => {
@@ -254,15 +281,15 @@ function ResourcesContent() {
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.035, type: 'spring', stiffness: 300, damping: 28 }}
-                      className="group flex h-full min-h-0 flex-col gap-5 rounded-lg border border-border bg-surface-secondary p-6 shadow-sm shadow-black/20 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md hover:shadow-black/30 lg:p-7"
+                      className="group flex h-full min-h-0 flex-col gap-5 rounded-lg border border-transparent bg-surface-secondary p-6 transition-all duration-300 hover:border-border/60 hover:bg-surface-secondary/80 lg:p-7"
                     >
                       <div className="flex items-start gap-4">
-                        {/* Icon container with hover glow */}
-                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 transition-all duration-300 group-hover:border-primary/40 group-hover:bg-primary/15 group-hover:shadow-[0_0_16px_rgba(0,255,102,0.10)]">
-                          <Icon className="h-5 w-5 text-primary" />
+                        {/* Icon — plain on dark card, green only on hover */}
+                        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-border/40 bg-surface-elevated transition-all duration-300 group-hover:border-primary/30 group-hover:bg-primary/5">
+                          <Icon className="h-5 w-5 text-muted-foreground transition-colors duration-300 group-hover:text-primary" />
                         </div>
                         <div className="min-w-0 flex-1 pt-0.5">
-                          <h3 className="text-base font-bold tracking-tight text-foreground transition-colors duration-300 group-hover:text-primary">
+                          <h3 className="text-base font-bold tracking-tight text-foreground">
                             {tool.name}
                           </h3>
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -272,23 +299,22 @@ function ResourcesContent() {
                         <ChevronRight className="mt-2 h-4 w-4 flex-shrink-0 text-muted-foreground opacity-0 transition-all duration-300 group-hover:translate-x-1 group-hover:opacity-100" />
                       </div>
 
-                      {/* Saved count footer */}
-                      <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-3">
+                      {/* Saved count footer — terminal style */}
+                      <div className="mt-auto flex items-center justify-between border-t border-border/20 pt-3">
                         {countsLoading ? (
                           <div className="flex items-center gap-1.5">
                             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                            <span className="font-mono text-[10px] text-muted-foreground">
-                              Loading…
+                            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                              [LOADING]
                             </span>
                           </div>
                         ) : count > 0 ? (
-                          <span className="font-mono text-[10px] text-muted-foreground">
-                            <AnimatedNumber value={count} /> saved
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors group-hover:text-primary">
+                            [SAVED: <AnimatedNumber value={count} />]
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground/50">
-                            <Circle className="h-1.5 w-1.5 fill-current" />
-                            No items yet
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/30">
+                            [EMPTY]
                           </span>
                         )}
                       </div>
@@ -300,13 +326,13 @@ function ResourcesContent() {
           </AnimatePresence>
         </div>
 
-        {/* Page indicators + nav arrows */}
+        {/* ── Page nav ──────────────────────────────────────── */}
         {totalPages > 1 && (
           <div className="mt-8 flex items-center justify-center gap-4">
             <button
               onClick={goPrev}
               disabled={page === 0}
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
+              className="rounded p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-20"
               aria-label="Previous page"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -320,10 +346,10 @@ function ResourcesContent() {
                   aria-selected={i === page}
                   aria-label={`Page ${i + 1}`}
                   onClick={() => setPage(i)}
-                  className={`h-2 rounded-full transition-all duration-300 ${
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
                     i === page
-                      ? 'w-6 bg-primary shadow-[0_0_8px_rgba(0,255,102,0.25)]'
-                      : 'w-2 bg-border hover:bg-muted-foreground/40'
+                      ? 'w-6 bg-primary'
+                      : 'w-1.5 bg-border hover:bg-muted-foreground/30'
                   }`}
                 />
               ))}
@@ -332,7 +358,7 @@ function ResourcesContent() {
             <button
               onClick={goNext}
               disabled={page === totalPages - 1}
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
+              className="rounded p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-20"
               aria-label="Next page"
             >
               <ChevronRight className="h-4 w-4" />
@@ -347,7 +373,7 @@ function ResourcesContent() {
 function LoadingSkeleton() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-base">
-      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
     </div>
   )
 }
