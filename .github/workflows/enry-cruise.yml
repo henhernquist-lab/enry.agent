@@ -1,0 +1,69 @@
+# enry-cruise:managed v2
+# Managed by enry.agent (Enry Cruise). Do not edit by hand — the marker on the
+# first line lets enry.agent detect this file as its own and update it safely.
+# Removing the marker will make the next enable/update report a conflict.
+#
+# Phase 1: on-demand static analysis only, report-only. The app dispatches this
+# workflow with a per-scan token; the analyzer posts findings back to the app.
+name: Enry Cruise
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_id:
+        description: enry.agent scan id
+        required: true
+      callback:
+        description: enry.agent base URL to post results to
+        required: true
+      token:
+        description: per-scan callback token
+        required: true
+      layers:
+        description: JSON array of scan layers to run
+        required: false
+        default: '["static"]'
+      fix_mode:
+        description: report_only | auto_fix | per_finding
+        required: false
+        default: report_only
+
+# Read-only: Phase 1 never writes to the repo. Fix branches (later phases) will
+# request contents:write explicitly.
+permissions:
+  contents: read
+
+# Never run two Cruise scans on the same ref at once.
+concurrency:
+  group: enry-cruise-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # Hard ceiling — protects the repo's Actions-minutes budget from a runaway run.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+
+      # The analyzer runs the repo's OWN tsc/eslint, so the repo's deps must be
+      # installed first. Fall back across package managers so this works on a
+      # scratch repo that isn't pnpm.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile || pnpm install || npm install
+
+      - name: Run Enry Cruise static analysis
+        run: node .enry-cruise/scan.mjs
+        env:
+          ENRY_SCAN_ID: ${{ inputs.scan_id }}
+          ENRY_CALLBACK: ${{ inputs.callback }}
+          ENRY_TOKEN: ${{ inputs.token }}
+          ENRY_LAYERS: ${{ inputs.layers }}
+          ENRY_REPO: ${{ github.repository }}
