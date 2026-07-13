@@ -46,6 +46,7 @@ export function CruisePanel({ repo }: { repo: string }) {
   const [goalInput, setGoalInput] = useState('')
   const [goalBusy, setGoalBusy] = useState(false)
   const [goalError, setGoalError] = useState<string | null>(null)
+  const [enableNote, setEnableNote] = useState<{ ok: boolean; text: string } | null>(null)
 
   const loadConfig = useCallback(async () => {
     if (!repo) return
@@ -121,7 +122,7 @@ export function CruisePanel({ repo }: { repo: string }) {
   }, [hasActive, hasActiveGoal, selectedScan, loadScans, loadFindings, loadGoalRuns])
 
   const enable = async () => {
-    setBusy(true); setError(null); setNeedsReauth(false)
+    setBusy(true); setError(null); setNeedsReauth(false); setEnableNote(null)
     try {
       const res = await fetch('/api/cruise/repos/enable', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -130,6 +131,10 @@ export function CruisePanel({ repo }: { repo: string }) {
       const data = await res.json()
       if (res.status === 403 && data.error === 'missing_scope') { setNeedsReauth(true); setError(data.message); return }
       if (!res.ok) { setError(data.message ?? data.error ?? 'Enable failed'); return }
+      // Confirmation comes from the server's read-back of the goal workflow.
+      setEnableNote(data.goal_workflow_present
+        ? { ok: true, text: `Goal-mode runner v${data.goal_workflow_version} confirmed on ${data.default_branch}.` }
+        : { ok: false, text: 'Enabled, but the goal-mode workflow is NOT on the default branch — goal runs will fail. Try disable + enable again.' })
       await loadConfig()
     } finally { setBusy(false) }
   }
@@ -244,6 +249,13 @@ export function CruisePanel({ repo }: { repo: string }) {
                 <div className="mb-4 flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-destructive" />
                   <span className="font-mono text-[11px] text-destructive">{error}</span>
+                </div>
+              )}
+
+              {enableNote && (
+                <div className={`mb-4 flex items-start gap-2 rounded border px-3 py-2 ${enableNote.ok ? 'border-primary/30 bg-primary/5' : 'border-warning/40 bg-warning/10'}`}>
+                  {enableNote.ok ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-primary" /> : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-warning" />}
+                  <span className={`font-mono text-[11px] ${enableNote.ok ? 'text-foreground/90' : 'text-warning'}`}>{enableNote.text}</span>
                 </div>
               )}
 

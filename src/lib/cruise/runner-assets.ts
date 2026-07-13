@@ -23,7 +23,24 @@ export interface RunnerFile {
 }
 
 function load(name: string): string {
-  return readFileSync(join(process.cwd(), 'cruise-runner', name), 'utf8')
+  const raw = readFileSync(join(process.cwd(), 'cruise-runner', name), 'utf8')
+  // Stamp the current RUNNER_VERSION into the managed marker at commit time, so
+  // a file committed to a repo always advertises the version of the code that
+  // wrote it. The enable flow reads this back (managedVersion) to detect a repo
+  // running a stale runner. Single source of truth: the RUNNER_VERSION constant
+  // — the .yml source can carry any placeholder version and this restamps it.
+  // No-op on the .mjs files, which don't carry the marker.
+  return raw.replace(new RegExp(`${MANAGED_MARKER} v\\d+`), `${MANAGED_MARKER} v${RUNNER_VERSION}`)
+}
+
+// The runner version recorded in a committed workflow file's managed marker, or
+// 0 if the file isn't ours / has no parseable version. managedVersion(onRepo) <
+// RUNNER_VERSION means the repo is running an older runner and enable must
+// recommit — this is how a RUNNER_VERSION bump (e.g. v1→v2, which added the
+// goal-mode workflow + runner) reaches already-enabled repos.
+export function managedVersion(content: string): number {
+  const m = content.match(new RegExp(`${MANAGED_MARKER} v(\\d+)`))
+  return m ? Number(m[1]) : 0
 }
 
 // The set of files a fresh enable commits. Order is irrelevant — they land in
