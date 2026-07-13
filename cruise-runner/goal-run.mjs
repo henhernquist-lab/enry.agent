@@ -15,7 +15,8 @@
 // script's first move on every dispatch is fetching /context to resume
 // exactly where the last dispatch left off.
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync, mkdirSync } from 'node:fs'
+import { dirname, normalize, isAbsolute } from 'node:path'
 import { execSync } from 'node:child_process'
 import { blockingFindings } from './lib/analyzers.mjs'
 
@@ -333,10 +334,26 @@ Rules:
     // Write locally and validate before proposing anything — a step that
     // makes tsc/eslint worse gets reverted rather than committed.
     const touched = []
+    let writeError = null
     for (const f of parsed.files) {
-      const isNew = !existsSync(f.path)
-      writeFileSync(f.path, f.content, 'utf8')
-      touched.push({ path: f.path, content: f.content, is_new: isNew })
+      // Keep writes inside the checkout: reject absolute paths and any that
+      // climb out via '..' (malformed/hostile path from the model).
+      const p = normalize(f.path)
+      if (isAbsolute(p) || p.split(/[\\/]/).includes('..')) { writeError = `unsafe path "${f.path}"`; break }
+      const isNew = !existsSync(p)
+      try {
+        // Create parent dirs first — the model routinely puts a new file in a
+        // new directory (e.g. src/context/theme-provider.tsx). writeFileSync
+        // does NOT mkdir, so without this it throws ENOENT and crashed the run.
+        mkdirSync(dirname(p), { recursive: true })
+        writeFileSync(p, f.content, 'utf8')
+      } catch (e) { writeError = `${(e && e.code) || 'write error'} writing ${p}`; break }
+      touched.push({ path: p, content: f.content, is_new: isNew })
+    }
+    if (writeError) {
+      revertTouched(touched) // undo any partial writes from this step
+      await postStep(seq, 'failed', `Could not write files: ${writeError}`)
+      continue
     }
     if (touched.length === 0) { await postStep(seq, 'failed', 'No valid file entries'); continue }
 
