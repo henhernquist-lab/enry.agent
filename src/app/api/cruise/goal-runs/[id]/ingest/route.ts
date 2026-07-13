@@ -81,7 +81,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   if (phase === 'finalize') {
-    const status = ['completed', 'capped', 'failed', 'cancelled'].includes(body.status) ? body.status : 'failed'
+    const status = ['completed', 'capped', 'no_changes', 'failed', 'cancelled'].includes(body.status) ? body.status : 'failed'
     patch.status = status
     patch.finished_at = nowIso
     patch.github_token = null // clear the run-scoped bridge token regardless of outcome
@@ -114,7 +114,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
     }
 
-    await supabase.from('cruise_goal_runs').update(patch).eq('id', id)
+    const { error: finalizeErr } = await supabase.from('cruise_goal_runs').update(patch).eq('id', id)
+    // If 'no_changes' is rejected because migration 010 (which adds it to the
+    // status CHECK) hasn't been applied, fall back to 'failed' so the run still
+    // reaches a terminal state instead of stranding in 'running'. Both are
+    // honest — neither is the old misleading 'completed'.
+    if (finalizeErr && status === 'no_changes') {
+      patch.status = 'failed'
+      await supabase.from('cruise_goal_runs').update(patch).eq('id', id)
+    }
     return Response.json({ ok: true, pr_url: patch.pr_url ?? null })
   }
 

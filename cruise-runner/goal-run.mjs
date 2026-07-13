@@ -15,9 +15,9 @@
 // script's first move on every dispatch is fetching /context to resume
 // exactly where the last dispatch left off.
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs'
 import { execSync } from 'node:child_process'
-import { blockingErrorCount } from './lib/analyzers.mjs'
+import { blockingFindings } from './lib/analyzers.mjs'
 
 const GOAL_RUN_ID = process.env.ENRY_GOAL_RUN_ID
 const CALLBACK = (process.env.ENRY_CALLBACK || '').replace(/\/+$/, '')
@@ -105,6 +105,32 @@ async function postStep(seq, status, detail) {
   await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'step', seq, status, detail })
 }
 
+// Undo an edit's local file writes. `git checkout` only restores TRACKED
+// files, so a newly-created file must be deleted outright — otherwise it lingers
+// in the working tree and its errors poison every later step's validation
+// (they'd look "new"), cascading false reverts.
+function revertTouched(touched) {
+  for (const t of touched) {
+    try {
+      if (t.is_new) rmSync(t.path, { force: true })
+      else execSync(`git checkout -- "${t.path}"`, { stdio: 'ignore' })
+    } catch { /* best effort */ }
+  }
+}
+
+// Compact, human-readable rendering of the errors an edit introduced, for the
+// step detail shown in the UI. Caps the list so a bad edit that trips dozens of
+// errors doesn't blow the detail field (ingest caps it at 2000 chars anyway).
+function formatErrors(findings) {
+  const MAX = 6
+  const lines = findings.slice(0, MAX).map((f) => {
+    const loc = f.file_path ? `${f.file_path}${f.line_start ? ':' + f.line_start : ''}` : ''
+    return `• ${loc ? loc + ' — ' : ''}${f.title}`
+  })
+  if (findings.length > MAX) lines.push(`…and ${findings.length - MAX} more`)
+  return lines.join('\n')
+}
+
 async function main() {
   await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'start' })
 
@@ -154,7 +180,12 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
   }
 
   // ── Edit loop ────────────────────────────────────────────────────────────
-  const baseline = blockingErrorCount(REPO)
+  // Baseline = the blocking errors already present before we touch anything,
+  // keyed by fingerprint (line-independent, so an edit above a pre-existing
+  // error doesn't make it look new). An edit is accepted only if it introduces
+  // no NEW fingerprints. After each accepted commit the baseline advances to
+  // that state, so every step is judged against the last good state.
+  let baselineFp = new Set(blockingFindings(REPO).map((f) => f.fingerprint))
   const remaining = []
   let capped = false
 
@@ -203,12 +234,13 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
     }
     if (touched.length === 0) { await postStep(seq, 'failed', 'No valid file entries'); continue }
 
-    const after = blockingErrorCount(REPO)
-    if (after > baseline) {
+    const afterFindings = blockingFindings(REPO)
+    const newErrors = afterFindings.filter((f) => !baselineFp.has(f.fingerprint))
+    if (newErrors.length > 0) {
       // Revert via git — the checkout has no other uncommitted changes at
       // this point (each step commits or reverts before the next begins).
-      try { execSync('git checkout -- ' + touched.map((t) => `"${t.path}"`).join(' '), { stdio: 'ignore' }) } catch { /* best effort */ }
-      await postStep(seq, 'failed', `Reverted — introduced ${after - baseline} new type/lint error(s)`)
+      revertTouched(touched)
+      await postStep(seq, 'failed', `Reverted — introduced ${newErrors.length} new error(s):\n${formatErrors(newErrors)}`)
       continue
     }
 
@@ -217,21 +249,26 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
       message: `Enry Cruise: ${(parsed.note || stepDesc).slice(0, 200)}`,
     })
     if (applyRes.json?.error === 'file_cap_exceeded') {
-      try { execSync('git checkout -- ' + touched.map((t) => `"${t.path}"`).join(' '), { stdio: 'ignore' }) } catch { /* best effort */ }
+      revertTouched(touched)
       await postStep(seq, 'failed', 'Skipped — file cap reached')
       capped = true
       remaining.push(stepDesc, ...plan.slice(seq + 1))
       break
     }
     if (!applyRes.ok || !applyRes.json?.ok) {
+      revertTouched(touched)
       await postStep(seq, 'failed', `Commit failed: ${applyRes.json?.error || applyRes.status}`)
       continue
     }
     filesChanged = applyRes.json.files_changed
+    baselineFp = new Set(afterFindings.map((f) => f.fingerprint)) // accepted state is the new baseline
     await postStep(seq, 'done', parsed.note || `${touched.length} file(s) changed`)
   }
 
-  const status = capped ? 'capped' : 'completed'
+  // Honest terminal status: nothing that opens a PR gets called 'completed'.
+  // Zero surviving changes -> 'no_changes' (every step reverted, or the goal
+  // needed no edits); capped with real changes -> 'capped'; otherwise done.
+  const status = filesChanged === 0 ? 'no_changes' : capped ? 'capped' : 'completed'
   await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, {
     phase: 'finalize',
     status,

@@ -100,11 +100,14 @@ export function runEslint(repo) {
   return findings
 }
 
-// Convenience: both analyzers, only counting errors that matter for a pass/
-// fail gate (tsc errors + eslint severity-2). Used by goal-run.mjs to decide
-// whether an edit is safe to commit — warnings/low-severity lint don't block.
-export function blockingErrorCount(repo) {
-  const tsErrors = runTsc(repo).filter((f) => f.severity === 'high').length
-  const eslintErrors = runEslint(repo).filter((f) => f.severity === 'medium').length
-  return tsErrors + eslintErrors
+// The findings that matter for a goal-run pass/fail gate: tsc errors (severity
+// 'high') + eslint errors (severity 'medium'). Warnings / low-severity lint
+// don't block a commit. Returns the actual findings — not just a count — so
+// goal-run.mjs can diff them by fingerprint against a baseline (to isolate the
+// errors a specific edit newly introduced) and report the real messages.
+export function blockingFindings(repo) {
+  return [
+    ...runTsc(repo).filter((f) => f.severity === 'high'),
+    ...runEslint(repo).filter((f) => f.severity === 'medium'),
+  ]
 }

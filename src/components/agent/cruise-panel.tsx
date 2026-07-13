@@ -357,7 +357,7 @@ function EnableCard({ busy, needsReauth, error, onEnable, onReauth, repo }: {
 const GOAL_STATUS_LABEL: Record<CruiseGoalRun['status'], string> = {
   queued: 'queued', planning: 'planning', running: 'working',
   awaiting_clarification: 'needs input', completed: 'completed', capped: 'capped',
-  failed: 'failed', cancelled: 'cancelled',
+  no_changes: 'no changes', failed: 'failed', cancelled: 'cancelled',
 }
 
 function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
@@ -371,6 +371,7 @@ function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
   const icon = run.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
     : run.status === 'capped' ? <AlertTriangle className="h-3.5 w-3.5 text-warning" />
     : run.status === 'failed' ? <XCircle className="h-3.5 w-3.5 text-destructive" />
+    : run.status === 'no_changes' ? <Ban className="h-3.5 w-3.5 text-muted-foreground" />
     : run.status === 'awaiting_clarification' ? <MessageCircleQuestion className="h-3.5 w-3.5 text-warning" />
     : <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
 
@@ -396,7 +397,7 @@ function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
                         : <span className="mt-1 h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />}
                       <div className="min-w-0">
                         <p className={s.status === 'pending' ? 'text-muted-foreground' : 'text-foreground/90'}>{s.description}</p>
-                        {s.detail && <p className="text-[10px] text-muted-foreground">{s.detail}</p>}
+                        {s.detail && <p className={`whitespace-pre-wrap text-[10px] ${s.status === 'failed' ? 'text-destructive/80' : 'text-muted-foreground'}`}>{s.detail}</p>}
                       </div>
                     </div>
                   ))}
@@ -404,6 +405,12 @@ function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
               ) : active ? (
                 <p className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> planning…</p>
               ) : null}
+
+              {run.status === 'no_changes' && (
+                <p className="mt-3 font-mono text-[11px] text-muted-foreground">
+                  No PR opened — every edit was reverted for introducing type/lint errors, or the goal needed no changes. Expand the failed steps above for the exact errors.
+                </p>
+              )}
 
               {run.status === 'awaiting_clarification' && (
                 <div className="mt-3 rounded border border-warning/30 bg-warning/5 px-3 py-2">

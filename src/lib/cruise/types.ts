@@ -91,7 +91,7 @@ export interface IncomingFinding {
 
 export type CruiseGoalRunStatus =
   | 'queued' | 'planning' | 'running' | 'awaiting_clarification'
-  | 'completed' | 'capped' | 'failed' | 'cancelled'
+  | 'completed' | 'capped' | 'no_changes' | 'failed' | 'cancelled'
 
 export type CruiseGoalStepStatus = 'pending' | 'running' | 'done' | 'failed'
 
