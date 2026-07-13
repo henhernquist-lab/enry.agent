@@ -93,3 +93,46 @@ export async function dispatchScan(
     return { ok: false, error: String(e) }
   }
 }
+
+export interface GoalDispatchInputs {
+  goal_run_id: string
+  callback: string
+  token: string
+  branch: string
+  cap_files: string  // stringified number — workflow_dispatch inputs are all strings
+  cap_steps: string
+}
+
+// Fires workflow_dispatch for enry-cruise-goal.yml. Unlike dispatchScan, the
+// workflow filename isn't hardcoded — goal runs live in a separate file from
+// the scan workflow (different permissions: goal runs stay contents:read too,
+// since writes go through /api/cruise/goal-runs/[id]/apply, but keeping them
+// as separate files keeps the two dispatch surfaces independently
+// versionable).
+export async function dispatchGoalRun(
+  token: string,
+  owner: string,
+  repo: string,
+  ref: string,
+  inputs: GoalDispatchInputs,
+): Promise<{ ok: boolean; error: string | null }> {
+  try {
+    const res = await ghFetch(
+      token,
+      `/repos/${owner}/${repo}/actions/workflows/enry-cruise-goal.yml/dispatches`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref, inputs }),
+      },
+    )
+    if (res.status === 204) return { ok: true, error: null }
+    const body = await res.text().catch(() => '')
+    if (res.status === 404) {
+      return { ok: false, error: 'Goal-run workflow not found on the default branch, or Actions is disabled for this repo. Re-enable Cruise for this repo.' }
+    }
+    return { ok: false, error: `GitHub dispatch failed: ${res.status} ${body}` }
+  } catch (e) {
+    return { ok: false, error: String(e) }
+  }
+}

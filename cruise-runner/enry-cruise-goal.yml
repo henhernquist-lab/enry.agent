@@ -1,0 +1,77 @@
+# enry-cruise:managed v1
+# Managed by enry.agent (Enry Cruise). Do not edit by hand — the marker on the
+# first line lets enry.agent detect this file as its own and update it safely.
+# Removing the marker will make the next enable/update report a conflict.
+#
+# Goal-directed autonomous mode: given a natural-language goal, plans and
+# edits files locally, validating each edit with the repo's own tsc/eslint
+# before it's proposed. Stays read-only here on purpose — every actual write
+# (branch creation, commits, the PR) happens server-side via
+# /api/cruise/goal-runs/{id}/apply, using the user's own GitHub credential.
+# This runner never holds push access, so a bug or a bad edit here can't
+# touch the repo beyond what that endpoint's own cap enforcement allows.
+name: Enry Cruise — Goal
+
+on:
+  workflow_dispatch:
+    inputs:
+      goal_run_id:
+        description: enry.agent goal run id
+        required: true
+      callback:
+        description: enry.agent base URL to post progress to and fetch context from
+        required: true
+      token:
+        description: per-run callback token
+        required: true
+      branch:
+        description: the branch this run's changes land on (informational — writes go through the callback)
+        required: true
+      cap_files:
+        description: max distinct files this run may change
+        required: false
+        default: '10'
+      cap_steps:
+        description: max LLM calls this run may spend (enforced server-side too)
+        required: false
+        default: '40'
+
+permissions:
+  contents: read
+
+# Never run two goal runs on the same ref at once.
+concurrency:
+  group: enry-cruise-goal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  goal-run:
+    runs-on: ubuntu-latest
+    # Autonomous multi-step edits take longer than a scan — generous but still
+    # a hard ceiling against a runaway/looping run burning Actions minutes.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+
+      # Validation (tsc/eslint) runs against the repo's own deps, same as the
+      # scan workflow.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile || pnpm install || npm install
+
+      - name: Run Enry Cruise goal
+        run: node .enry-cruise/goal-run.mjs
+        env:
+          ENRY_GOAL_RUN_ID: ${{ inputs.goal_run_id }}
+          ENRY_CALLBACK: ${{ inputs.callback }}
+          ENRY_TOKEN: ${{ inputs.token }}
+          ENRY_BRANCH: ${{ inputs.branch }}
+          ENRY_CAP_FILES: ${{ inputs.cap_files }}
+          ENRY_CAP_STEPS: ${{ inputs.cap_steps }}
+          ENRY_REPO: ${{ github.repository }}
