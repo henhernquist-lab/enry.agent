@@ -1,11 +1,29 @@
 import type { SkillDefinition } from './types'
 import { devilAdvocate } from './definitions/devil-advocate'
+import { steelmanDrill } from './definitions/steelman-drill'
+import { fifthGrader } from './definitions/fifth-grader'
+import { attentionAudit } from './definitions/attention-audit'
+import { askTheCouncil } from './definitions/ask-the-council'
+import { assumptionExcavator } from './definitions/assumption-excavator'
+import { preMortem } from './definitions/pre-mortem'
+import { socraticMode } from './definitions/socratic-mode'
+import { eliExpert } from './definitions/eli-expert'
 
 // The registry. Adding a skill = import its definition and add it to this
 // array. Everything else (invocation, banner, round-tracking, exit, the
 // skill-aware system prompt on the server) reads from these declarations —
 // no per-skill code anywhere else.
-export const SKILLS: SkillDefinition[] = [devilAdvocate]
+export const SKILLS: SkillDefinition[] = [
+  devilAdvocate,
+  steelmanDrill,
+  fifthGrader,
+  attentionAudit,
+  askTheCouncil,
+  assumptionExcavator,
+  preMortem,
+  socraticMode,
+  eliExpert,
+]
 
 export function getSkill(slug: string): SkillDefinition | undefined {
   return SKILLS.find((s) => s.slug === slug)
