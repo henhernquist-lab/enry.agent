@@ -29,6 +29,16 @@ export function rel(p) {
   return p.startsWith(CWD) ? p.slice(CWD.length + 1) : p
 }
 
+// Cruise commits its own runner into the repo (.enry-cruise/*, the two
+// enry-cruise workflow files). Those aren't the app's code — linting them just
+// reports the scanner on its own tooling (node: import-prefix nags, string
+// literals from our own error messages). Excluded from every finding so both
+// the report-only scan and goal-mode validation only ever see the app's source.
+function isCruiseOwnFile(relPath) {
+  const p = relPath || ''
+  return p.startsWith('.enry-cruise/') || /(^|\/)enry-cruise(-goal)?\.yml$/.test(p)
+}
+
 function normMsg(m) {
   return String(m).replace(/[0-9]+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 200)
 }
@@ -52,6 +62,7 @@ export function runTsc(repo) {
     const m = line.match(re)
     if (!m) continue
     const file = m[1]
+    if (isCruiseOwnFile(rel(file))) continue
     const ln = Number(m[2])
     const sev = m[4]
     const code = m[5]
@@ -76,11 +87,12 @@ export function runEslint(repo) {
   const findings = []
   const bin = localBin('eslint')
   if (!bin) return findings
-  const { out } = run(bin + ' . -f json --no-error-on-unmatched-pattern')
+  const { out } = run(bin + ' . -f json --no-error-on-unmatched-pattern --ignore-pattern ".enry-cruise/**"')
   let report
   try { report = JSON.parse(out) } catch { return findings }
   if (!Array.isArray(report)) return findings
   for (const file of report) {
+    if (isCruiseOwnFile(rel(file.filePath))) continue
     for (const msg of (file.messages || [])) {
       const rule = msg.ruleId || 'eslint'
       const unused = /no-unused|unused-imports|no-unreachable/.test(rule)

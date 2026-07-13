@@ -48,12 +48,35 @@ async function llm(messages) {
   return json
 }
 
+// Planner responses are short JSON (plan strings / a clarify question) — safe
+// to JSON-parse. Editor responses carry full file bodies and use parseEdits
+// instead (JSON-escaping code is what made editor output fail).
 function extractJson(text) {
   const stripped = String(text || '').replace(/```json\s*|```/g, '')
   const start = stripped.indexOf('{')
   const end = stripped.lastIndexOf('}')
   if (start === -1 || end === -1 || end < start) return null
   try { return JSON.parse(stripped.slice(start, end + 1)) } catch { return null }
+}
+
+// Parse the marker-delimited editor response into { files, note, noChanges }.
+// No JSON escaping of file bodies — content is whatever sits between the
+// ===FILE:...=== and ===ENDFILE=== markers, verbatim. matchedAny is false only
+// when the model produced neither a file block nor the NO-CHANGES sentinel,
+// i.e. a genuinely malformed response worth surfacing.
+function parseEdits(text) {
+  const raw = String(text || '')
+  const files = []
+  const re = /===FILE:\s*(.+?)\s*===\r?\n([\s\S]*?)\r?\n===ENDFILE===/g
+  let m
+  while ((m = re.exec(raw)) !== null) {
+    const path = m[1].trim()
+    if (path) files.push({ path, content: m[2] })
+  }
+  const noChanges = /===\s*NO CHANGES\s*===/.test(raw)
+  const noteM = raw.match(/===NOTE:\s*([\s\S]*?)===/)
+  const note = noteM ? noteM[1].trim().slice(0, 200) : ''
+  return { files, note, noChanges, matchedAny: files.length > 0 || noChanges }
 }
 
 // Small repo context for the planner: a capped file tree + a couple of
@@ -204,7 +227,20 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
       .join('\n\n')
 
     const editRes = await llm([
-      { role: 'system', content: `You are editing files in a checked-out git repo to accomplish one step of a larger goal. Respond with ONLY a JSON object: {"files": [{"path": "<repo-relative path>", "content": "<COMPLETE new file content>"}], "note": "<one-line summary of what you changed>"}. Always give the FULL file content, never a diff/snippet. Only include files this step actually needs to touch. If the step doesn't require any file changes (e.g. it's already satisfied), return {"files": [], "note": "already satisfied"}.` },
+      { role: 'system', content: `You are editing files in a checked-out git repo to accomplish one step of a larger goal.
+
+Do NOT use JSON — file contents break JSON escaping. Use this exact marker format instead. For each file you create or replace, emit a block:
+===FILE: <repo-relative path>===
+<the COMPLETE new file content, verbatim — no diff, no snippet, no fencing>
+===ENDFILE===
+
+After all file blocks, emit one line:
+===NOTE: <one-line summary of what you changed>===
+
+If the step needs no file changes (already satisfied), output exactly one line and nothing else:
+===NO CHANGES===
+
+Rules: output only file blocks + the NOTE line (or NO CHANGES). No prose, no markdown fences. Match the repo's existing conventions, imports, and framework idioms — read the provided existing files first.` },
       { role: 'user', content: `GOAL: ${ctx.goal}\n\nCURRENT STEP: ${stepDesc}\n\n${existingContent || '(no existing files matched this step by path — create what\'s needed)'}` },
     ])
     if (editRes.error === 'budget_exceeded') {
@@ -213,12 +249,16 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
       remaining.push(stepDesc, ...plan.slice(seq + 1))
       break
     }
-    const parsed = extractJson(editRes.text)
-    if (!parsed || !Array.isArray(parsed.files)) {
-      await postStep(seq, 'failed', 'Editor returned an unparseable response')
+    const parsed = parseEdits(editRes.text)
+    if (!parsed.matchedAny) {
+      // Distinct from a lint-error revert: the model's OUTPUT itself was
+      // malformed (no file blocks, no NO-CHANGES sentinel). Surface a snippet
+      // of the raw response so it's diagnosable rather than opaque.
+      const snippet = String(editRes.text || '').replace(/\s+/g, ' ').trim().slice(0, 600)
+      await postStep(seq, 'failed', `Malformed editor response — no file blocks found. Raw response:\n${snippet || '(empty response)'}`)
       continue
     }
-    if (parsed.files.length === 0) {
+    if (parsed.noChanges || parsed.files.length === 0) {
       await postStep(seq, 'done', parsed.note || 'no changes needed')
       continue
     }
@@ -227,7 +267,6 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
     // makes tsc/eslint worse gets reverted rather than committed.
     const touched = []
     for (const f of parsed.files) {
-      if (typeof f.path !== 'string' || typeof f.content !== 'string') continue
       const isNew = !existsSync(f.path)
       writeFileSync(f.path, f.content, 'utf8')
       touched.push({ path: f.path, content: f.content, is_new: isNew })

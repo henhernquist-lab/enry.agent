@@ -6,7 +6,7 @@ import { join } from 'node:path'
 // by the enable route — see outputFileTracingIncludes in next.config.ts, which
 // makes Vercel bundle them.
 
-export const RUNNER_VERSION = 2
+export const RUNNER_VERSION = 3
 // First line of the workflow file carries "<MANAGED_MARKER> v<version>". The
 // enable flow uses it to tell our file apart from a user's own workflow of the
 // same name (conflict detection) and to detect version drift for updates.
