@@ -10,7 +10,7 @@ import { resolveExecutionDir } from '@/lib/terminal/working-copy'
 import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, type WriteOpsContext } from '@/lib/terminal/write-ops'
 import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
-import { getSkill, SKILLS } from '@/lib/skills/registry'
+import { getSkill, SKILLS, buildMultiSkillPrompt } from '@/lib/skills/registry'
 import { generateText } from 'ai'
 import { nimClientFor, DEFAULT_NIM_MODEL } from '@/lib/nim'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
@@ -63,6 +63,7 @@ export async function POST(req: Request) {
   const resolvedIsNew = body.is_new_file === true
   const resolvedInstruction = typeof body.instruction === 'string' ? body.instruction : undefined
   const skillSlug = typeof body.skill_slug === 'string' ? body.skill_slug : undefined
+  const skillSlugs: string[] | undefined = Array.isArray(body.skill_slugs) ? body.skill_slugs.filter((s: unknown) => typeof s === 'string') : undefined
 
   if (!REPO_RE.test(repo)) {
     return Response.json({ error: 'Invalid repo. Use owner/name.' }, { status: 400 })
@@ -110,7 +111,7 @@ export async function POST(req: Request) {
     resolvedInstruction,
   }
 
-  const { result, action, planTarget } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false, skillSlug)
+  const { result, action, planTarget } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false, skillSlug, skillSlugs)
 
   const entry: TerminalCommand = {
     cmd: command,
@@ -168,10 +169,17 @@ interface DispatchResult {
 //    run before the NL classifier so that natural-language skill triggers
 //    ("should I add X?") don't get rejected as non-code-edit requests.
 // 2. Meta-command → read-only allowlist → natural language (code edit).
-async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false, skillSlug?: string): Promise<DispatchResult> {
+async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false, skillSlug?: string, skillSlugs?: string[]): Promise<DispatchResult> {
+  // ── Multi-skill response path (read-only, text analysis) ──
+  if (skillSlugs && skillSlugs.length > 1) {
+    const result = await runMultiSkillResponse(ctx, skillSlugs, command)
+    return { result }
+  }
+
   // ── Skill response path (read-only, text analysis) ───────────
-  if (skillSlug) {
-    const result = await runSkillResponse(ctx, skillSlug, command)
+  if (skillSlug || (skillSlugs && skillSlugs.length === 1)) {
+    const slug = skillSlug ?? skillSlugs![0]
+    const result = await runSkillResponse(ctx, slug, command)
     return { result }
   }
   const meta = parseMetaCommand(command)
@@ -342,6 +350,54 @@ async function runSkillResponse(
     console.error('[terminal/skill-response] generation threw:', err)
     const detail = err instanceof Error ? err.message : String(err)
     return { output: `Skill analysis failed: ${detail}`, exitCode: 1 }
+  }
+}
+
+// ── Multi-skill response path ─────────────────────────────────
+// When 2+ Drive skills are active simultaneously, build a combined
+// prompt using buildMultiSkillPrompt() and generate a single response
+// with separate labeled output sections for each skill.
+async function runMultiSkillResponse(
+  ctx: WriteOpsContext,
+  skillSlugs: string[],
+  wrappedCommand: string,
+): Promise<{ output: string; exitCode: number; reasoning?: string }> {
+  const skills = skillSlugs.map((s) => getSkill(s)).filter(Boolean)
+  if (skills.length === 0) {
+    return { output: `No valid skills found: ${skillSlugs.join(', ')}`, exitCode: 1 }
+  }
+
+  // Build SkillInvocation objects for buildMultiSkillPrompt
+  const userMarker = 'USER REQUEST:'
+  const userIdx = wrappedCommand.indexOf(userMarker)
+  const userRequest = userIdx !== -1
+    ? wrappedCommand.slice(userIdx + userMarker.length).trim()
+    : wrappedCommand
+
+  const invocations = skills.map((skill) => ({
+    skill: skill!,
+    topic: userRequest,
+    via: 'command' as const,
+  }))
+
+  const combinedPrompt = buildMultiSkillPrompt(invocations)
+
+  try {
+    const client = nimClientFor(ctx.model)
+    const { text } = await generateText({
+      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
+      system: combinedPrompt,
+      prompt: `Repository: ${ctx.owner}/${ctx.repo}\n\nUser request: ${userRequest}\n\nProvide your multi-lens analysis now.`,
+      temperature: 0.7,
+      maxOutputTokens: 4000,
+      timeout: 90_000,
+      maxRetries: 1,
+    })
+    return { output: text, exitCode: 0 }
+  } catch (err) {
+    console.error('[terminal/multi-skill-response] generation threw:', err)
+    const detail = err instanceof Error ? err.message : String(err)
+    return { output: `Multi-skill analysis failed: ${detail}`, exitCode: 1 }
   }
 }
 

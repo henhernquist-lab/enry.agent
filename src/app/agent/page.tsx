@@ -11,7 +11,7 @@ import {
   Car, Radar, Swords,
 } from 'lucide-react'
 import { CruisePanel } from '@/components/agent/cruise-panel'
-import { SKILLS as ALL_SKILLS, detectSkillInvocation } from '@/lib/skills/registry'
+import { SKILLS as ALL_SKILLS, detectSkillInvocation, detectSkillInvocations, buildMultiSkillPrompt } from '@/lib/skills/registry'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -32,6 +32,7 @@ type ChatLine =
   | { kind: 'pr'; text: string }
   | { kind: 'error'; text: string }
   | { kind: 'filePreview'; path: string; content: string }
+  | { kind: 'question'; questionText: string; options: string[] }
 
 type Mode = 'auto' | 'manual'
 
@@ -250,7 +251,7 @@ export default function AgentPage() {
 
   // Manual mode plan context
   const [planContext, setPlanContext] = useState<{ targetFile: string; isNewFile: boolean; instruction: string } | null>(null)
-  const [activeSkillSlug, setActiveSkillSlug] = useState<string | null>(null)
+  const [activeSkillSlugs, setActiveSkillSlugs] = useState<string[]>([])
   const [skillMenuOpen, setSkillMenuOpen] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -265,7 +266,8 @@ export default function AgentPage() {
   const selectedRepo = repos.find((r) => r.full_name === repo)
   const currentModel = MODELS.find((m) => m.id === model)
   const currentEffort = EFFORTS.find((e) => e.id === effort)
-  const activeSkill = DRIVE_SKILLS.find((s) => s.slug === activeSkillSlug) ?? null
+  const activeSkills = DRIVE_SKILLS.filter((s) => activeSkillSlugs.includes(s.slug))
+  const activeSkill = activeSkills.length === 1 ? activeSkills[0] : null
   const isDeep = effort === 'deep'
 
   // Auth guard
@@ -348,7 +350,7 @@ export default function AgentPage() {
   }, [repo, sessionId])
 
   const exec = useCallback(
-    async (command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; skillSlug?: string }) => {
+    async (command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; skillSlug?: string; skillSlugs?: string[] }) => {
       if (!repo) {
         setLines((l) => [...l, { kind: 'system', text: 'select a repository first' }])
         return
@@ -363,7 +365,8 @@ export default function AgentPage() {
           effort,          // FIX #2: send effort to server
           mode,            // FIX #3: send mode to server
           proceed: opts?.proceed ?? false,
-          ...(opts?.skillSlug ? { skill_slug: opts.skillSlug } : {}),
+          ...(opts?.skillSlugs && opts.skillSlugs.length > 0 ? { skill_slugs: opts.skillSlugs } : {}),
+          ...(opts?.skillSlug && !opts?.skillSlugs ? { skill_slug: opts.skillSlug } : {}),
         }
         if (opts?.targetFile) body.target_file = opts.targetFile
         if (opts?.isNewFile !== undefined) body.is_new_file = opts.isNewFile
@@ -384,13 +387,17 @@ export default function AgentPage() {
         const action = data.action
         const reasoning = data.reasoning as string | undefined
 
-        if (action === 'plan') {
-          // Manual mode — received a plan, show it before the diff
-          const targetFile = data.target_file ?? ''
-          const isNewFile = data.is_new_file ?? false
-          setLines((l) => [...l, { kind: 'plan', text: reasoning ?? text, targetFile, isNewFile }])
-          setPlanContext({ targetFile, isNewFile, instruction: command })
-        } else if (action === 'propose_edit' && data.exit_code === 0) {
+        // Detect clarifying question marker in output
+        const clarifyMatch = text.match(/\[CLARIFY\]\s*([\s\S]*?)Options:\s*([\s\S]*)$/i)
+        if (clarifyMatch && data.exit_code === 0 && !action) {
+          const questionText = clarifyMatch[1].trim()
+          const optionsRaw = clarifyMatch[2].trim()
+          const options = optionsRaw
+            .split(/(?:^|\s*,\s*)[A-Z]\)\s*/)
+            .filter(Boolean)
+            .map((o: string) => o.trim())
+          setLines((l) => [...l, { kind: 'question', questionText, options }])
+        } else if (action === 'plan') {
           const fileMatch = text.match(/^([^:]+):/m)
           const file = fileMatch ? fileMatch[1].trim() : 'unknown'
           setLines((l) => [...l, { kind: 'proposal', file, diff: text, isNewFile: text.includes('new file') }])
@@ -431,17 +438,30 @@ export default function AgentPage() {
     // "scan the repo for dead code" (Ghost Hunter), etc.
     // Also supports /skill <slug> [topic] explicit commands.
     let skillToUse = activeSkill
+    let skillsToUse = activeSkills
     let userText = text
 
-    // (a) /skill <slug> command — parse slug(s) and topic
+    // (a) /skill <slug1> [slug2] [slug3] [slug4] [topic] — parse multi-skill
     const slashMatch = text.match(/^\/skill\s+([\s\S]+)$/i)
     if (slashMatch) {
       const words = slashMatch[1].trim().split(/\s+/)
-      const slug = words[0]?.toLowerCase() ?? ''
-      const driveSkill = DRIVE_SKILLS.find((s) => s.slug === slug)
-      if (driveSkill) {
-        skillToUse = driveSkill
-        userText = words.slice(1).join(' ').trim() || text
+      const slugs: string[] = []
+      let topicIdx = 0
+      for (let i = 0; i < words.length && slugs.length < 4; i++) {
+        const candidate = words[i].toLowerCase()
+        if (DRIVE_SKILLS.some((s) => s.slug === candidate)) {
+          slugs.push(candidate)
+          topicIdx = i + 1
+        } else {
+          break
+        }
+      }
+      if (slugs.length > 0) {
+        const foundSkills = DRIVE_SKILLS.filter((s) => slugs.includes(s.slug))
+        skillToUse = foundSkills.length === 1 ? foundSkills[0] : null
+        skillsToUse = foundSkills
+        userText = words.slice(topicIdx).join(' ').trim() || text
+        if (foundSkills.length >= 1) setActiveSkillSlugs(slugs)
       }
     }
 
@@ -450,27 +470,54 @@ export default function AgentPage() {
       const detected = detectSkillInvocation(text)
       if (detected && DRIVE_SKILLS.some((s) => s.slug === detected.skill.slug)) {
         skillToUse = detected.skill
+        skillsToUse = [detected.skill]
         userText = detected.topic || text
-        // Keep the picker in sync with what was auto-detected
-        setActiveSkillSlug(detected.skill.slug)
+        setActiveSkillSlugs([detected.skill.slug])
       }
     }
 
-    // If a Drive skill is active, prepend its system prompt and flag for server.
-    const instruction = skillToUse
-      ? `[Acting as ${skillToUse.name.toUpperCase()} lens]
+    // Build instruction — single vs multi-skill
+    let instruction: string
+    let slugsForServer: string[] | undefined
 
-${skillToUse.systemPrompt}
+    // Clarifying-question instruction: if request is ambiguous and guessing
+    // wrong would waste real effort, ask one clarifying question.
+    const CLARIFY_RULE = `\n\nIf this request is genuinely ambiguous and guessing wrong would waste real effort, ask exactly ONE clarifying question. Format it EXACTLY as:\n[CLARIFY] Your question? Options: A) option one, B) option two, C) option three\n\nOnly do this for genuinely ambiguous requests (e.g. "clean up this file", "make this faster", "add auth"). Do NOT ask for well-specified requests where a reasonable default is obvious.`
+
+    if (skillsToUse.length >= 2) {
+      // Multi-skill: use buildMultiSkillPrompt for combined system prompt
+      const invocations = skillsToUse.map((s) => ({
+        skill: s,
+        topic: userText,
+        via: 'command' as const,
+      }))
+      instruction = `[Acting as ${skillsToUse.map((s) => s.name.toUpperCase()).join(' + ')} lenses]
+
+${buildMultiSkillPrompt(invocations)}
+${CLARIFY_RULE}
 
 ---
 
 USER REQUEST: ${userText}`
-      : userText
+      slugsForServer = skillsToUse.map((s) => s.slug)
+    } else if (skillToUse) {
+      instruction = `[Acting as ${skillToUse.name.toUpperCase()} lens]
+
+${skillToUse.systemPrompt}
+${CLARIFY_RULE}
+
+---
+
+USER REQUEST: ${userText}`
+    } else {
+      // No skill — just the clarifying rule for normal edit requests
+      instruction = userText + CLARIFY_RULE
+    }
 
     setLines((l) => [...l, { kind: 'prompt', text }])
     setInput('')
-    exec(instruction, { skillSlug: skillToUse?.slug })
-  }, [input, running, exec, activeSkill, setActiveSkillSlug])
+    exec(instruction, { skillSlugs: slugsForServer ?? (skillToUse ? [skillToUse.slug] : undefined) })
+  }, [input, running, exec, activeSkill, activeSkills, setActiveSkillSlugs])
 
   const handleQuickAction = (action: string) => {
     if (running) return
@@ -702,6 +749,32 @@ USER REQUEST: ${userText}`
                   )
                 }
 
+                if (line.kind === 'question') {
+                  return (
+                    <motion.div key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="mb-5">
+                      <div className="border-l-2 border-accent/50 pl-4">
+                        <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-accent/70">Clarifying question</div>
+                        <p className="mb-3 font-sans text-[14px] leading-relaxed text-foreground">{line.questionText}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {line.options.map((opt, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                setInput(opt)
+                                inputRef.current?.focus()
+                              }}
+                              className="rounded border border-accent/30 bg-accent/5 px-3 py-1.5 font-mono text-[11px] text-accent transition-colors hover:bg-accent/10 hover:border-accent/50"
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 font-mono text-[9px] text-muted-foreground/50">Click an option or type your own answer above</p>
+                      </div>
+                    </motion.div>
+                  )
+                }
+
                 if (line.kind === 'error') {
                   return (
                     <div key={i} className="mb-4">
@@ -867,30 +940,52 @@ USER REQUEST: ${userText}`
                   </AnimatePresence>
                 </div>
 
-                {/* Drive skill picker */}
+                {/* Drive skill picker — multi-select */}
                 <div ref={skillMenuRef} className="relative flex-shrink-0">
                   <button onClick={() => setSkillMenuOpen((o) => !o)}
                     className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
-                      activeSkill ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-secondary text-muted-foreground'
+                      activeSkills.length > 0 ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-secondary text-muted-foreground'
                     }`}>
-                    <Swords className="h-3 w-3" />{activeSkill ? activeSkill.name : 'Skill'}<ChevronDown className="h-2.5 w-2.5" />
+                    <Swords className="h-3 w-3" />
+                    {activeSkills.length === 0 ? 'Skill' : activeSkills.length === 1 ? activeSkills[0].name : `${activeSkills.length} skills`}
+                    <ChevronDown className="h-2.5 w-2.5" />
                   </button>
                   <AnimatePresence>
                     {skillMenuOpen && (
                       <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
                         className="absolute bottom-full left-0 z-20 mb-1 w-56 rounded-md border border-border bg-surface-elevated shadow-lg max-h-72 overflow-y-auto">
-                        <button onClick={() => { setActiveSkillSlug(null); setSkillMenuOpen(false); inputRef.current?.focus() }}
-                          className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${!activeSkillSlug ? 'text-primary' : 'text-foreground'}`}>
+                        <button onClick={() => { setActiveSkillSlugs([]); setSkillMenuOpen(false); inputRef.current?.focus() }}
+                          className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${activeSkills.length === 0 ? 'text-primary' : 'text-foreground'}`}>
                           <span className="font-mono text-[10px] font-semibold">None (default)</span>
                           <span className="font-sans text-[9px] text-muted-foreground">Normal coding agent</span>
                         </button>
-                        {DRIVE_SKILLS.map((s) => (
-                          <button key={s.slug} onClick={() => { setActiveSkillSlug(s.slug); setSkillMenuOpen(false); inputRef.current?.focus() }}
-                            className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${activeSkillSlug === s.slug ? 'text-primary' : 'text-foreground'}`}>
-                            <span className="font-mono text-[10px] font-semibold">{s.name}</span>
-                            <span className="font-sans text-[9px] text-muted-foreground">{s.description}</span>
+                        {DRIVE_SKILLS.map((s) => {
+                          const checked = activeSkillSlugs.includes(s.slug)
+                          return (
+                            <button key={s.slug} onClick={() => {
+                              const next = checked
+                                ? activeSkillSlugs.filter((x) => x !== s.slug)
+                                : [...activeSkillSlugs, s.slug].slice(0, 4)
+                              setActiveSkillSlugs(next)
+                              // Don't close the menu — allow multi-select
+                            }}
+                              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${checked ? 'text-primary' : 'text-foreground'}`}>
+                              <span className={`flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border text-[8px] ${checked ? 'border-primary bg-primary/20 text-primary' : 'border-border text-transparent'}`}>
+                                {checked ? <Check className="h-2.5 w-2.5" /> : null}
+                              </span>
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-mono text-[10px] font-semibold truncate">{s.name}</span>
+                                <span className="font-sans text-[9px] text-muted-foreground truncate">{s.description}</span>
+                              </div>
+                            </button>
+                          )
+                        })}
+                        {activeSkillSlugs.length > 0 && (
+                          <button onClick={() => { setActiveSkillSlugs([]); setSkillMenuOpen(false); inputRef.current?.focus() }}
+                            className="flex w-full items-center gap-2 border-t border-border px-3 py-1.5 text-left font-mono text-[10px] text-muted-foreground transition-colors hover:text-destructive">
+                            <X className="h-3 w-3" /> Clear all ({activeSkillSlugs.length})
                           </button>
-                        ))}
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
