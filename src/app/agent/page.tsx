@@ -8,7 +8,9 @@ import Link from 'next/link'
 import {
   ArrowLeft, ChevronDown, ChevronRight, Check, X, Send, Loader2,
   GitBranch, Folder, File, Lock, Sliders, Zap, TerminalSquare, Eye, Play,
+  Car, Radar,
 } from 'lucide-react'
+import { CruisePanel } from '@/components/agent/cruise-panel'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -213,6 +215,9 @@ export default function AgentPage() {
   const [effort, setEffort] = useState<EffortId>(MODEL_DEFAULTS[MODELS[0].id] ?? 'none')
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('auto')
+  // Top-level mode: Drive (interactive, the existing behavior) vs Cruise
+  // (autonomous scan). Distinct from `mode` above, which is Drive's auto/manual.
+  const [cruiseMode, setCruiseMode] = useState<'drive' | 'cruise'>('drive')
   const [lines, setLines] = useState<ChatLine[]>([
     { kind: 'system', text: 'coding agent \u2014 select a repository to begin.' },
   ])
@@ -497,6 +502,24 @@ export default function AgentPage() {
 
         <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">Coding Agent</span>
 
+        {/* Drive / Cruise mode toggle */}
+        <div className="flex items-center gap-0.5 rounded border border-border bg-surface-secondary p-0.5">
+          <button onClick={() => setCruiseMode('drive')}
+            className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] transition-colors ${
+              cruiseMode === 'drive' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title="Drive: interactive — you drive, the agent proposes diffs">
+            <Car className="h-3 w-3" /> Drive
+          </button>
+          <button onClick={() => setCruiseMode('cruise')}
+            className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] transition-colors ${
+              cruiseMode === 'cruise' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title="Cruise: autonomous — scans the repo and reports findings">
+            <Radar className="h-3 w-3" /> Cruise
+          </button>
+        </div>
+
         <div className="ml-auto flex items-center gap-3">
           {currentBranch && (
             <span className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
@@ -592,8 +615,11 @@ export default function AgentPage() {
           </div>
         </aside>
 
-        {/* Conversation */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* Cruise replaces the conversation pane when active */}
+        {cruiseMode === 'cruise' && <CruisePanel repo={repo} />}
+
+        {/* Conversation (Drive) — kept mounted but hidden in Cruise so its state survives a toggle */}
+        <div className={`min-w-0 flex-1 flex-col ${cruiseMode === 'cruise' ? 'hidden' : 'flex'}`}>
           <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hidden">
             <div className="mx-auto max-w-[720px] px-8 py-6">
               {lines.map((line, i) => {

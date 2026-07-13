@@ -16,7 +16,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     GitHub({
       clientId:     process.env.GITHUB_CLIENT_ID!,
       clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-      authorization: { params: { scope: 'read:user user:email repo' } },
+      // 'workflow' is required to commit .github/workflows/* files, which the
+      // Cruise enable flow does. 'repo' alone is not sufficient for that path.
+      authorization: { params: { scope: 'read:user user:email repo workflow' } },
     }),
     Credentials({
       credentials: {
