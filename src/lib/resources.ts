@@ -1,7 +1,7 @@
 import type { ResourceSource } from './resource-source'
 import { emitResourceSaved } from './resource-events'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret'
 
 export interface Resource<T = unknown> {
   id: string

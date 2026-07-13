@@ -67,6 +67,8 @@ const TOOLS: ToolDef[] = [
   { slug: 'root-cause',       type: 'root_cause',      name: 'The Root Cause',      desc: '5-whys investigations grounded in your data',       icon: Waypoints },
   { slug: 'terminal',         type: 'terminal_session', name: 'Coding Agent',        desc: 'Describe a change; watch it plan, diff, and open a PR', icon: TerminalSquare, href: '/agent' },
   { slug: 'ghost',            type: 'ghost_conversation', name: 'Ghost Mode',       desc: 'Talk to who you were — a past window of yourself',   icon: Ghost },
+  { slug: 'contradictions',   type: 'contradiction',     name: 'Contradiction Finder', desc: 'Surface beliefs you stated that contradict each other over time', icon: ScanSearch },
+  { slug: 'regrets',          type: 'regret',            name: 'Regret Ledger',      desc: 'Log uncertain decisions — revisit monthly to see if regrets hold up', icon: BookOpen },
 ]
 
 /* ─── Saved count fetcher ───────────────────────────────── */
