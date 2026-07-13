@@ -89,8 +89,9 @@ export function detectSkillInvocation(raw: string): SkillInvocation | null {
       // Require the phrase to sit on a word boundary — avoids matching a phrase
       // buried inside a larger unrelated word.
       const before = idx === 0 ? ' ' : norm[idx - 1]
-      const after = norm[idx + np.length] ?? ' '
-      if (before !== ' ' || (after !== ' ' && after !== undefined)) continue
+      const after = norm[idx + np.length]
+      const isAfterBoundary = after === undefined || after === ' ' || /[:,.;?!\-]/.test(after)
+      if (before !== ' ' || !isAfterBoundary) continue
       return { skill, topic: extractTopic(trimmed, phrase), via: 'phrase' }
     }
   }
