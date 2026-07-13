@@ -10,6 +10,9 @@ import { resolveExecutionDir } from '@/lib/terminal/working-copy'
 import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, type WriteOpsContext } from '@/lib/terminal/write-ops'
 import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
+import { getSkill, SKILLS } from '@/lib/skills/registry'
+import { generateText } from 'ai'
+import { nimClientFor, DEFAULT_NIM_MODEL } from '@/lib/nim'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
 
 export const maxDuration = 60
@@ -59,6 +62,7 @@ export async function POST(req: Request) {
   const resolvedFile = typeof body.target_file === 'string' ? body.target_file : undefined
   const resolvedIsNew = body.is_new_file === true
   const resolvedInstruction = typeof body.instruction === 'string' ? body.instruction : undefined
+  const skillSlug = typeof body.skill_slug === 'string' ? body.skill_slug : undefined
 
   if (!REPO_RE.test(repo)) {
     return Response.json({ error: 'Invalid repo. Use owner/name.' }, { status: 400 })
@@ -106,7 +110,7 @@ export async function POST(req: Request) {
     resolvedInstruction,
   }
 
-  const { result, action, planTarget } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false)
+  const { result, action, planTarget } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false, skillSlug)
 
   const entry: TerminalCommand = {
     cmd: command,
@@ -158,12 +162,18 @@ interface DispatchResult {
   planTarget?: { file: string; isNewFile: boolean }
 }
 
-// Dispatch order, strictly: meta-command -> read-only allowlist -> natural
-// language. A command whose first word matches ANY known keyword (allowlisted
-// binary, blocked binary, git, or a meta keyword) is routed to its matching
-// validator and never falls through to NL — a blocked/malformed command must
-// stay blocked, never get reinterpreted as a natural-language request.
-async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false): Promise<DispatchResult> {
+// Dispatch order:
+// 1. Skill response — when skill_slug is set, generate a read-only text
+//    analysis using the skill's system prompt. No file editing. This MUST
+//    run before the NL classifier so that natural-language skill triggers
+//    ("should I add X?") don't get rejected as non-code-edit requests.
+// 2. Meta-command → read-only allowlist → natural language (code edit).
+async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false, skillSlug?: string): Promise<DispatchResult> {
+  // ── Skill response path (read-only, text analysis) ───────────
+  if (skillSlug) {
+    const result = await runSkillResponse(ctx, skillSlug, command)
+    return { result }
+  }
   const meta = parseMetaCommand(command)
   if (meta.ok) {
     return { result: await runMeta(meta.command, ctx), action: metaAction(meta.command.kind) }
@@ -186,6 +196,18 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
   const isKnownFirstWord = firstToken === 'git' || firstToken in FILE_COMMANDS || BLOCKED_BINARIES.has(firstToken) || looksLikeMetaCommand(command)
   if (isKnownFirstWord) {
     return { result: { output: parsed.error, exitCode: 126 } }
+  }
+
+  // Fallback: if the command looks like it was wrapped with a skill prompt
+  // but no skill_slug was sent (defensive), try to detect it from the wrapper.
+  const wrapperMatch = command.match(/^\[Acting as ([A-Z\s]+) lens\]/)
+  if (wrapperMatch) {
+    const name = wrapperMatch[1].trim()
+    const detected = SKILLS.find((s) => s.name.toUpperCase() === name)
+    if (detected) {
+      const result = await runSkillResponse(ctx, detected.slug, command)
+      return { result }
+    }
   }
 
   // Genuinely unrecognized input -> treat as a natural-language coding
@@ -279,6 +301,48 @@ async function ensureSessionId(uid: string, repo: string, requestedSessionId: st
     return null
   }
   return data.id
+}
+
+// ── Skill response path ────────────────────────────────────────
+// When a Drive skill is active, generate a read-only text analysis
+// using the LLM. No files are touched — skills are lenses on the
+// codebase, not editors. The command here is the full wrapped prompt
+// (system prompt + user request), which we pass directly as the LLM
+// instruction.
+async function runSkillResponse(
+  ctx: WriteOpsContext,
+  skillSlug: string,
+  wrappedCommand: string,
+): Promise<{ output: string; exitCode: number; reasoning?: string }> {
+  const skill = getSkill(skillSlug)
+  if (!skill) {
+    return { output: `Unknown skill: ${skillSlug}`, exitCode: 1 }
+  }
+
+  // Extract just the user request from the wrapped prompt for cleaner output.
+  const userMarker = 'USER REQUEST:'
+  const userIdx = wrappedCommand.indexOf(userMarker)
+  const userRequest = userIdx !== -1
+    ? wrappedCommand.slice(userIdx + userMarker.length).trim()
+    : wrappedCommand
+
+  try {
+    const client = nimClientFor(ctx.model)
+    const { text } = await generateText({
+      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
+      system: skill.systemPrompt,
+      prompt: `Repository: ${ctx.owner}/${ctx.repo}\n\nUser request: ${userRequest}\n\nProvide your analysis now.`,
+      temperature: 0.7,
+      maxOutputTokens: 3000,
+      timeout: 60_000,
+      maxRetries: 1,
+    })
+    return { output: text, exitCode: 0 }
+  } catch (err) {
+    console.error('[terminal/skill-response] generation threw:', err)
+    const detail = err instanceof Error ? err.message : String(err)
+    return { output: `Skill analysis failed: ${detail}`, exitCode: 1 }
+  }
 }
 
 async function appendCommand(uid: string, sessionId: string, entry: TerminalCommand): Promise<void> {

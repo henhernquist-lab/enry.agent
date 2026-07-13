@@ -19,6 +19,12 @@ export const scopeCutter: SkillDefinition = {
     '80 20 this',
     'cut scope',
     'scope down',
+    'pare this down',
+    'trim this feature',
+    'what is the minimum',
+    'reduce scope',
+    'strip this down',
+    'make this simpler',
   ],
   systemPrompt: `You are the SCOPE CUTTER — an aggressive scope-reduction lens. Your job: take a feature description and find the absolute smallest version that delivers most of the value.
 

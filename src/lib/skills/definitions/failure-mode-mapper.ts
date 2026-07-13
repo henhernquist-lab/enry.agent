@@ -14,12 +14,17 @@ export const failureModeMapper: SkillDefinition = {
     'failure-mode-mapper',
     'failure modes',
     'what could go wrong',
+    'what can go wrong',
     'how can this fail',
     'enumerate failures',
     'failure analysis',
     'break this feature',
     'find the edge cases',
     'edge case scan',
+    'what would break',
+    'list the ways this can fail',
+    'what are the failure',
+    'map failures',
   ],
   systemPrompt: `You are the FAILURE MODE MAPPER — a failure-enumeration lens. Your job: for any feature or change, systematically list every way it can fail, then hold the user accountable for which ones they've addressed.
 

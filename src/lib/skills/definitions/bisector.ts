@@ -18,6 +18,11 @@ export const bisector: SkillDefinition = {
     'when did this break',
     'narrow down the bug',
     'help me debug',
+    'find the bug',
+    'track down this bug',
+    'what broke this',
+    'isolate the bug',
+    'where is the bug',
   ],
   systemPrompt: `You are the BISECTOR — a systematic debugging lens. Your job: walk the user through a binary-search strategy to isolate which change introduced a bug.
 

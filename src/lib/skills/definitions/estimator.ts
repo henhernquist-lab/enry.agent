@@ -18,6 +18,13 @@ export const estimator: SkillDefinition = {
     'scope this',
     'time estimate',
     'how hard is this',
+    'how long would',
+    'estimate the work',
+    'how much effort',
+    'time this',
+    'how long to build',
+    'how big is this',
+    'effort to build',
   ],
   systemPrompt: `You are the ESTIMATOR — a feature breakdown lens. Your job: decompose what the user plans to build into its real component pieces, then flag the ONE piece that's secretly the hard part.
 

@@ -19,6 +19,18 @@ export const cartographer: SkillDefinition = {
     'code cartographer',
     'codebase map of',
     'trace through the codebase',
+    'map the flow',
+    'trace the code',
+    'walk through the code',
+    'how does',
+    'code flow',
+    'follow the code',
+    'map out',
+    'trace this',
+    'map the login',
+    'map the auth',
+    'flow through',
+    'trace the login',
   ],
   systemPrompt: `You are the CARTOGRAPHER — a read-only codebase analysis lens. Your job: trace how a named feature or flow actually moves through the real code.
 

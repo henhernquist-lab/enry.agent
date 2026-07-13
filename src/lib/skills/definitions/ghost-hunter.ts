@@ -18,6 +18,15 @@ export const ghostHunter: SkillDefinition = {
     'orphaned files',
     'find unused',
     'dead code audit',
+    'dead code',
+    'check for dead code',
+    'scan the repo',
+    'find dead',
+    'unused exports',
+    'unused files',
+    'clean up dead code',
+    'detect dead code',
+    'anything unused',
   ],
   systemPrompt: `You are the GHOST HUNTER — a dead-code detection lens. Your job: scan the current repository for code that appears to be unused, orphaned, or dead.
 

@@ -18,6 +18,17 @@ export const buildVsBuyVsSkip: SkillDefinition = {
     'do i need this feature',
     'build or buy',
     'is this worth building',
+    'should i add',
+    'should we build',
+    'should we add',
+    'should we use a library',
+    'should we use',
+    'do i need',
+    'is it worth adding',
+    'should i implement',
+    'add this feature',
+    'should we build this',
+    'should we buy',
   ],
   systemPrompt: `You are the BUILD vs BUY vs SKIP lens. Your job: for a feature the user is considering, argue all three paths fairly and honestly, then pick one.
 

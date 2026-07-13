@@ -11,7 +11,7 @@ import {
   Car, Radar, Swords,
 } from 'lucide-react'
 import { CruisePanel } from '@/components/agent/cruise-panel'
-import { SKILLS as ALL_SKILLS } from '@/lib/skills/registry'
+import { SKILLS as ALL_SKILLS, detectSkillInvocation } from '@/lib/skills/registry'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -339,7 +339,7 @@ export default function AgentPage() {
   }, [repo, sessionId])
 
   const exec = useCallback(
-    async (command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string }) => {
+    async (command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; skillSlug?: string }) => {
       if (!repo) {
         setLines((l) => [...l, { kind: 'system', text: 'select a repository first' }])
         return
@@ -354,6 +354,7 @@ export default function AgentPage() {
           effort,          // FIX #2: send effort to server
           mode,            // FIX #3: send mode to server
           proceed: opts?.proceed ?? false,
+          ...(opts?.skillSlug ? { skill_slug: opts.skillSlug } : {}),
         }
         if (opts?.targetFile) body.target_file = opts.targetFile
         if (opts?.isNewFile !== undefined) body.is_new_file = opts.isNewFile
@@ -414,20 +415,53 @@ export default function AgentPage() {
   const handleSend = useCallback(() => {
     const text = input.trim()
     if (!text || running) return
-    // If a Drive skill is active, prepend its system prompt as context for the agent.
-    const instruction = activeSkill
-      ? `[Acting as ${activeSkill.name.toUpperCase()} lens]
 
-${activeSkill.systemPrompt}
+    // Check for natural-language skill triggers BEFORE falling through to
+    // the normal code-edit path. This catches phrases like
+    // "should I add X" (Build vs Buy vs Skip),
+    // "scan the repo for dead code" (Ghost Hunter), etc.
+    // Also supports /skill <slug> [topic] explicit commands.
+    let skillToUse = activeSkill
+    let userText = text
+
+    // (a) /skill <slug> command — parse slug(s) and topic
+    const slashMatch = text.match(/^\/skill\s+([\s\S]+)$/i)
+    if (slashMatch) {
+      const words = slashMatch[1].trim().split(/\s+/)
+      const slug = words[0]?.toLowerCase() ?? ''
+      const driveSkill = DRIVE_SKILLS.find((s) => s.slug === slug)
+      if (driveSkill) {
+        skillToUse = driveSkill
+        userText = words.slice(1).join(' ').trim() || text
+      }
+    }
+
+    // (b) Natural-language trigger — only if no explicit skill selected yet
+    if (!skillToUse) {
+      const detected = detectSkillInvocation(text)
+      if (detected && DRIVE_SKILLS.some((s) => s.slug === detected.skill.slug)) {
+        skillToUse = detected.skill
+        userText = detected.topic || text
+        // Keep the picker in sync with what was auto-detected
+        setActiveSkillSlug(detected.skill.slug)
+      }
+    }
+
+    // If a Drive skill is active, prepend its system prompt and flag for server.
+    const instruction = skillToUse
+      ? `[Acting as ${skillToUse.name.toUpperCase()} lens]
+
+${skillToUse.systemPrompt}
 
 ---
 
-USER REQUEST: ${text}`
-      : text
+USER REQUEST: ${userText}`
+      : userText
+
     setLines((l) => [...l, { kind: 'prompt', text }])
     setInput('')
-    exec(instruction)
-  }, [input, running, exec, activeSkill])
+    exec(instruction, { skillSlug: skillToUse?.slug })
+  }, [input, running, exec, activeSkill, setActiveSkillSlug])
 
   const handleQuickAction = (action: string) => {
     if (running) return
