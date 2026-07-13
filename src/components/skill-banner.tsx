@@ -7,6 +7,7 @@ import { Swords, X } from 'lucide-react'
 // — a thin warning-toned rail across the top of the conversation with a phase
 // tracker and an exit affordance. No glow.
 export function SkillBanner({
+  names,
   name,
   phaseLabel,
   completed,
@@ -15,7 +16,8 @@ export function SkillBanner({
   hint,
   onExit,
 }: {
-  name: string
+  names?: string[]
+  name?: string
   phaseLabel: string
   completed: number
   total: number
@@ -23,6 +25,10 @@ export function SkillBanner({
   hint?: string
   onExit: () => void
 }) {
+  // Support both single-skill (name) and multi-skill (names) display.
+  const displayNames = names ?? (name ? [name] : [])
+  const isMulti = displayNames.length > 1
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }}
@@ -32,9 +38,15 @@ export function SkillBanner({
     >
       <div className="mx-auto flex max-w-3xl items-center gap-3 px-8 py-2">
         <Swords className="h-3.5 w-3.5 flex-shrink-0 text-warning" />
-        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-warning">
-          {name}
-        </span>
+        {isMulti ? (
+          <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-warning">
+            {displayNames.join(' + ')}
+          </span>
+        ) : (
+          <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-warning">
+            {displayNames[0]}
+          </span>
+        )}
         <span className="text-warning/40">·</span>
 
         {waitingForInput ? (

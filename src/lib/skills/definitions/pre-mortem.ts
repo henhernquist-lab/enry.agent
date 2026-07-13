@@ -17,8 +17,8 @@ export const preMortem: SkillDefinition = {
     'pre-mortem',
     'premortem',
     'run a pre mortem',
-    'what could go wrong',
-    'failure mode',
+    'project pre mortem',
+    'do a pre mortem',
   ],
   structure: {
     assistantTurns: 3,

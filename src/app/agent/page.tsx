@@ -8,9 +8,10 @@ import Link from 'next/link'
 import {
   ArrowLeft, ChevronDown, ChevronRight, Check, X, Send, Loader2,
   GitBranch, Folder, File, Lock, Sliders, Zap, TerminalSquare, Eye, Play,
-  Car, Radar,
+  Car, Radar, Swords,
 } from 'lucide-react'
 import { CruisePanel } from '@/components/agent/cruise-panel'
+import { SKILLS as ALL_SKILLS } from '@/lib/skills/registry'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -42,6 +43,11 @@ const MODELS = [
   { id: 'qwen/qwen3.5-122b-a10b',      label: 'Qwen 3.5 122B',    desc: 'Large reasoning model. Great for analysis.' },
   { id: 'z-ai/glm-5.2',                label: 'GLM 5.2',          desc: 'Versatile all-rounder. Good at following instructions.' },
 ] as const
+
+// Drive skills (coding-focused) — pulled from the shared registry.
+const DRIVE_SKILLS = ALL_SKILLS.filter((s) =>
+  ['cartographer', 'ghost-hunter', 'bisector', 'build-vs-buy-vs-skip', 'estimator', 'scope-cutter', 'failure-mode-mapper'].includes(s.slug),
+)
 
 const EFFORTS = [
   { id: 'none' as const,    label: 'Auto',     desc: 'Default reasoning' },
@@ -235,18 +241,22 @@ export default function AgentPage() {
 
   // Manual mode plan context
   const [planContext, setPlanContext] = useState<{ targetFile: string; isNewFile: boolean; instruction: string } | null>(null)
+  const [activeSkillSlug, setActiveSkillSlug] = useState<string | null>(null)
+  const [skillMenuOpen, setSkillMenuOpen] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const repoMenuRef = useRef<HTMLDivElement>(null)
   const modelMenuRef = useRef<HTMLDivElement>(null)
   const effortMenuRef = useRef<HTMLDivElement>(null)
+  const skillMenuRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const tree = useMemo(() => buildTree(filePaths), [filePaths])
   const selectedRepo = repos.find((r) => r.full_name === repo)
   const currentModel = MODELS.find((m) => m.id === model)
   const currentEffort = EFFORTS.find((e) => e.id === effort)
+  const activeSkill = DRIVE_SKILLS.find((s) => s.slug === activeSkillSlug) ?? null
   const isDeep = effort === 'deep'
 
   // Auth guard
@@ -293,6 +303,7 @@ export default function AgentPage() {
       if (repoMenuRef.current && !repoMenuRef.current.contains(e.target as Node)) setRepoMenuOpen(false)
       if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) setModelMenuOpen(false)
       if (effortMenuRef.current && !effortMenuRef.current.contains(e.target as Node)) setEffortMenuOpen(false)
+      if (skillMenuRef.current && !skillMenuRef.current.contains(e.target as Node)) setSkillMenuOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
@@ -403,10 +414,20 @@ export default function AgentPage() {
   const handleSend = useCallback(() => {
     const text = input.trim()
     if (!text || running) return
+    // If a Drive skill is active, prepend its system prompt as context for the agent.
+    const instruction = activeSkill
+      ? `[Acting as ${activeSkill.name.toUpperCase()} lens]
+
+${activeSkill.systemPrompt}
+
+---
+
+USER REQUEST: ${text}`
+      : text
     setLines((l) => [...l, { kind: 'prompt', text }])
     setInput('')
-    exec(text)
-  }, [input, running, exec])
+    exec(instruction)
+  }, [input, running, exec, activeSkill])
 
   const handleQuickAction = (action: string) => {
     if (running) return
@@ -796,6 +817,35 @@ export default function AgentPage() {
                             className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${model === m.id ? 'text-primary' : 'text-foreground'}`}>
                             <span className="font-mono text-[10px] font-semibold">{m.label}</span>
                             <span className="font-sans text-[9px] text-muted-foreground">{m.desc}</span>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Drive skill picker */}
+                <div ref={skillMenuRef} className="relative flex-shrink-0">
+                  <button onClick={() => setSkillMenuOpen((o) => !o)}
+                    className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                      activeSkill ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-secondary text-muted-foreground'
+                    }`}>
+                    <Swords className="h-3 w-3" />{activeSkill ? activeSkill.name : 'Skill'}<ChevronDown className="h-2.5 w-2.5" />
+                  </button>
+                  <AnimatePresence>
+                    {skillMenuOpen && (
+                      <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
+                        className="absolute bottom-full left-0 z-20 mb-1 w-56 rounded-md border border-border bg-surface-elevated shadow-lg max-h-72 overflow-y-auto">
+                        <button onClick={() => { setActiveSkillSlug(null); setSkillMenuOpen(false); inputRef.current?.focus() }}
+                          className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${!activeSkillSlug ? 'text-primary' : 'text-foreground'}`}>
+                          <span className="font-mono text-[10px] font-semibold">None (default)</span>
+                          <span className="font-sans text-[9px] text-muted-foreground">Normal coding agent</span>
+                        </button>
+                        {DRIVE_SKILLS.map((s) => (
+                          <button key={s.slug} onClick={() => { setActiveSkillSlug(s.slug); setSkillMenuOpen(false); inputRef.current?.focus() }}
+                            className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${activeSkillSlug === s.slug ? 'text-primary' : 'text-foreground'}`}>
+                            <span className="font-mono text-[10px] font-semibold">{s.name}</span>
+                            <span className="font-sans text-[9px] text-muted-foreground">{s.description}</span>
                           </button>
                         ))}
                       </motion.div>
