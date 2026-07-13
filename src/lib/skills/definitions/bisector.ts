@@ -17,7 +17,6 @@ export const bisector: SkillDefinition = {
     'find the commit that broke',
     'when did this break',
     'narrow down the bug',
-    'help me debug',
     'find the bug',
     'track down this bug',
     'what broke this',

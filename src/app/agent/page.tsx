@@ -45,9 +45,18 @@ const MODELS = [
 ] as const
 
 // Drive skills (coding-focused) — pulled from the shared registry.
-const DRIVE_SKILLS = ALL_SKILLS.filter((s) =>
-  ['cartographer', 'ghost-hunter', 'bisector', 'build-vs-buy-vs-skip', 'estimator', 'scope-cutter', 'failure-mode-mapper'].includes(s.slug),
-)
+const DRIVE_SKILL_SLUGS = [
+  // Original 7
+  'cartographer', 'ghost-hunter', 'bisector', 'build-vs-buy-vs-skip',
+  'estimator', 'scope-cutter', 'failure-mode-mapper',
+  // Ported from homepage (5)
+  'drive-devil-advocate', 'drive-assumption-excavator', 'drive-pre-mortem',
+  'drive-interrogator', 'drive-eli-expert',
+  // New coding skills (6)
+  'code-reviewer', 'code-council', 'simplifier', 'architect',
+  'rubber-duck', 'explainer',
+]
+const DRIVE_SKILLS = ALL_SKILLS.filter((s) => DRIVE_SKILL_SLUGS.includes(s.slug))
 
 const EFFORTS = [
   { id: 'none' as const,    label: 'Auto',     desc: 'Default reasoning' },

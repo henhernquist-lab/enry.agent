@@ -13,7 +13,7 @@ export const buildVsBuyVsSkip: SkillDefinition = {
     'build vs buy vs skip',
     'build vs buy',
     'build buy skip',
-    'should i build this',
+    'should i build this feature',
     'should i use a library',
     'do i need this feature',
     'build or buy',

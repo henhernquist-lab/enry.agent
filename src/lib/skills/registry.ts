@@ -25,13 +25,52 @@ import { buildVsBuyVsSkip } from './definitions/build-vs-buy-vs-skip'
 import { estimator } from './definitions/estimator'
 import { scopeCutter } from './definitions/scope-cutter'
 import { failureModeMapper } from './definitions/failure-mode-mapper'
+// Drive ported skills (from homepage, adapted for coding context)
+import { driveDevilAdvocate } from './definitions/drive-devil-advocate'
+import { driveAssumptionExcavator } from './definitions/drive-assumption-excavator'
+import { drivePreMortem } from './definitions/drive-pre-mortem'
+import { driveInterrogator } from './definitions/drive-interrogator'
+import { driveEliExpert } from './definitions/drive-eli-expert'
+// New coding-focused skills
+import { codeReviewer } from './definitions/code-reviewer'
+import { codeCouncil } from './definitions/code-council'
+import { simplifier } from './definitions/simplifier'
+import { architect } from './definitions/architect'
+import { rubberDuck } from './definitions/rubber-duck'
+import { explainer } from './definitions/explainer'
 
 // The registry. Adding a skill = import its definition and add it to this
 // array. Everything else (invocation, banner, round-tracking, exit, the
 // skill-aware system prompt on the server) reads from these declarations —
 // no per-skill code anywhere else.
 export const SKILLS: SkillDefinition[] = [
-  // Chat skills
+  // Drive (coding-focused) skills come FIRST so their trigger phrases are
+  // matched before homepage chat skill counterparts (e.g. "devil's advocate"
+  // matches drive-devil-advocate before devil-advocate). The Agent page
+  // filters to DRIVE_SKILLS only; the Chat page can use all skills.
+  //
+  // Original 7 Drive skills
+  cartographer,
+  ghostHunter,
+  bisector,
+  buildVsBuyVsSkip,
+  estimator,
+  scopeCutter,
+  failureModeMapper,
+  // Drive ported skills (from homepage, adapted for coding context)
+  driveDevilAdvocate,
+  driveAssumptionExcavator,
+  drivePreMortem,
+  driveInterrogator,
+  driveEliExpert,
+  // New coding-focused skills
+  codeReviewer,
+  codeCouncil,
+  simplifier,
+  architect,
+  rubberDuck,
+  explainer,
+  // Chat skills (homepage)
   devilAdvocate,
   steelmanDrill,
   fifthGrader,
@@ -50,14 +89,6 @@ export const SKILLS: SkillDefinition[] = [
   voiceMatch,
   antiCliché,
   envyCompass,
-  // Drive (coding-focused) skills
-  cartographer,
-  ghostHunter,
-  bisector,
-  buildVsBuyVsSkip,
-  estimator,
-  scopeCutter,
-  failureModeMapper,
 ]
 
 export function getSkill(slug: string): SkillDefinition | undefined {
