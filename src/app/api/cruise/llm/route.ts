@@ -65,8 +65,18 @@ export async function POST(req: Request) {
     const result = await generateText({
       model: client.chat(selectedModel),
       messages,
+      // A full file body can be large; the provider default can truncate mid-file
+      // (finishReason 'length') and, worse, return empty text if all the budget
+      // went to reasoning tokens. Give it real room and report finishReason so
+      // the runner can tell "truncated / empty" apart from a normal answer.
+      maxOutputTokens: 8192,
     })
-    return Response.json({ text: result.text, calls_used: nextCalls, calls_remaining: run.cap_steps - nextCalls })
+    return Response.json({
+      text: result.text ?? '',
+      finish_reason: result.finishReason ?? null,
+      calls_used: nextCalls,
+      calls_remaining: run.cap_steps - nextCalls,
+    })
   } catch (e) {
     return Response.json({ error: `LLM call failed: ${String(e)}`, calls_used: nextCalls, calls_remaining: run.cap_steps - nextCalls }, { status: 502 })
   }

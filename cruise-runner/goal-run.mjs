@@ -34,18 +34,58 @@ if (!GOAL_RUN_ID || !CALLBACK || !TOKEN) {
 }
 
 async function api(method, path, body) {
-  const res = await fetch(CALLBACK + path, {
-    method,
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  const json = await res.json().catch(() => ({}))
-  return { ok: res.ok, status: res.status, json }
+  try {
+    const res = await fetch(CALLBACK + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    // A Vercel function timeout (e.g. the 504 on a slow completion) returns an
+    // HTML body, not JSON — catch that so it surfaces as a transport failure
+    // rather than an empty {} the caller misreads as "model returned nothing".
+    const json = await res.json().catch(() => ({ error: `non-JSON response (HTTP ${res.status})` }))
+    return { ok: res.ok, status: res.status, json }
+  } catch (e) {
+    return { ok: false, status: 0, json: { error: 'network: ' + (e && e.message || e) } }
+  }
 }
 
-async function llm(messages) {
-  const { json } = await api('POST', '/api/cruise/llm', { goal_run_id: GOAL_RUN_ID, messages })
-  return json
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Calls the metered LLM proxy with retry/backoff. Returns exactly one of:
+//   { text }            — a usable, non-empty completion
+//   { budgetExceeded }  — the run's LLM budget is spent (terminal, never retried)
+//   { failed, ... }     — proxy error / timeout / empty text, after retries
+// This is what stops a proxy/API failure or a Vercel timeout from being
+// misreported as "the model returned nothing" — those are transport failures,
+// and transient ones usually clear on a retry.
+async function llm(messages, { retries = 2 } = {}) {
+  let last = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const { ok, status, json } = await api('POST', '/api/cruise/llm', { goal_run_id: GOAL_RUN_ID, messages })
+    if (json && json.error === 'budget_exceeded') return { budgetExceeded: true }
+    if (ok && json && typeof json.text === 'string' && json.text.trim()) {
+      return { text: json.text, finishReason: json.finish_reason ?? null }
+    }
+    last = {
+      status,
+      error: (json && json.error) || null,
+      finishReason: (json && json.finish_reason) || null,
+      empty: !!(ok && json && typeof json.text === 'string' && !json.text.trim()),
+    }
+    if (attempt < retries) await sleep(1500 * (attempt + 1))
+  }
+  return { failed: true, ...last }
+}
+
+// Human-readable reason for a failed llm() call — so a step detail says WHY
+// (HTTP status, proxy error text, or empty-with-finish-reason) instead of the
+// old catch-all "(empty response)".
+function describeLlmFailure(r) {
+  if (r.empty) return `model returned empty text${r.finishReason ? ` (finish reason: ${r.finishReason})` : ''}`
+  if (r.error) return `${r.error}${r.status ? ` (HTTP ${r.status})` : ''}`
+  if (r.status) return `HTTP ${r.status}`
+  return 'unknown error'
 }
 
 // Planner responses are short JSON (plan strings / a clarify question) — safe
@@ -79,9 +119,10 @@ function parseEdits(text) {
   return { files, note, noChanges, matchedAny: files.length > 0 || noChanges }
 }
 
-// Small repo context for the planner: a capped file tree + a couple of
-// well-known manifest files, not a full checkout dump.
-function repoOverview() {
+// Capped list of the repo's real file paths (dirs marked with a trailing /).
+// The editor uses this so it imports from modules that ACTUALLY EXIST instead
+// of inventing paths — the model can't otherwise see the repo's structure.
+function listFiles() {
   const lines = []
   let total = 0
   const MAX_LINES = 400
@@ -100,11 +141,17 @@ function repoOverview() {
     }
   }
   walk('.', 0)
+  return lines
+}
+
+// Small repo context for the planner: the file tree + a couple of well-known
+// manifest files, not a full checkout dump.
+function repoOverview() {
   let manifest = ''
   for (const f of ['package.json', 'tsconfig.json']) {
     if (existsSync(f)) manifest += `\n\n--- ${f} ---\n` + readFileSync(f, 'utf8').slice(0, 3000)
   }
-  return lines.join('\n') + manifest
+  return listFiles().join('\n') + manifest
 }
 
 // Pull plausible file paths out of free text (a plan step, an LLM note) so we
@@ -180,8 +227,12 @@ If the goal is unsafe, destructive without specifics, or too ambiguous to act on
 Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 description>", ...]}. Each step should be a small, concrete, independently-committable unit of work (e.g. "Add a ThemeProvider context in src/theme/theme-context.tsx" not "add dark mode"). Mention concrete file paths in step descriptions where you can — later steps use them to know what to read. Keep the plan to at most ${MAX_PLAN_STEPS} steps and only as many as the goal actually needs.` },
       { role: 'user', content: `GOAL: ${ctx.goal}${clarifyContext}\n\nREPO OVERVIEW:\n${repoOverview()}` },
     ])
-    if (planRes.error === 'budget_exceeded') {
+    if (planRes.budgetExceeded) {
       await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'finalize', status: 'failed', error: 'LLM budget exhausted during planning.' })
+      return
+    }
+    if (planRes.failed) {
+      await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'finalize', status: 'failed', error: `Planner LLM call failed — ${describeLlmFailure(planRes)}` })
       return
     }
     const parsed = extractJson(planRes.text)
@@ -211,6 +262,12 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
   let baselineFp = new Set(blockingFindings(REPO).map((f) => f.fingerprint))
   const remaining = []
   let capped = false
+  // Paths this run has already created/changed (seeded from prior dispatches on
+  // resume). Fed to the editor so a later step references the REAL module a
+  // earlier step made instead of guessing its name/exports.
+  const changedThisRun = new Set(ctx.files_changed || [])
+  // The repo's real file list, refreshed lazily as the run adds files.
+  let repoFiles = listFiles()
 
   for (let seq = 0; seq < plan.length; seq++) {
     if (doneSeqs.has(seq)) continue
@@ -225,6 +282,7 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
       .map((p) => { const c = readIfExists(p); return c !== null ? `--- ${p} (existing) ---\n${c.slice(0, 6000)}` : null })
       .filter(Boolean)
       .join('\n\n')
+    const changedList = changedThisRun.size > 0 ? [...changedThisRun].join('\n') : '(none yet)'
 
     const editRes = await llm([
       { role: 'system', content: `You are editing files in a checked-out git repo to accomplish one step of a larger goal.
@@ -240,22 +298,31 @@ After all file blocks, emit one line:
 If the step needs no file changes (already satisfied), output exactly one line and nothing else:
 ===NO CHANGES===
 
-Rules: output only file blocks + the NOTE line (or NO CHANGES). No prose, no markdown fences. Match the repo's existing conventions, imports, and framework idioms — read the provided existing files first.` },
-      { role: 'user', content: `GOAL: ${ctx.goal}\n\nCURRENT STEP: ${stepDesc}\n\n${existingContent || '(no existing files matched this step by path — create what\'s needed)'}` },
+Rules:
+- Output only file blocks + the NOTE line (or NO CHANGES). No prose, no markdown fences.
+- Match the repo's existing conventions, imports, and framework idioms — read the provided existing files first.
+- Import ONLY from paths that appear in REPO FILES or FILES CHANGED THIS RUN below, or from installed packages. Never invent a module path — if you need a helper that doesn't exist yet, define it inline or create the file in this same response.
+- Include every import your code uses (e.g. React hooks like useState/useEffect). Do not reference an identifier you didn't import or define.` },
+      { role: 'user', content: `GOAL: ${ctx.goal}\n\nCURRENT STEP: ${stepDesc}\n\nREPO FILES (real paths — import only from these or installed packages):\n${repoFiles.join('\n')}\n\nFILES CHANGED THIS RUN:\n${changedList}\n\nEXISTING CONTENT OF FILES THIS STEP TOUCHES:\n${existingContent || '(none matched by path — create what is needed)'}` },
     ])
-    if (editRes.error === 'budget_exceeded') {
+    if (editRes.budgetExceeded) {
       await postStep(seq, 'failed', 'LLM budget exhausted')
       capped = true
       remaining.push(stepDesc, ...plan.slice(seq + 1))
       break
     }
+    if (editRes.failed) {
+      // Transport/proxy/timeout/empty failure, after retries — NOT a malformed
+      // parse and NOT a lint revert. Report the real reason.
+      await postStep(seq, 'failed', `Editor LLM call failed after retries — ${describeLlmFailure(editRes)}`)
+      continue
+    }
     const parsed = parseEdits(editRes.text)
     if (!parsed.matchedAny) {
-      // Distinct from a lint-error revert: the model's OUTPUT itself was
-      // malformed (no file blocks, no NO-CHANGES sentinel). Surface a snippet
-      // of the raw response so it's diagnosable rather than opaque.
+      // Distinct from a transport failure: we GOT a response, but it contained
+      // no file blocks / NO-CHANGES sentinel. Surface a snippet to diagnose.
       const snippet = String(editRes.text || '').replace(/\s+/g, ' ').trim().slice(0, 600)
-      await postStep(seq, 'failed', `Malformed editor response — no file blocks found. Raw response:\n${snippet || '(empty response)'}`)
+      await postStep(seq, 'failed', `Malformed editor response — no file blocks found. Raw response:\n${snippet || '(empty)'}`)
       continue
     }
     if (parsed.noChanges || parsed.files.length === 0) {
@@ -301,6 +368,9 @@ Rules: output only file blocks + the NOTE line (or NO CHANGES). No prose, no mar
     }
     filesChanged = applyRes.json.files_changed
     baselineFp = new Set(afterFindings.map((f) => f.fingerprint)) // accepted state is the new baseline
+    // Later steps should see what this one just created — real paths to import
+    // from, not guesses.
+    for (const t of touched) { if (t.is_new) { changedThisRun.add(t.path); repoFiles.push(t.path) } else changedThisRun.add(t.path) }
     await postStep(seq, 'done', parsed.note || `${touched.length} file(s) changed`)
   }
 
