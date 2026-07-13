@@ -33,6 +33,9 @@ import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploa
 import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/attachment-marker'
 
 import { setAgentBusy } from '@/lib/agent-presence'
+import { SkillBanner } from './skill-banner'
+import { detectSkillInvocation, SKILLS } from '@/lib/skills/registry'
+import type { SkillDefinition } from '@/lib/skills/types'
 import type { ActivityEvent } from '@/lib/chat-history'
 
 interface CenterPanelProps {
@@ -156,6 +159,13 @@ export function CenterPanel({
     },
   })
   const [input, setInput] = useState('')
+  // ─── Skill mode ───────────────────────────────────────────────
+  // activeSkill is the current conversation mode (null = normal chat).
+  // skillStartIndex marks where in the message list the skill began, so
+  // assistant-turn counting (which drives the phase indicator and the
+  // automatic exit) ignores any pre-skill history.
+  const [activeSkill, setActiveSkill] = useState<SkillDefinition | null>(null)
+  const [skillStartIndex, setSkillStartIndex] = useState(0)
   const [modelOpen, setModelOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [uptimeMs, setUptimeMs] = useState(0)
@@ -231,11 +241,75 @@ export function CenterPanel({
     return () => document.removeEventListener('mousedown', handler)
   }, [effortMenuOpen])
 
+  // Assistant turns produced since the active skill began — source of truth for
+  // the phase indicator and the automatic exit.
+  const skillTurnsCompleted = activeSkill
+    ? messages.slice(skillStartIndex).filter((m) => m.role === 'assistant').length
+    : 0
+
+  const exitSkill = useCallback(() => {
+    setActiveSkill(null)
+    setSkillStartIndex(0)
+  }, [])
+
+  // Automatic exit: once the skill has produced all its assistant turns (e.g.
+  // Devil's Advocate's verdict) and the stream has settled, drop back to normal
+  // chat. The final turn's message stays in the transcript; only the mode clears.
+  useEffect(() => {
+    if (!activeSkill) return
+    const done = skillTurnsCompleted >= activeSkill.structure.assistantTurns
+    if (done && status !== 'streaming' && status !== 'submitted') {
+      exitSkill()
+    }
+  }, [activeSkill, skillTurnsCompleted, status, exitSkill])
+
+  // Send a message while a skill is active — injects the skill slug and the
+  // turn number about to be generated so the server drives the right phase.
+  const sendSkillTurn = (skill: SkillDefinition, text: string, startIndex: number) => {
+    const turnsSoFar = messages.slice(startIndex).filter((m) => m.role === 'assistant').length
+    onActivity({ type: 'user-sent', content: text, at: Date.now() })
+    onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
+    sendMessage({ text }, { body: { model, effort: chatEffort, skill: skill.slug, skillTurn: turnsSoFar + 1 } })
+  }
+
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault()
     const text = input.trim()
-    if (!text && !uploadResult) return
     if (pendingUpload?.status === 'uploading') return
+
+    // ── Skill mode is active ──────────────────────────────────────
+    if (activeSkill) {
+      if (!text) return
+      // Explicit early exit.
+      if (/^\/(exit|end)$/i.test(text)) {
+        exitSkill()
+        setInput('')
+        return
+      }
+      sendSkillTurn(activeSkill, text, skillStartIndex)
+      setInput('')
+      return
+    }
+
+    if (!text && !uploadResult) return
+
+    // ── Skill invocation from normal chat (command or natural language) ──
+    // Only when there's no attachment in flight — skills are text-only modes.
+    if (text && !uploadResult) {
+      const inv = detectSkillInvocation(text)
+      if (inv) {
+        const startIndex = messages.length
+        setActiveSkill(inv.skill)
+        setSkillStartIndex(startIndex)
+        setInput('')
+        // Topic supplied inline → run the first turn now. Otherwise arm the
+        // skill and let the banner prompt for the opening input.
+        if (inv.topic) {
+          sendSkillTurn(inv.skill, inv.topic, startIndex)
+        }
+        return
+      }
+    }
 
     const attachment = uploadResult
     const finalText = attachment ? buildMessageText(attachment, text) : text
@@ -407,6 +481,22 @@ export function CenterPanel({
         </div>
       </div>
 
+      {/* Skill mode banner */}
+      <AnimatePresence>
+        {activeSkill && (
+          <SkillBanner
+            key={activeSkill.slug}
+            name={activeSkill.name}
+            phaseLabel={activeSkill.structure.turnLabels[Math.min(skillTurnsCompleted, activeSkill.structure.assistantTurns - 1)]}
+            completed={skillTurnsCompleted}
+            total={activeSkill.structure.assistantTurns}
+            waitingForInput={messages.slice(skillStartIndex).length === 0}
+            hint={activeSkill.structure.openingInputHint}
+            onExit={exitSkill}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Messages Area */}
       <div className="relative flex-1 overflow-y-auto px-8 py-6 scrollbar-hidden">
         <div className="mx-auto max-w-3xl space-y-6">
@@ -495,6 +585,7 @@ export function CenterPanel({
             {messages.map((message, index) => {
               const { attachment, displayText: text } = getDisplayInfo(message)
               const sources = getSources(message)
+              const inSkillRange = activeSkill !== null && index >= skillStartIndex
               const isCurrentStream =
                 isStreaming &&
                 index === messages.length - 1 &&
@@ -520,7 +611,7 @@ export function CenterPanel({
                             ? 'border-primary/40 bg-surface-secondary text-left shadow-[0_0_18px_rgba(0,255,102,0.07)]'
                             : 'border-border bg-surface-secondary text-left'
                           : 'border-primary/20 bg-primary/5 text-left'
-                      }`}
+                      } ${inSkillRange && message.role === 'assistant' ? 'border-l-2 border-l-warning/60' : ''}`}
                     >
                       <p className={`whitespace-pre-wrap text-sm leading-relaxed ${message.role === 'assistant' ? 'font-mono text-primary/90' : 'text-foreground'}`}>
                         {isCurrentStream ? (
@@ -651,6 +742,31 @@ export function CenterPanel({
           </div>
         )}
 
+        {/* /skill discoverability — lists available conversation modes */}
+        {!activeSkill && /^\/skill\b/i.test(input) && (
+          <div className="mx-auto max-w-3xl px-4 pt-2">
+            <div className="overflow-hidden rounded border border-border bg-surface-secondary">
+              <div className="border-b border-border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                skills
+              </div>
+              {SKILLS.filter((s) => {
+                const q = input.trim().replace(/^\/skill\s*/i, '').toLowerCase()
+                return !q || s.slug.includes(q) || s.name.toLowerCase().includes(q)
+              }).map((s) => (
+                <button
+                  key={s.slug}
+                  type="button"
+                  onClick={() => { setInput(`/skill ${s.slug} `); textareaRef.current?.focus() }}
+                  className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-surface-elevated"
+                >
+                  <span className="font-mono text-[11px] text-primary">/skill {s.slug}</span>
+                  <span className="text-[11px] text-muted-foreground">{s.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Main Input */}
         <form
           onSubmit={handleSubmit}
@@ -672,7 +788,15 @@ export function CenterPanel({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isDraggingFile ? 'Drop file to attach…' : 'Enter a command or ask anything...'}
+              placeholder={
+                isDraggingFile
+                  ? 'Drop file to attach…'
+                  : activeSkill
+                    ? messages.slice(skillStartIndex).length === 0
+                      ? activeSkill.structure.openingInputHint ?? 'Respond to continue…'
+                      : `${activeSkill.name} — respond, or /exit to leave`
+                    : 'Enter a command or ask anything, or /skill to run a mode…'
+              }
               rows={1}
               disabled={isStreaming}
               className="w-full resize-none rounded border border-border bg-surface-elevated px-4 py-3 pr-12 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-50"

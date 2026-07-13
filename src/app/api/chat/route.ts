@@ -8,6 +8,7 @@ import { listRepos, listIssues, createIssue, getFileContent } from '@/lib/github
 import { createBranch, createFile, updateFile, createPR, createRepo } from '@/lib/github-write'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { supabase } from '@/lib/supabase'
+import { getSkill } from '@/lib/skills/registry'
 import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
@@ -26,7 +27,7 @@ export const maxDuration = 60
 const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY ?? '' })
 
 export async function POST(req: Request) {
-  const { messages, model, userProfile } = await req.json()
+  const { messages, model, userProfile, skill: skillSlug, skillTurn } = await req.json()
   const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
   const apiKey = MODEL_CONFIG[selectedModel]()
 
@@ -51,6 +52,33 @@ export async function POST(req: Request) {
     baseURL: 'https://integrate.api.nvidia.com/v1',
     apiKey,
   })
+
+  // ─── Skill mode ────────────────────────────────────────────────────────────
+  // A skill fully replaces the default behavior: its own system prompt drives a
+  // bounded, structured interaction, with the current turn number injected so
+  // the one prompt behaves correctly on every turn. Tools are dropped — skills
+  // are pure conversation modes, not tool-calling loops.
+  const activeSkill = typeof skillSlug === 'string' ? getSkill(skillSlug) : undefined
+  if (activeSkill) {
+    const turn = Number.isFinite(skillTurn) ? Math.max(1, Math.floor(skillTurn)) : 1
+    const label = activeSkill.structure.turnLabels[turn - 1] ?? `turn ${turn}`
+    const skillResult = streamText({
+      model: client.chat(selectedModel),
+      system: `${activeSkill.systemPrompt}
+
+CURRENT TURN: You are on assistant turn ${turn} of ${activeSkill.structure.assistantTurns} ("${label}"). Produce exactly this turn's content and nothing from any other turn.`,
+      messages: modelMessages,
+      onError: ({ error }) => {
+        console.error('streamText skill error:', error)
+      },
+    })
+    return skillResult.toUIMessageStreamResponse({
+      onError: (error) => {
+        console.error('chat route skill error:', error)
+        return error instanceof Error ? error.message : 'Something went wrong'
+      },
+    })
+  }
 
   const result = streamText({
     model: client.chat(selectedModel),
