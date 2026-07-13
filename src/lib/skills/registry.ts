@@ -8,6 +8,15 @@ import { assumptionExcavator } from './definitions/assumption-excavator'
 import { preMortem } from './definitions/pre-mortem'
 import { socraticMode } from './definitions/socratic-mode'
 import { eliExpert } from './definitions/eli-expert'
+import { secondOrderSimulator } from './definitions/second-order-simulator'
+import { interrogator } from './definitions/interrogator'
+import { distiller } from './definitions/distiller'
+import { tenTenTen } from './definitions/ten-ten-ten'
+import { feynman } from './definitions/feynman'
+import { editor } from './definitions/editor'
+import { voiceMatch } from './definitions/voice-match'
+import { antiCliché } from './definitions/anti-cliche'
+import { envyCompass } from './definitions/envy-compass'
 
 // The registry. Adding a skill = import its definition and add it to this
 // array. Everything else (invocation, banner, round-tracking, exit, the
@@ -23,6 +32,15 @@ export const SKILLS: SkillDefinition[] = [
   preMortem,
   socraticMode,
   eliExpert,
+  secondOrderSimulator,
+  interrogator,
+  distiller,
+  tenTenTen,
+  feynman,
+  editor,
+  voiceMatch,
+  antiCliché,
+  envyCompass,
 ]
 
 export function getSkill(slug: string): SkillDefinition | undefined {
