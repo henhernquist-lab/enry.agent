@@ -10,7 +10,7 @@ export const maxDuration = 30
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/
 
 // Enables Cruise for a repo: verifies the required OAuth scope, guards against a
-// name collision with a user's own workflow, commits the managed runner files
+// name collision with a user's own workflow, commits the managed Enry Relay files
 // to the repo's default branch (Phase 1: a workflow file + the static analyzer),
 // and records the repo in the allowlist.
 export async function POST(req: Request) {
@@ -67,11 +67,11 @@ export async function POST(req: Request) {
     const { commitSha, error: commitError } = await commitFiles(
       githubToken, owner, name, defaultBranch,
       fresh
-        ? 'chore: enable Enry Cruise\n\nAdds the Cruise scan + goal workflows and runner. Managed by enry.agent.'
-        : `chore: update Enry Cruise runner to v${RUNNER_VERSION}\n\nManaged by enry.agent.`,
+        ? 'chore: enable Enry Cruise\n\nAdds the Cruise scan + goal workflows and Enry Relay. Managed by enry.agent.'
+        : `chore: update Enry Relay to v${RUNNER_VERSION}\n\nManaged by enry.agent.`,
       runnerFiles().map((f) => ({ ...f, isNew: fresh })),
     )
-    if (commitError || !commitSha) return Response.json({ error: `Could not commit runner files: ${commitError ?? 'unknown'}` }, { status: 502 })
+    if (commitError || !commitSha) return Response.json({ error: `Could not commit Enry Relay files: ${commitError ?? 'unknown'}` }, { status: 502 })
     workflowSha = commitSha
   }
 
