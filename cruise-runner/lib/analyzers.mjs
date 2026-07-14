@@ -3,24 +3,36 @@
 // shape /api/cruise/ingest expects. Used by both scan.mjs (report-only) and
 // goal-run.mjs (validating an edit before it's committed).
 
-import { execSync } from 'node:child_process'
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const CWD = process.cwd()
+const execAsync = promisify(exec)
+
+// eslint's cache lives in the OS temp dir, never the repo tree — so it can't be
+// committed and won't show in git status (which the runner reads to revert/
+// commit). Within one goal run (one Actions job, one filesystem) the baseline
+// pass warms it, then each step re-lints only the file(s) it changed: on a
+// mid-size repo this took eslint from ~16s per pass to ~2s.
+const ESLINT_CACHE = join(tmpdir(), 'enry-cruise-eslintcache')
 
 function localBin(name) {
   const p = 'node_modules/.bin/' + name
   return existsSync(p) ? './' + p : null
 }
 
-function run(cmd) {
+async function run(cmd) {
   try {
-    return { code: 0, out: execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 }) }
+    const { stdout } = await execAsync(cmd, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    return { code: 0, out: stdout }
   } catch (e) {
     // tsc / eslint exit non-zero when they find issues but still print the
     // report to stdout — capture it rather than treating exit != 0 as failure.
-    return { code: e.status || 1, out: (e.stdout || '') + (e.stderr || '') }
+    return { code: e.code || 1, out: (e.stdout || '') + (e.stderr || '') }
   }
 }
 
@@ -52,11 +64,11 @@ export function fingerprint(repo, file, rule, message) {
 // Runs tsc --noEmit and returns parsed findings. `repo` is used only for
 // fingerprinting; pass '' if the caller doesn't need stable fingerprints
 // (e.g. goal-run's pass/fail validation, which only cares about the count).
-export function runTsc(repo) {
+export async function runTsc(repo) {
   const findings = []
   const bin = localBin('tsc')
   if (!bin || !existsSync('tsconfig.json')) return findings
-  const { out } = run(bin + ' --noEmit --pretty false')
+  const { out } = await run(bin + ' --noEmit --pretty false')
   const re = /^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.*)$/
   for (const line of out.split('\n')) {
     const m = line.match(re)
@@ -83,11 +95,11 @@ export function runTsc(repo) {
 }
 
 // Runs eslint -f json and returns parsed findings.
-export function runEslint(repo) {
+export async function runEslint(repo) {
   const findings = []
   const bin = localBin('eslint')
   if (!bin) return findings
-  const { out } = run(bin + ' . -f json --no-error-on-unmatched-pattern --ignore-pattern ".enry-cruise/**"')
+  const { out } = await run(bin + ' . -f json --no-error-on-unmatched-pattern --ignore-pattern ".enry-cruise/**" --cache --cache-location "' + ESLINT_CACHE + '"')
   let report
   try { report = JSON.parse(out) } catch { return findings }
   if (!Array.isArray(report)) return findings
@@ -117,9 +129,15 @@ export function runEslint(repo) {
 // don't block a commit. Returns the actual findings — not just a count — so
 // goal-run.mjs can diff them by fingerprint against a baseline (to isolate the
 // errors a specific edit newly introduced) and report the real messages.
-export function blockingFindings(repo) {
-  return [
-    ...runTsc(repo).filter((f) => f.severity === 'high'),
-    ...runEslint(repo).filter((f) => f.severity === 'medium'),
-  ]
+// tsc and eslint are independent — run them concurrently.
+export async function blockingFindings(repo) {
+  const [tsc, eslint] = await Promise.all([runTsc(repo), runEslint(repo)])
+  return [...tsc.filter((f) => f.severity === 'high'), ...eslint.filter((f) => f.severity === 'medium')]
+}
+
+// All findings (both analyzers, every severity), for the report-only scan.
+// Concurrent, same as blockingFindings.
+export async function collectFindings(repo) {
+  const [tsc, eslint] = await Promise.all([runTsc(repo), runEslint(repo)])
+  return [...tsc, ...eslint]
 }

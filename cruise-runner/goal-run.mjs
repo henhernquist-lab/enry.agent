@@ -260,7 +260,7 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
   // error doesn't make it look new). An edit is accepted only if it introduces
   // no NEW fingerprints. After each accepted commit the baseline advances to
   // that state, so every step is judged against the last good state.
-  let baselineFp = new Set(blockingFindings(REPO).map((f) => f.fingerprint))
+  let baselineFp = new Set((await blockingFindings(REPO)).map((f) => f.fingerprint))
   const remaining = []
   let capped = false
   // Paths this run has already created/changed (seeded from prior dispatches on
@@ -357,7 +357,7 @@ Rules:
     }
     if (touched.length === 0) { await postStep(seq, 'failed', 'No valid file entries'); continue }
 
-    const afterFindings = blockingFindings(REPO)
+    const afterFindings = await blockingFindings(REPO)
     const newErrors = afterFindings.filter((f) => !baselineFp.has(f.fingerprint))
     if (newErrors.length > 0) {
       // Revert via git — the checkout has no other uncommitted changes at

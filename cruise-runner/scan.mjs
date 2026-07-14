@@ -7,7 +7,7 @@
 // enry.agent's /api/cruise/ingest — authenticated by the per-scan token in
 // ENRY_TOKEN. Node builtins only; no dependencies to install.
 
-import { runTsc, runEslint } from './lib/analyzers.mjs'
+import { collectFindings } from './lib/analyzers.mjs'
 
 const SCAN_ID = process.env.ENRY_SCAN_ID
 const CALLBACK = process.env.ENRY_CALLBACK
@@ -41,7 +41,7 @@ async function post(path, body) {
 async function main() {
   await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'start', layer_status: { static: 'running' } })
   try {
-    const findings = [...runTsc(REPO), ...runEslint(REPO)].slice(0, MAX_FINDINGS)
+    const findings = (await collectFindings(REPO)).slice(0, MAX_FINDINGS)
     await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'findings', findings })
     await post('/api/cruise/ingest', {
       scan_id: SCAN_ID,
