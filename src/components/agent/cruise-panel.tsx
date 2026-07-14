@@ -357,7 +357,7 @@ function EnableCard({ busy, needsReauth, error, onEnable, onReauth, repo }: {
 const GOAL_STATUS_LABEL: Record<CruiseGoalRun['status'], string> = {
   queued: 'queued', planning: 'planning', running: 'working',
   awaiting_clarification: 'needs input', completed: 'completed', capped: 'capped',
-  no_changes: 'no changes', failed: 'failed', cancelled: 'cancelled',
+  no_changes: 'no changes', build_failed: 'build failing', failed: 'failed', cancelled: 'cancelled',
 }
 
 function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
@@ -370,6 +370,7 @@ function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
 
   const icon = run.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
     : run.status === 'capped' ? <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+    : run.status === 'build_failed' ? <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
     : run.status === 'failed' ? <XCircle className="h-3.5 w-3.5 text-destructive" />
     : run.status === 'no_changes' ? <Ban className="h-3.5 w-3.5 text-muted-foreground" />
     : run.status === 'awaiting_clarification' ? <MessageCircleQuestion className="h-3.5 w-3.5 text-warning" />

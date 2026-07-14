@@ -6,7 +6,7 @@
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -61,35 +61,74 @@ export function fingerprint(repo, file, rule, message) {
   return createHash('sha256').update(repo + '|' + rel(file) + '|' + rule + '|' + normMsg(message)).digest('hex').slice(0, 32)
 }
 
-// Runs tsc --noEmit and returns parsed findings. `repo` is used only for
-// fingerprinting; pass '' if the caller doesn't need stable fingerprints
-// (e.g. goal-run's pass/fail validation, which only cares about the count).
+// Strip JSONC comments + trailing commas so a tsconfig (which allows both) can
+// be JSON.parsed.
+function stripJsonc(s) {
+  return s
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:"'])\/\/.*$/gm, '$1')
+    .replace(/,(\s*[}\]])/g, '$1')
+}
+
+// The tsconfig project(s) to actually type-check. Vite/Lovable/shadcn scaffolds
+// use a references-only root tsconfig.json ({ "files": [], "references": [...] })
+// whose real source lives in the referenced projects (tsconfig.app.json with
+// include:["src"]). Running `tsc --noEmit` against that root checks ZERO files
+// — a silent no-op that let real type errors (a wrong import, a bad export)
+// sail straight through. Detect that shape and check each referenced project
+// directly instead.
+function tscProjects() {
+  if (!existsSync('tsconfig.json')) return []
+  let root
+  try { root = JSON.parse(stripJsonc(readFileSync('tsconfig.json', 'utf8'))) } catch { return ['tsconfig.json'] }
+  const refs = Array.isArray(root.references) ? root.references.map((r) => r && r.path).filter(Boolean) : []
+  const rootChecksFiles = (Array.isArray(root.files) && root.files.length > 0) || root.include != null
+  if (refs.length > 0 && !rootChecksFiles) {
+    const existing = refs.filter((p) => existsSync(p))
+    if (existing.length > 0) return existing
+  }
+  return ['tsconfig.json']
+}
+
+// Runs the repo's tsc across whichever project(s) actually hold the source, and
+// returns parsed findings (deduped by fingerprint across projects). `repo` is
+// used only for fingerprinting.
 export async function runTsc(repo) {
-  const findings = []
   const bin = localBin('tsc')
-  if (!bin || !existsSync('tsconfig.json')) return findings
-  const { out } = await run(bin + ' --noEmit --pretty false')
+  if (!bin) return []
+  const projects = tscProjects()
+  if (projects.length === 0) return []
+  // Independent projects — check them concurrently. `-p <config>` for a specific
+  // referenced project; bare `tsc --noEmit` reads tsconfig.json for the default.
+  const outs = await Promise.all(projects.map((proj) =>
+    run(bin + ' --noEmit --pretty false' + (proj === 'tsconfig.json' ? '' : ` -p ${proj}`)),
+  ))
+  const findings = []
+  const seen = new Set()
   const re = /^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.*)$/
-  for (const line of out.split('\n')) {
-    const m = line.match(re)
-    if (!m) continue
-    const file = m[1]
-    if (isCruiseOwnFile(rel(file))) continue
-    const ln = Number(m[2])
-    const sev = m[4]
-    const code = m[5]
-    const message = m[6]
-    findings.push({
-      layer: 'static',
-      severity: sev === 'error' ? 'high' : 'low',
-      confidence: 1,
-      fingerprint: fingerprint(repo, file, code, message),
-      file_path: rel(file),
-      line_start: ln,
-      line_end: ln,
-      title: code + ': ' + message.slice(0, 90),
-      detail: message,
-    })
+  for (const { out } of outs) {
+    for (const line of out.split('\n')) {
+      const m = line.match(re)
+      if (!m) continue
+      const file = m[1]
+      if (isCruiseOwnFile(rel(file))) continue
+      const code = m[5]
+      const message = m[6]
+      const fp = fingerprint(repo, file, code, message)
+      if (seen.has(fp)) continue
+      seen.add(fp)
+      findings.push({
+        layer: 'static',
+        severity: m[4] === 'error' ? 'high' : 'low',
+        confidence: 1,
+        fingerprint: fp,
+        file_path: rel(file),
+        line_start: Number(m[2]),
+        line_end: Number(m[2]),
+        title: code + ': ' + message.slice(0, 90),
+        detail: message,
+      })
+    }
   }
   return findings
 }

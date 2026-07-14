@@ -191,6 +191,30 @@ async function postStep(seq, status, detail) {
   await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'step', seq, status, detail })
 }
 
+// Runs the repo's own build script (npm run build — executes package.json's
+// "build", e.g. `vite build`, regardless of which package manager installed
+// deps). This is the gate for errors tsc/eslint never see: undefined Tailwind
+// classes, Vite/Rollup import resolution, asset processing. Returns
+// { ran, ok, error }. No build script -> ran:false, ok:true (nothing to gate).
+function runBuild() {
+  if (!existsSync('package.json')) return { ran: false, ok: true, error: null }
+  let pkg
+  try { pkg = JSON.parse(readFileSync('package.json', 'utf8')) } catch { return { ran: false, ok: true, error: null } }
+  if (!pkg.scripts || !pkg.scripts.build) return { ran: false, ok: true, error: null }
+  try {
+    execSync('npm run build', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300000, maxBuffer: 64 * 1024 * 1024 })
+    return { ran: true, ok: true, error: null }
+  } catch (e) {
+    if (e && (e.killed || e.signal === 'SIGTERM' || /ETIMEDOUT/.test(String(e.code)))) {
+      return { ran: true, ok: false, error: 'Build timed out after 5 minutes.' }
+    }
+    // Surface the tail of the build output — where the actual error prints.
+    const out = ((e && e.stdout) || '') + '\n' + ((e && e.stderr) || '')
+    const snippet = out.split('\n').map((l) => l.trimEnd()).filter(Boolean).slice(-25).join('\n').slice(-1800)
+    return { ran: true, ok: false, error: snippet || String((e && e.message) || e) }
+  }
+}
+
 // Undo an edit's local file writes. `git checkout` only restores TRACKED
 // files, so a newly-created file must be deleted outright — otherwise it lingers
 // in the working tree and its errors poison every later step's validation
@@ -430,9 +454,24 @@ Rules:
     await postStep(seq, 'done', parsed.note || `${touched.length} file(s) changed`)
   }
 
+  // Build gate: tsc/eslint can't see everything the real build does (CSS/Tailwind
+  // classes, Vite/Rollup import resolution). Before finalizing a run that changed
+  // files, run the repo's OWN build. A failure doesn't discard the work — the
+  // server opens the PR as a DRAFT and marks the run build_failed so it's clearly
+  // not mergeable, rather than a clean green 'completed'.
+  let buildOk = true
+  let buildError = null
+  if (filesChanged > 0) {
+    const b = runBuild()
+    buildOk = b.ok
+    buildError = b.error
+    if (b.ran) console.log(`[enry-cruise-goal] build: ${b.ok ? 'passed' : 'FAILED'}`)
+  }
+
   // Honest terminal status: nothing that opens a PR gets called 'completed'.
   // Zero surviving changes -> 'no_changes' (every step reverted, or the goal
-  // needed no edits); capped with real changes -> 'capped'; otherwise done.
+  // needed no edits); capped with real changes -> 'capped'; otherwise done. The
+  // server downgrades completed/capped to 'build_failed' if buildOk is false.
   const status = filesChanged === 0 ? 'no_changes' : capped ? 'capped' : 'completed'
   await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, {
     phase: 'finalize',
@@ -440,8 +479,10 @@ Rules:
     goal_title: ctx.goal.slice(0, 200),
     pr_summary: `Goal: ${ctx.goal}\n\nWorked autonomously by Enry Cruise. ${plan.length} planned step(s), ${filesChanged} file(s) changed.`,
     remaining_summary: remaining.length > 0 ? remaining.map((s, i) => `${i + 1}. ${s}`).join('\n') : undefined,
+    build_ok: buildOk,
+    build_error: buildError,
   })
-  console.log(`[enry-cruise-goal] done: status=${status} files_changed=${filesChanged}`)
+  console.log(`[enry-cruise-goal] done: status=${status} files_changed=${filesChanged} build_ok=${buildOk}`)
 }
 
 main().catch(async (e) => {

@@ -329,12 +329,13 @@ export async function createPullRequest(
   body: string,
   head: string,
   base: string,
+  draft = false,
 ): Promise<{ pr: PullRequest | null; error: string | null }> {
   try {
     const res = await ghFetch(accessToken, `/repos/${owner}/${repo}/pulls`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, body, head, base }),
+      body: JSON.stringify({ title, body, head, base, draft }),
     })
     if (!res.ok) {
       const err = await res.text()

@@ -81,15 +81,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   if (phase === 'finalize') {
-    const status = ['completed', 'capped', 'no_changes', 'failed', 'cancelled'].includes(body.status) ? body.status : 'failed'
+    let status = ['completed', 'capped', 'no_changes', 'build_failed', 'failed', 'cancelled'].includes(body.status) ? body.status : 'failed'
+    // The build gate ran in the runner. A failed build means the committed work
+    // is not mergeable — downgrade a would-be clean run to build_failed and open
+    // its PR as a draft, rather than a green 'completed'. no_changes/failed/
+    // cancelled are left as-is (nothing to gate).
+    const buildFailed = body.build_ok === false && (status === 'completed' || status === 'capped')
+    if (buildFailed) status = 'build_failed'
     patch.status = status
     patch.finished_at = nowIso
     patch.github_token = null // clear the run-scoped bridge token regardless of outcome
     if (body.remaining_summary) patch.remaining_summary = clampStr(body.remaining_summary, 4000)
-    if (body.error) patch.error = clampStr(body.error, 2000)
+    if (buildFailed && body.build_error) patch.error = clampStr(`Build failed:\n${body.build_error}`, 2000)
+    else if (body.error) patch.error = clampStr(body.error, 2000)
 
     // Open the PR exactly once, server-side, only if at least one file landed.
-    if ((status === 'completed' || status === 'capped') && !run.pr_number && run.github_token) {
+    // build_failed still opens a PR (as a draft) so the work isn't lost.
+    if (['completed', 'capped', 'build_failed'].includes(status) && !run.pr_number && run.github_token) {
       const { count } = await supabase
         .from('cruise_goal_files')
         .select('id', { count: 'exact', head: true })
@@ -102,8 +110,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           const prBody = [
             body.pr_summary ? clampStr(body.pr_summary, 4000) : 'Opened by Enry Cruise goal mode.',
             status === 'capped' && body.remaining_summary ? `\n**Capped before completion.** Remaining:\n${clampStr(body.remaining_summary, 4000)}` : '',
+            buildFailed ? `\n⚠️ **Build is failing** — opened as a draft. Not mergeable as-is:\n\`\`\`\n${clampStr(body.build_error ?? '', 3000)}\n\`\`\`` : '',
           ].join('\n')
-          const { pr, error: prError } = await createPullRequest(run.github_token, owner, name, title, prBody, run.branch_name, run.base_branch)
+          const { pr, error: prError } = await createPullRequest(run.github_token, owner, name, title, prBody, run.branch_name, run.base_branch, buildFailed)
           if (pr) {
             patch.pr_number = pr.number
             patch.pr_url = pr.html_url
@@ -115,12 +124,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const { error: finalizeErr } = await supabase.from('cruise_goal_runs').update(patch).eq('id', id)
-    // If 'no_changes' is rejected because migration 010 (which adds it to the
-    // status CHECK) hasn't been applied, fall back to 'failed' so the run still
-    // reaches a terminal state instead of stranding in 'running'. Both are
-    // honest — neither is the old misleading 'completed'.
-    if (finalizeErr && status === 'no_changes') {
-      patch.status = 'failed'
+    // If a newer status ('no_changes', 'build_failed') is rejected because its
+    // migration (010 / 011) isn't applied yet, fall back to a terminal status
+    // the CHECK already allows, so the run never strands in 'running'. The draft
+    // PR + error are already written, so the signal isn't lost — only the label.
+    if (finalizeErr && (status === 'no_changes' || status === 'build_failed')) {
+      patch.status = status === 'build_failed' ? 'completed' : 'failed'
       await supabase.from('cruise_goal_runs').update(patch).eq('id', id)
     }
     return Response.json({ ok: true, pr_url: patch.pr_url ?? null })
