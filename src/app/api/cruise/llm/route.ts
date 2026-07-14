@@ -3,7 +3,12 @@ import { generateText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { supabase } from '@/lib/supabase'
 
-export const maxDuration = 60
+// Goal-mode editor calls generate a full file body; a reasoning model on a
+// larger file can run well past 60s and hit a Vercel function timeout (504) —
+// which the runner then retries, but a deterministic timeout just times out
+// again. Give generation real room. Vercel caps this at the plan's max, so a
+// high value is safe (helps on Pro/Fluid, no-op on a lower cap).
+export const maxDuration = 300
 
 // The metered LLM proxy a goal-run's GitHub Actions runner calls to think.
 // Keeps the real NIM key server-side (never in the target repo) and is the
