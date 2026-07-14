@@ -20,6 +20,53 @@ import { dirname, normalize, isAbsolute } from 'node:path'
 import { execSync } from 'node:child_process'
 import { blockingFindings } from './lib/analyzers.mjs'
 
+// Editor system prompts. GOAL builds features (may create files, append chunks);
+// FIX resolves already-flagged findings with the minimal change and removes dead
+// code. Selected per run by ctx.mode.
+const GOAL_EDITOR_SYSTEM = `You are editing files in a checked-out git repo to accomplish one step of a larger goal.
+
+Do NOT use JSON — file contents break JSON escaping. Use these exact marker formats.
+
+To create a new file or fully rewrite one (content = the WHOLE file):
+===FILE: <repo-relative path>===
+<the COMPLETE new file content, verbatim — no diff, no snippet, no fencing>
+===ENDFILE===
+
+To ADD a chunk to the END of a file that already exists (content = ONLY the new lines):
+===APPEND: <repo-relative path>===
+<only the new content to append — not the whole file>
+===ENDAPPEND===
+
+After all blocks, emit one line:
+===NOTE: <one-line summary of what you changed>===
+
+If the step needs no file changes (already satisfied), output exactly one line and nothing else:
+===NO CHANGES===
+
+Rules:
+- Output only blocks + the NOTE line (or NO CHANGES). No prose, no markdown fences.
+- If the step says to ADD / APPEND a chunk to an existing file, use ===APPEND:=== and emit ONLY that chunk — never regenerate the whole file. This keeps your output small. Use ===FILE:=== only to create a new file or when a full rewrite is genuinely required. Appended CSS blocks (a second :root {}, .dark {}, or @layer base {}) are valid and merge in the cascade.
+- Match the repo's existing conventions, imports, and framework idioms — read the provided existing files first.
+- Import ONLY from paths that appear in REPO FILES or FILES CHANGED THIS RUN below, or from installed packages. Never invent a module path — if you need a helper that doesn't exist yet, define it inline or create the file in this same response.
+- Include every import your code uses (e.g. React hooks like useState/useEffect). Do not reference an identifier you didn't import or define.`
+
+const FIX_EDITOR_SYSTEM = `You are fixing specific, ALREADY-FLAGGED issues in ONE existing file of a checked-out git repo. The CURRENT STEP lists the exact findings to resolve in that file.
+
+Make the MINIMAL change that resolves each listed finding. Do NOT add features, refactor unrelated code, rename symbols, reformat, or change behavior beyond what a fix requires.
+- Dead code (unused import, unused variable, unreachable code): DELETE it.
+- Type / lint error: apply the smallest correct fix.
+- If a listed finding is a false positive or can't be fixed safely without broader changes, leave that part as-is (the run will just re-flag it next scan).
+
+Output the corrected file with this exact format — no JSON, no markdown fences:
+===FILE: <repo-relative path>===
+<the COMPLETE corrected file content, verbatim>
+===ENDFILE===
+===NOTE: <one-line summary of what you fixed>===
+
+If nothing needs to change, output exactly one line: ===NO CHANGES===
+
+Rules: output only the FILE block + NOTE (or NO CHANGES). Never introduce an import from a module that doesn't exist. Keep every import that's still used; remove only the ones the fix makes unused. Do not reference an identifier you didn't import or define.`
+
 const GOAL_RUN_ID = process.env.ENRY_GOAL_RUN_ID
 const CALLBACK = (process.env.ENRY_CALLBACK || '').replace(/\/+$/, '')
 const TOKEN = process.env.ENRY_TOKEN
@@ -311,6 +358,11 @@ Keep each step small enough that ONE model call can generate its content quickly
   // The repo's real file list, refreshed lazily as the run adds files.
   let repoFiles = listFiles()
 
+  // Fix mode (plan derived from scan findings) uses a tighter editor prompt:
+  // resolve ONLY the listed findings with the minimal change, delete dead code,
+  // never add features. Goal mode uses the general build-a-feature prompt.
+  const editorSystem = ctx.mode === 'fix' ? FIX_EDITOR_SYSTEM : GOAL_EDITOR_SYSTEM
+
   for (let seq = 0; seq < plan.length; seq++) {
     if (doneSeqs.has(seq)) continue
     const stepDesc = plan[seq]
@@ -327,32 +379,7 @@ Keep each step small enough that ONE model call can generate its content quickly
     const changedList = changedThisRun.size > 0 ? [...changedThisRun].join('\n') : '(none yet)'
 
     const editRes = await llm([
-      { role: 'system', content: `You are editing files in a checked-out git repo to accomplish one step of a larger goal.
-
-Do NOT use JSON — file contents break JSON escaping. Use these exact marker formats.
-
-To create a new file or fully rewrite one (content = the WHOLE file):
-===FILE: <repo-relative path>===
-<the COMPLETE new file content, verbatim — no diff, no snippet, no fencing>
-===ENDFILE===
-
-To ADD a chunk to the END of a file that already exists (content = ONLY the new lines):
-===APPEND: <repo-relative path>===
-<only the new content to append — not the whole file>
-===ENDAPPEND===
-
-After all blocks, emit one line:
-===NOTE: <one-line summary of what you changed>===
-
-If the step needs no file changes (already satisfied), output exactly one line and nothing else:
-===NO CHANGES===
-
-Rules:
-- Output only blocks + the NOTE line (or NO CHANGES). No prose, no markdown fences.
-- If the step says to ADD / APPEND a chunk to an existing file, use ===APPEND:=== and emit ONLY that chunk — never regenerate the whole file. This keeps your output small. Use ===FILE:=== only to create a new file or when a full rewrite is genuinely required. Appended CSS blocks (a second :root {}, .dark {}, or @layer base {}) are valid and merge in the cascade.
-- Match the repo's existing conventions, imports, and framework idioms — read the provided existing files first.
-- Import ONLY from paths that appear in REPO FILES or FILES CHANGED THIS RUN below, or from installed packages. Never invent a module path — if you need a helper that doesn't exist yet, define it inline or create the file in this same response.
-- Include every import your code uses (e.g. React hooks like useState/useEffect). Do not reference an identifier you didn't import or define.` },
+      { role: 'system', content: editorSystem },
       { role: 'user', content: `GOAL: ${ctx.goal}\n\nCURRENT STEP: ${stepDesc}\n\nREPO FILES (real paths — import only from these or installed packages):\n${repoFiles.join('\n')}\n\nFILES CHANGED THIS RUN:\n${changedList}\n\nEXISTING CONTENT OF FILES THIS STEP TOUCHES:\n${existingContent || '(none matched by path — create what is needed)'}` },
     ])
     if (editRes.budgetExceeded) {

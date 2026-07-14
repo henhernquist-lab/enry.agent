@@ -16,7 +16,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const { data: run } = await supabase
     .from('cruise_goal_runs')
-    .select('id, repo_id, token_hash, goal, plan, clarify_question, clarify_answer, branch_name, base_branch, cap_files, cap_steps, llm_calls_used')
+    .select('id, repo_id, token_hash, goal, mode, plan, clarify_question, clarify_answer, branch_name, base_branch, cap_files, cap_steps, llm_calls_used')
     .eq('id', id)
     .maybeSingle()
   if (!run || run.token_hash !== tokenHash) return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -36,6 +36,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   return Response.json({
     goal: run.goal,
+    mode: run.mode ?? 'goal',
     repo: repoRow?.full_name ?? null,
     branch: run.branch_name,
     base_branch: run.base_branch,

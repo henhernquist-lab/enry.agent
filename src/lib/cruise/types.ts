@@ -99,11 +99,15 @@ export function isGoalRunActive(status: CruiseGoalRunStatus): boolean {
   return status === 'queued' || status === 'planning' || status === 'running' || status === 'awaiting_clarification'
 }
 
+export type CruiseGoalMode = 'goal' | 'fix'
+
 export interface CruiseGoalRun {
   id: string
   repo_id: string
   user_id: string
   goal: string
+  mode: CruiseGoalMode
+  source_scan_id: string | null
   status: CruiseGoalRunStatus
   run_id: number | null
   branch_name: string

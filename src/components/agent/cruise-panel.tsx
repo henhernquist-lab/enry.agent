@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radar, Play, Loader2, ChevronRight, ShieldCheck, ShieldOff, AlertTriangle,
   CheckCircle2, XCircle, Ban, RotateCcw, Clock, FileCode, Target, Check,
-  MessageCircleQuestion, GitPullRequest, Send,
+  MessageCircleQuestion, GitPullRequest, Send, Wrench,
 } from 'lucide-react'
 import type {
   CruiseRepo, CruiseScan, CruiseFinding, CruiseSeverity,
@@ -47,6 +47,8 @@ export function CruisePanel({ repo }: { repo: string }) {
   const [goalBusy, setGoalBusy] = useState(false)
   const [goalError, setGoalError] = useState<string | null>(null)
   const [enableNote, setEnableNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const [selectedFindings, setSelectedFindings] = useState<Set<string>>(new Set())
+  const [showCustomGoal, setShowCustomGoal] = useState(false)
 
   const loadConfig = useCallback(async () => {
     if (!repo) return
@@ -177,6 +179,22 @@ export function CruisePanel({ repo }: { repo: string }) {
     } finally { setGoalBusy(false) }
   }
 
+  // Fix mode — dispatch an autonomous fix run over scan findings. findingIds
+  // null = fix all open findings of the scan; a list = just that subset.
+  const fixFindings = async (scanId: string, findingIds: string[] | null) => {
+    setGoalBusy(true); setGoalError(null)
+    try {
+      const res = await fetch('/api/cruise/goal-runs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo, scan_id: scanId, ...(findingIds ? { finding_ids: findingIds } : {}) }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setGoalError(data.error ?? 'Fix run failed to start'); return }
+      setSelectedFindings(new Set())
+      await loadGoalRuns()
+    } finally { setGoalBusy(false) }
+  }
+
   const submitAnswer = async (goalRunId: string, answer: string) => {
     if (!answer.trim()) return
     setGoalBusy(true); setGoalError(null)
@@ -259,43 +277,26 @@ export function CruisePanel({ repo }: { repo: string }) {
                 </div>
               )}
 
-              {/* Goal mode */}
-              <div className="mb-6">
-                <p className="mb-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  <Target className="h-3 w-3" /> Goal — autonomous
-                </p>
-                <div className="mb-2 flex items-center gap-2">
-                  <input
-                    value={goalInput}
-                    onChange={(e) => setGoalInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !hasActiveGoal) runGoal() }}
-                    disabled={goalBusy || hasActiveGoal}
-                    placeholder='e.g. "fix the lint errors" or "add basic dark mode support"'
-                    className="min-w-0 flex-1 rounded border border-border bg-surface-secondary px-3 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 focus:outline-none disabled:opacity-40"
-                  />
-                  <button onClick={runGoal} disabled={goalBusy || hasActiveGoal || !goalInput.trim()}
-                    className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
-                    {hasActiveGoal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}
-                    {hasActiveGoal ? 'working…' : 'Run'}
-                  </button>
+              {goalError && (
+                <div className="mb-4 flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-destructive" />
+                  <span className="font-mono text-[11px] text-destructive">{goalError}</span>
                 </div>
-                <p className="mb-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
-                  Works autonomously on a branch, validates every edit, opens a single PR when done or capped. Caps at {config?.goal_cap_files ?? 10} files / {config?.goal_cap_steps ?? 40} steps. Never touches {repo.split('/')[1] ? 'the default branch' : 'main'} directly.
-                </p>
-                {goalError && (
-                  <div className="mb-3 flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-destructive" />
-                    <span className="font-mono text-[11px] text-destructive">{goalError}</span>
-                  </div>
-                )}
-                {goalRuns.length > 0 && (
+              )}
+
+              {/* Autonomous runs (fix + goal) */}
+              {goalRuns.length > 0 && (
+                <div className="mb-6">
+                  <p className="mb-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <Target className="h-3 w-3" /> Autonomous runs
+                  </p>
                   <div className="space-y-1.5">
                     {goalRuns.slice(0, 5).map((r) => (
                       <GoalRunCard key={r.id} run={r} steps={goalSteps[r.id] ?? []} onExpand={() => loadGoalSteps(r.id)} onAnswer={submitAnswer} busy={goalBusy} />
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Scan history */}
               {scans.length > 0 && (
@@ -309,8 +310,46 @@ export function CruisePanel({ repo }: { repo: string }) {
                 </div>
               )}
 
-              {/* Findings */}
-              <FindingsList findings={findings} scan={scans.find((s) => s.id === selectedScan)} onAct={act} />
+              {/* Findings — fix-first: select + auto-fix */}
+              <FindingsList
+                findings={findings}
+                scan={scans.find((s) => s.id === selectedScan)}
+                onAct={act}
+                selected={selectedFindings}
+                onToggle={(id) => setSelectedFindings((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })}
+                onFix={fixFindings}
+                fixBusy={goalBusy || hasActiveGoal}
+              />
+
+              {/* Advanced: open-ended custom goal (secondary path) */}
+              <div className="mt-8 border-t border-border/60 pt-4">
+                <button onClick={() => setShowCustomGoal((v) => !v)}
+                  className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground">
+                  <ChevronRight className={`h-3 w-3 transition-transform ${showCustomGoal ? 'rotate-90' : ''}`} /> Advanced — custom goal
+                </button>
+                {showCustomGoal && (
+                  <div className="mt-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <input
+                        value={goalInput}
+                        onChange={(e) => setGoalInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !hasActiveGoal) runGoal() }}
+                        disabled={goalBusy || hasActiveGoal}
+                        placeholder='open-ended, e.g. "add basic dark mode support"'
+                        className="min-w-0 flex-1 rounded border border-border bg-surface-secondary px-3 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 focus:outline-none disabled:opacity-40"
+                      />
+                      <button onClick={runGoal} disabled={goalBusy || hasActiveGoal || !goalInput.trim()}
+                        className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+                        {hasActiveGoal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}
+                        {hasActiveGoal ? 'working…' : 'Run'}
+                      </button>
+                    </div>
+                    <p className="font-mono text-[10px] leading-relaxed text-muted-foreground">
+                      Open-ended goals invent new code and are less reliable than fixing findings. Same pipeline: works on a branch, validates every edit, build-checks, opens a PR. Caps at {config?.goal_cap_files ?? 10} files / {config?.goal_cap_steps ?? 40} steps.
+                    </p>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -381,6 +420,7 @@ function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
       <button onClick={() => { const next = !open; setOpen(next); if (next) onExpand() }} className="flex w-full items-center gap-2 px-3 py-2 text-left">
         <ChevronRight className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
         {icon}
+        {run.mode === 'fix' && <Wrench className="h-3 w-3 flex-shrink-0 text-muted-foreground" />}
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">{run.goal}</span>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{GOAL_STATUS_LABEL[run.status]}</span>
       </button>
@@ -476,8 +516,11 @@ function ScanRow({ scan, selected, onSelect }: { scan: CruiseScan; selected: boo
   )
 }
 
-function FindingsList({ findings, scan, onAct }: {
-  findings: CruiseFinding[]; scan?: CruiseScan; onAct: (id: string, a: 'dismiss' | 'not_a_bug' | 'reopen') => void
+function FindingsList({ findings, scan, onAct, selected, onToggle, onFix, fixBusy }: {
+  findings: CruiseFinding[]; scan?: CruiseScan
+  onAct: (id: string, a: 'dismiss' | 'not_a_bug' | 'reopen') => void
+  selected: Set<string>; onToggle: (id: string) => void
+  onFix: (scanId: string, findingIds: string[] | null) => void; fixBusy: boolean
 }) {
   if (!scan) return null
   if (isActive(scan.status) && findings.length === 0) {
@@ -493,24 +536,54 @@ function FindingsList({ findings, scan, onAct }: {
   }
   const open = findings.filter((f) => f.status === 'open')
   const resolved = findings.filter((f) => f.status !== 'open')
+  // Only file-scoped findings can be auto-fixed by an edit.
+  const fixableSelected = [...selected].filter((id) => open.some((f) => f.id === id && f.file_path))
+  const scanDone = !isActive(scan.status)
   return (
     <div>
-      <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-        Findings · <span className="text-foreground">{open.length} open</span>{resolved.length > 0 && ` · ${resolved.length} resolved`}
-      </p>
+      <div className="mb-2 flex items-center gap-2">
+        <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Findings · <span className="text-foreground">{open.length} open</span>{resolved.length > 0 && ` · ${resolved.length} resolved`}
+        </p>
+        {scanDone && open.length > 0 && (
+          <div className="ml-auto flex items-center gap-1.5">
+            {fixableSelected.length > 0 && (
+              <button onClick={() => onFix(scan.id, fixableSelected)} disabled={fixBusy}
+                className="flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
+                {fixBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wrench className="h-3 w-3" />} Fix selected ({fixableSelected.length})
+              </button>
+            )}
+            <button onClick={() => onFix(scan.id, null)} disabled={fixBusy}
+              className="flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
+              {fixBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wrench className="h-3 w-3" />} Auto-fix all open
+            </button>
+          </div>
+        )}
+      </div>
       <div className="space-y-1.5">
-        {[...open, ...resolved].map((f) => <FindingCard key={f.id} f={f} onAct={onAct} />)}
+        {[...open, ...resolved].map((f) => (
+          <FindingCard key={f.id} f={f} onAct={onAct} selected={selected.has(f.id)} onToggle={onToggle} />
+        ))}
       </div>
     </div>
   )
 }
 
-function FindingCard({ f, onAct }: { f: CruiseFinding; onAct: (id: string, a: 'dismiss' | 'not_a_bug' | 'reopen') => void }) {
+function FindingCard({ f, onAct, selected, onToggle }: {
+  f: CruiseFinding; onAct: (id: string, a: 'dismiss' | 'not_a_bug' | 'reopen') => void
+  selected: boolean; onToggle: (id: string) => void
+}) {
   const [open, setOpen] = useState(false)
   const resolved = f.status !== 'open'
+  const selectable = !resolved && !!f.file_path
   return (
-    <div className={`overflow-hidden rounded border ${resolved ? 'border-border opacity-60' : 'border-border'} bg-surface-secondary`}>
-      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
+    <div className={`overflow-hidden rounded border ${resolved ? 'border-border opacity-60' : selected ? 'border-primary/40' : 'border-border'} bg-surface-secondary`}>
+      <div className="flex w-full items-center gap-2 px-3 py-2">
+        {selectable ? (
+          <input type="checkbox" checked={selected} onChange={() => onToggle(f.id)}
+            className="h-3 w-3 flex-shrink-0 accent-primary" title="Select to auto-fix" />
+        ) : <span className="w-3 flex-shrink-0" />}
+        <button onClick={() => setOpen((o) => !o)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <ChevronRight className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
         <span className={`rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase ${SEV_STYLE[f.severity]}`}>{f.severity}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">{f.title}</span>
@@ -520,7 +593,8 @@ function FindingCard({ f, onAct }: { f: CruiseFinding; onAct: (id: string, a: 'd
           </span>
         )}
         {resolved && <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">{f.status.replace('_', ' ')}</span>}
-      </button>
+        </button>
+      </div>
       <AnimatePresence initial={false}>
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">

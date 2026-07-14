@@ -3,11 +3,37 @@ import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { getDefaultBranch, dispatchGoalRun } from '@/lib/cruise/github-actions'
-import type { CruiseRepo, CruiseGoalRun } from '@/lib/cruise/types'
+import { SEVERITY_RANK, type CruiseRepo, type CruiseGoalRun, type CruiseFinding } from '@/lib/cruise/types'
 
 export const maxDuration = 30
 
 const MAX_GOAL_LEN = 2000
+
+// Turns a scan's findings into a fix-run plan: one step per file (fixing all of
+// that file's findings in a single editor call is more coherent and respects the
+// per-file cap). Files are ordered worst-severity-first so that if the cap trims
+// the list, the most important files are fixed. Findings without a file can't be
+// auto-fixed by an edit, so they're skipped.
+function buildFixPlan(findings: CruiseFinding[], capFiles: number): { plan: string[]; goal: string; findingCount: number } {
+  const byFile = new Map<string, CruiseFinding[]>()
+  for (const f of findings) {
+    if (!f.file_path) continue
+    const arr = byFile.get(f.file_path) ?? []
+    arr.push(f)
+    byFile.set(f.file_path, arr)
+  }
+  const files = [...byFile.entries()]
+    .sort((a, b) => Math.max(...b[1].map((f) => SEVERITY_RANK[f.severity])) - Math.max(...a[1].map((f) => SEVERITY_RANK[f.severity])))
+    .slice(0, capFiles)
+  const plan = files.map(([file, fs]) => {
+    const items = fs
+      .map((f) => `- [${f.severity}] ${f.title}${f.line_start ? ` (line ${f.line_start})` : ''}: ${f.detail}`.slice(0, 400))
+      .join('\n')
+    return `Fix ${fs.length} flagged issue(s) in ${file}:\n${items}`.slice(0, 1900)
+  })
+  const findingCount = files.reduce((n, [, fs]) => n + fs.length, 0)
+  return { plan, goal: `Fix ${findingCount} scan finding(s) across ${files.length} file(s)`, findingCount }
+}
 
 // Creates and dispatches a goal run: enforces the allowlist server-side,
 // mints a per-run callback token, resolves the branch name up front (so it's
@@ -29,10 +55,8 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}))
   const repoName = String(body.repo ?? '').trim()
-  const goal = String(body.goal ?? '').trim()
+  const scanId = typeof body.scan_id === 'string' ? body.scan_id : null
   if (!repoName) return Response.json({ error: 'Missing repo' }, { status: 400 })
-  if (!goal) return Response.json({ error: 'Missing goal' }, { status: 400 })
-  if (goal.length > MAX_GOAL_LEN) return Response.json({ error: `Goal too long (max ${MAX_GOAL_LEN} chars)` }, { status: 400 })
 
   const { data: repoRow, error: repoErr } = await supabase
     .from('cruise_repos')
@@ -43,6 +67,39 @@ export async function POST(req: Request) {
   if (repoErr) return Response.json({ error: repoErr.message }, { status: 500 })
   const repo = repoRow as CruiseRepo | null
   if (!repo || !repo.enabled) return Response.json({ error: 'Cruise is not enabled for this repo.' }, { status: 403 })
+
+  // Two modes share this route. Fix mode (scan_id present): the plan is derived
+  // from the scan's findings — the primary path. Goal mode (a natural-language
+  // goal): the runner plans it itself — the advanced path.
+  const mode: 'goal' | 'fix' = scanId ? 'fix' : 'goal'
+  let goal: string
+  let seedPlan: string[] | null = null
+
+  if (mode === 'fix') {
+    // Verify the scan belongs to this user's allowlisted repo.
+    const { data: scan } = await supabase
+      .from('cruise_scans')
+      .select('id, repo_id, user_id')
+      .eq('id', scanId!)
+      .maybeSingle()
+    if (!scan || scan.user_id !== uid || scan.repo_id !== repo.id) {
+      return Response.json({ error: 'Scan not found for this repo.' }, { status: 404 })
+    }
+    const requestedIds: string[] | null = Array.isArray(body.finding_ids) ? body.finding_ids.filter((x: unknown) => typeof x === 'string') : null
+    let q = supabase.from('cruise_findings').select('*').eq('scan_id', scanId!).eq('status', 'open')
+    if (requestedIds && requestedIds.length > 0) q = q.in('id', requestedIds)
+    const { data: findingRows } = await q
+    const findings = (findingRows ?? []) as CruiseFinding[]
+    if (findings.length === 0) return Response.json({ error: 'No open findings to fix.' }, { status: 400 })
+    const built = buildFixPlan(findings, repo.goal_cap_files)
+    if (built.plan.length === 0) return Response.json({ error: 'No file-scoped findings to fix.' }, { status: 400 })
+    goal = built.goal
+    seedPlan = built.plan
+  } else {
+    goal = String(body.goal ?? '').trim()
+    if (!goal) return Response.json({ error: 'Missing goal' }, { status: 400 })
+    if (goal.length > MAX_GOAL_LEN) return Response.json({ error: `Goal too long (max ${MAX_GOAL_LEN} chars)` }, { status: 400 })
+  }
 
   const [owner, name] = repoName.split('/')
   const { branch: defaultBranch, error: branchError } = await getDefaultBranch(githubToken, owner, name)
@@ -89,6 +146,8 @@ export async function POST(req: Request) {
       repo_id: repo.id,
       user_id: uid,
       goal,
+      mode,
+      source_scan_id: scanId,
       status: 'queued',
       token_hash: tokenHash,
       // Bridges the session gap for the token-authed apply/finalize steps —
@@ -96,6 +155,9 @@ export async function POST(req: Request) {
       github_token: githubToken,
       branch_name: branchName,
       base_branch: defaultBranch,
+      // Fix mode's plan is known up front (from findings); goal mode's is null
+      // and the runner generates it. When plan is set the runner skips planning.
+      plan: seedPlan,
       cap_files: repo.goal_cap_files,
       cap_steps: repo.goal_cap_steps,
     })
@@ -104,6 +166,14 @@ export async function POST(req: Request) {
       return Response.json({ error: 'A goal run is already in progress for this repo.' }, { status: 409 })
     }
     return Response.json({ error: insertErr.message }, { status: 500 })
+  }
+
+  // Fix mode: seed the step rows now (goal mode seeds them from the runner's
+  // 'plan' phase). The runner updates these by seq as it works each file.
+  if (seedPlan) {
+    await supabase
+      .from('cruise_goal_steps')
+      .insert(seedPlan.map((description, seq) => ({ goal_run_id: goalRunId, seq, description, status: 'pending' as const })))
   }
 
   const { ok, error: dispatchErr } = await dispatchGoalRun(githubToken, owner, name, defaultBranch, {
@@ -119,7 +189,7 @@ export async function POST(req: Request) {
     return Response.json({ error: dispatchErr }, { status: 502 })
   }
 
-  return Response.json({ goal_run_id: goalRunId, status: 'queued', branch: branchName })
+  return Response.json({ goal_run_id: goalRunId, status: 'queued', branch: branchName, mode })
 }
 
 export async function GET(req: Request) {
