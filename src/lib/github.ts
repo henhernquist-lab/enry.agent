@@ -175,13 +175,26 @@ async function getRefSha(
   repo: string,
   branch: string,
 ): Promise<{ sha: string | null; error: string | null }> {
-  try {
-    const res = await ghFetch(accessToken, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`)
-    if (!res.ok) return { sha: null, error: `GitHub API error ${res.status}` }
-    const data = await res.json()
-    return { sha: data.object?.sha ?? null, error: null }
-  } catch (e) {
-    return { sha: null, error: String(e) }
+  // A ref created moments earlier (createOrSwitchBranch just POSTed it) can 404
+  // for a beat — GitHub's Git Data API is eventually consistent, and the write
+  // replica the create hit may not be the read replica this lands on. Retry a
+  // few times on 404 before giving up so the first commit of a run doesn't fail
+  // a coin-flip. A genuinely missing ref just 404s after the retries.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await ghFetch(accessToken, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`)
+      if (res.ok) {
+        const data = await res.json()
+        return { sha: data.object?.sha ?? null, error: null }
+      }
+      if (res.status === 404 && attempt < 3) {
+        await new Promise((r) => setTimeout(r, 700 * (attempt + 1)))
+        continue
+      }
+      return { sha: null, error: `GitHub API error ${res.status}` }
+    } catch (e) {
+      return { sha: null, error: String(e) }
+    }
   }
 }
 

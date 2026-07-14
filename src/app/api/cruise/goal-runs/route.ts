@@ -48,6 +48,33 @@ export async function POST(req: Request) {
   const { branch: defaultBranch, error: branchError } = await getDefaultBranch(githubToken, owner, name)
   if (branchError || !defaultBranch) return Response.json({ error: `Could not resolve default branch: ${branchError ?? 'unknown'}` }, { status: 502 })
 
+  // Reclaim a stalled run before it blocks this repo forever. The one-active-
+  // run guard rejects a new run while any prior run is still 'queued'/'running'/
+  // etc. If a runner's job was killed (the 45-min Actions timeout, an OOM, a
+  // hung request) it never posts finalize, so its row stays active with no
+  // fresh heartbeat. Any active run whose last heartbeat (or dispatch, if it
+  // never checked in) is older than the stale window is presumed dead and
+  // marked failed, so this new run can take the slot.
+  const STALE_MS = 15 * 60 * 1000
+  const staleCutoff = new Date(Date.now() - STALE_MS).toISOString()
+  const { data: activeRuns } = await supabase
+    .from('cruise_goal_runs')
+    .select('id, heartbeat_at, dispatched_at')
+    .eq('repo_id', repo.id)
+    .in('status', ['queued', 'planning', 'running', 'awaiting_clarification'])
+  for (const r of activeRuns ?? []) {
+    // awaiting_clarification is a legit paused state (waiting on the user), not
+    // stale — leave it. Everything else is reclaimable once the heartbeat ages out.
+    const last = (r.heartbeat_at ?? r.dispatched_at) as string
+    if (last < staleCutoff) {
+      await supabase
+        .from('cruise_goal_runs')
+        .update({ status: 'failed', error: 'Run stalled (no heartbeat) — reclaimed by a new run.', finished_at: new Date().toISOString(), github_token: null })
+        .eq('id', r.id)
+        .in('status', ['queued', 'planning', 'running']) // don't clobber a paused/clarification run
+    }
+  }
+
   const goalRunId = randomUUID()
   const branchName = `enry-cruise/goal-${goalRunId}`
   const token = randomBytes(24).toString('hex')

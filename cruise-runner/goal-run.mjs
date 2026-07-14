@@ -34,12 +34,20 @@ if (!GOAL_RUN_ID || !CALLBACK || !TOKEN) {
   process.exit(1)
 }
 
-async function api(method, path, body) {
+async function api(method, path, body, { timeoutMs = 45000 } = {}) {
+  // Hard timeout on every call — a hung connection (a Vercel function that
+  // never returns a response, a stuck GitHub commit) must NOT hang the whole
+  // run. On abort the call fails like any other transport error, the step fails
+  // gracefully, and the loop continues to finalize. Default 45s covers the fast
+  // DB/GitHub callbacks; the LLM call passes a longer budget (see llm()).
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     const res = await fetch(CALLBACK + path, {
       method,
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
       body: body ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal,
     })
     // A Vercel function timeout (e.g. the 504 on a slow completion) returns an
     // HTML body, not JSON — catch that so it surfaces as a transport failure
@@ -47,7 +55,10 @@ async function api(method, path, body) {
     const json = await res.json().catch(() => ({ error: `non-JSON response (HTTP ${res.status})` }))
     return { ok: res.ok, status: res.status, json }
   } catch (e) {
-    return { ok: false, status: 0, json: { error: 'network: ' + (e && e.message || e) } }
+    const aborted = e && e.name === 'AbortError'
+    return { ok: false, status: 0, json: { error: aborted ? `request timed out after ${timeoutMs}ms` : 'network: ' + (e && e.message || e) } }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -63,7 +74,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 async function llm(messages, { retries = 2 } = {}) {
   let last = null
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const { ok, status, json } = await api('POST', '/api/cruise/llm', { goal_run_id: GOAL_RUN_ID, messages })
+    // Generation can legitimately run long (up to the proxy's maxDuration);
+    // give it well over that so a real slow completion isn't aborted, while a
+    // truly hung connection still eventually fails instead of stalling forever.
+    const { ok, status, json } = await api('POST', '/api/cruise/llm', { goal_run_id: GOAL_RUN_ID, messages }, { timeoutMs: 310000 })
     if (json && json.error === 'budget_exceeded') return { budgetExceeded: true }
     if (ok && json && typeof json.text === 'string' && json.text.trim()) {
       return { text: json.text, finishReason: json.finish_reason ?? null }
@@ -399,8 +413,13 @@ Rules:
       break
     }
     if (!applyRes.ok || !applyRes.json?.ok) {
+      // Hard commit failure — treat exactly like a validation revert: undo the
+      // local edit, mark THIS step failed, and continue to the next step. Never
+      // abort the run. The apply route already labels its errors, so don't
+      // double-prefix. (applyRes.json.error already reads e.g. "Commit failed:
+      // GitHub API error 404" or "request timed out after 45000ms".)
       revertTouched(touched)
-      await postStep(seq, 'failed', `Commit failed: ${applyRes.json?.error || applyRes.status}`)
+      await postStep(seq, 'failed', applyRes.json?.error || `Apply failed (HTTP ${applyRes.status})`)
       continue
     }
     filesChanged = applyRes.json.files_changed
