@@ -8,7 +8,7 @@ import { AutomationsSection } from './automations-section'
 import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
 import Link from 'next/link'
-import { MessageSquarePlus, MessageSquare, Trash2, Download, X, Wrench, BookMarked, BookOpen } from 'lucide-react'
+import { MessageSquarePlus, MessageSquare, Trash2, Download, X, Wrench, BookMarked, BookOpen, Swords } from 'lucide-react'
 
 interface LeftSidebarProps {
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
@@ -120,8 +120,15 @@ export function LeftSidebar({
 
       <div className="border-t border-border p-4 space-y-2">
         <Link
-          href="/resources"
+          href="/agent"
           className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+        >
+          <Swords className="h-4 w-4" />
+          Enry Drive
+        </Link>
+        <Link
+          href="/resources"
+          className="flex w-full items-center justify-center gap-2 rounded border border-border bg-surface-elevated px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
         >
           <Wrench className="h-4 w-4" />
           Tools &amp; Resources

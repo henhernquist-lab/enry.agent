@@ -26,6 +26,7 @@ import { ActivityChart } from '@/components/home/activity-chart'
 import { TodayBand } from '@/components/home/today-band'
 import { TerminalLauncher } from '@/components/home/terminal-launcher'
 import { AgentLauncher } from '@/components/home/agent-launcher'
+import { DriveHeroCard } from '@/components/home/drive-hero-card'
 
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
@@ -188,10 +189,9 @@ export default function EnryAgentPage() {
           onSelectConversation={handleSelectConversation}
           onDeleteConversation={handleDeleteConversation}
           onAutomationsChange={handleAutomationsChange}
-        />
-
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        />          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {sessionStatus === 'authenticated' && <TodayBand />}
+          {sessionStatus === 'authenticated' && <DriveHeroCard />}
           <CenterPanel
             key={activeId}
             agentStatus={agentStatus}
