@@ -133,8 +133,8 @@ export function CruisePanel({ repo }: { repo: string }) {
       if (!res.ok) { setError(data.message ?? data.error ?? 'Enable failed'); return }
       // Confirmation comes from the server's read-back of the goal workflow.
       setEnableNote(data.goal_workflow_present
-        ? { ok: true, text: `Goal-mode runner v${data.goal_workflow_version} confirmed on ${data.default_branch}.` }
-        : { ok: false, text: 'Enabled, but the goal-mode workflow is NOT on the default branch — goal runs will fail. Try disable + enable again.' })
+        ? { ok: true, text: `Enry Relay v${data.goal_workflow_version} confirmed on ${data.default_branch}.` }
+        : { ok: false, text: 'Enabled, but the Enry Relay goal workflow is NOT on the default branch — goal runs will fail. Try disable + enable again.' })
       await loadConfig()
     } finally { setBusy(false) }
   }

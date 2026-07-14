@@ -480,9 +480,16 @@ export default function AgentPage() {
     let instruction: string
     let slugsForServer: string[] | undefined
 
-    // Clarifying-question instruction: if request is ambiguous and guessing
-    // wrong would waste real effort, ask one clarifying question.
-    const CLARIFY_RULE = `\n\nIf this request is genuinely ambiguous and guessing wrong would waste real effort, ask exactly ONE clarifying question. Format it EXACTLY as:\n[CLARIFY] Your question? Options: A) option one, B) option two, C) option three\n\nOnly do this for genuinely ambiguous requests (e.g. "clean up this file", "make this faster", "add auth"). Do NOT ask for well-specified requests where a reasonable default is obvious.`
+    // Clarifying-question instruction: only in Auto mode, and only for
+    // requests that would trigger a real action (code edit, diff, skill).
+    // Manual mode already shows a plan before acting (redundant to ask),
+    // and ordinary conversational questions should never trigger a question.
+    const isAuto = mode === 'auto'
+    const isLikelyAction = skillsToUse.length > 0 || !/^(how|what|why|explain|tell me|can you|is there|where|which|does|do)\b/i.test(userText)
+    const shouldClarify = isAuto && isLikelyAction
+    const CLARIFY_RULE = shouldClarify
+      ? `\n\nIf this request is genuinely ambiguous and guessing wrong would waste real effort on a code edit, skill invocation, or diff proposal, ask exactly ONE clarifying question. Format it EXACTLY as:\n[CLARIFY] Your question? Options: A) option one, B) option two, C) option three\n\nOnly do this for genuinely ambiguous code-change requests (e.g. "clean up this file", "make this faster", "add auth"). Do NOT ask for well-specified requests where a reasonable default is obvious. Do NOT ask for conversational questions that don't lead to code changes.`
+      : ''
 
     if (skillsToUse.length >= 2) {
       // Multi-skill: use buildMultiSkillPrompt for combined system prompt
@@ -517,7 +524,7 @@ USER REQUEST: ${userText}`
     setLines((l) => [...l, { kind: 'prompt', text }])
     setInput('')
     exec(instruction, { skillSlugs: slugsForServer ?? (skillToUse ? [skillToUse.slug] : undefined) })
-  }, [input, running, exec, activeSkill, activeSkills, setActiveSkillSlugs])
+  }, [input, running, exec, activeSkill, activeSkills, setActiveSkillSlugs, mode])
 
   const handleQuickAction = (action: string) => {
     if (running) return
@@ -918,11 +925,11 @@ USER REQUEST: ${userText}`
           <div className="flex-shrink-0 border-t border-border bg-background px-4 py-3">
             <div className="mx-auto max-w-[720px]">
               <div className="flex items-end gap-2">
-                {/* Model picker */}
+                {/* Model picker — Enry Engine routing */}
                 <div ref={modelMenuRef} className="relative flex-shrink-0">
                   <button onClick={() => setModelMenuOpen((o) => !o)}
                     className="flex items-center gap-1 rounded border border-border bg-surface-secondary px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground">
-                    <Sliders className="h-3 w-3" />{currentModel?.label}<ChevronDown className="h-2.5 w-2.5" />
+                    <Sliders className="h-3 w-3" />Enry Engine: {currentModel?.label}<ChevronDown className="h-2.5 w-2.5" />
                   </button>
                   <AnimatePresence>
                     {modelMenuOpen && (
