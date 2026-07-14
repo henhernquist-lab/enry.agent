@@ -101,19 +101,20 @@ function extractJson(text) {
 }
 
 // Parse the marker-delimited editor response into { files, note, noChanges }.
-// No JSON escaping of file bodies — content is whatever sits between the
-// ===FILE:...=== and ===ENDFILE=== markers, verbatim. matchedAny is false only
-// when the model produced neither a file block nor the NO-CHANGES sentinel,
-// i.e. a genuinely malformed response worth surfacing.
+// No JSON escaping of file bodies — content is verbatim between markers. Two
+// block kinds: FILE (create / full-replace, content = whole file) and APPEND
+// (content = only the chunk to add to the end of an existing file). APPEND lets
+// a large file be built across several small steps whose per-call OUTPUT stays
+// well under the LLM proxy timeout. matchedAny is false only when the model
+// produced no block and no NO-CHANGES sentinel — a genuinely malformed response.
 function parseEdits(text) {
   const raw = String(text || '')
   const files = []
-  const re = /===FILE:\s*(.+?)\s*===\r?\n([\s\S]*?)\r?\n===ENDFILE===/g
+  const fileRe = /===FILE:\s*(.+?)\s*===\r?\n([\s\S]*?)\r?\n===ENDFILE===/g
+  const appendRe = /===APPEND:\s*(.+?)\s*===\r?\n([\s\S]*?)\r?\n===ENDAPPEND===/g
   let m
-  while ((m = re.exec(raw)) !== null) {
-    const path = m[1].trim()
-    if (path) files.push({ path, content: m[2] })
-  }
+  while ((m = fileRe.exec(raw)) !== null) { if (m[1].trim()) files.push({ path: m[1].trim(), content: m[2], mode: 'replace' }) }
+  while ((m = appendRe.exec(raw)) !== null) { if (m[1].trim()) files.push({ path: m[1].trim(), content: m[2], mode: 'append' }) }
   const noChanges = /===\s*NO CHANGES\s*===/.test(raw)
   const noteM = raw.match(/===NOTE:\s*([\s\S]*?)===/)
   const note = noteM ? noteM[1].trim().slice(0, 200) : ''
@@ -225,7 +226,9 @@ async function main() {
 
 If the goal is unsafe, destructive without specifics, or too ambiguous to act on without a real risk of doing the wrong thing (e.g. "delete the old auth system" with no detail on what replaces it or what's safe to remove), respond: {"safe": false, "question": "<one sharp clarifying question>"}.
 
-Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 description>", ...]}. Each step should be a small, concrete, independently-committable unit of work (e.g. "Add a ThemeProvider context in src/theme/theme-context.tsx" not "add dark mode"). Mention concrete file paths in step descriptions where you can — later steps use them to know what to read. Keep the plan to at most ${MAX_PLAN_STEPS} steps and only as many as the goal actually needs.` },
+Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 description>", ...]}. Each step should be a small, concrete, independently-committable unit of work (e.g. "Add a ThemeProvider context in src/theme/theme-context.tsx" not "add dark mode"). Mention concrete file paths in step descriptions where you can — later steps use them to know what to read. Keep the plan to at most ${MAX_PLAN_STEPS} steps and only as many as the goal actually needs.
+
+Keep each step small enough that ONE model call can generate its content quickly — a single call must finish in under a minute, so no step should generate a large file or a lot of content at once. When a piece of work would produce a lot at once (a full theme's CSS custom properties, a big config, many similar entries), SPLIT it into several steps: one to create the file with the first chunk, then follow-up steps each phrased as "Add/append <the next chunk> to <that same file>". For example, instead of one "Add CSS custom properties for light and dark themes to src/index.css", emit: "Create src/index.css with the light-theme :root custom properties", then "Append the .dark theme custom properties to src/index.css", then "Append the @layer base bg-background/text-foreground setup to src/index.css". Prefer more small append steps over one big generation.` },
       { role: 'user', content: `GOAL: ${ctx.goal}${clarifyContext}\n\nREPO OVERVIEW:\n${repoOverview()}` },
     ])
     if (planRes.budgetExceeded) {
@@ -288,19 +291,27 @@ Otherwise respond: {"safe": true, "plan": ["<step 1 description>", "<step 2 desc
     const editRes = await llm([
       { role: 'system', content: `You are editing files in a checked-out git repo to accomplish one step of a larger goal.
 
-Do NOT use JSON — file contents break JSON escaping. Use this exact marker format instead. For each file you create or replace, emit a block:
+Do NOT use JSON — file contents break JSON escaping. Use these exact marker formats.
+
+To create a new file or fully rewrite one (content = the WHOLE file):
 ===FILE: <repo-relative path>===
 <the COMPLETE new file content, verbatim — no diff, no snippet, no fencing>
 ===ENDFILE===
 
-After all file blocks, emit one line:
+To ADD a chunk to the END of a file that already exists (content = ONLY the new lines):
+===APPEND: <repo-relative path>===
+<only the new content to append — not the whole file>
+===ENDAPPEND===
+
+After all blocks, emit one line:
 ===NOTE: <one-line summary of what you changed>===
 
 If the step needs no file changes (already satisfied), output exactly one line and nothing else:
 ===NO CHANGES===
 
 Rules:
-- Output only file blocks + the NOTE line (or NO CHANGES). No prose, no markdown fences.
+- Output only blocks + the NOTE line (or NO CHANGES). No prose, no markdown fences.
+- If the step says to ADD / APPEND a chunk to an existing file, use ===APPEND:=== and emit ONLY that chunk — never regenerate the whole file. This keeps your output small. Use ===FILE:=== only to create a new file or when a full rewrite is genuinely required. Appended CSS blocks (a second :root {}, .dark {}, or @layer base {}) are valid and merge in the cascade.
 - Match the repo's existing conventions, imports, and framework idioms — read the provided existing files first.
 - Import ONLY from paths that appear in REPO FILES or FILES CHANGED THIS RUN below, or from installed packages. Never invent a module path — if you need a helper that doesn't exist yet, define it inline or create the file in this same response.
 - Include every import your code uses (e.g. React hooks like useState/useEffect). Do not reference an identifier you didn't import or define.` },
@@ -340,15 +351,24 @@ Rules:
       // climb out via '..' (malformed/hostile path from the model).
       const p = normalize(f.path)
       if (isAbsolute(p) || p.split(/[\\/]/).includes('..')) { writeError = `unsafe path "${f.path}"`; break }
-      const isNew = !existsSync(p)
+      const existed = existsSync(p)
+      // APPEND emits only a chunk; the file on disk (and the commit) must be the
+      // full concatenation. FILE is the whole file as-is. Either way `touched`
+      // carries the COMPLETE content — the small thing is the model's output.
+      let content = f.content
+      if (f.mode === 'append') {
+        const prior = existed ? readFileSync(p, 'utf8') : ''
+        const sep = prior && !prior.endsWith('\n') ? '\n' : ''
+        content = prior + sep + f.content + (f.content.endsWith('\n') ? '' : '\n')
+      }
       try {
         // Create parent dirs first — the model routinely puts a new file in a
         // new directory (e.g. src/context/theme-provider.tsx). writeFileSync
         // does NOT mkdir, so without this it throws ENOENT and crashed the run.
         mkdirSync(dirname(p), { recursive: true })
-        writeFileSync(p, f.content, 'utf8')
+        writeFileSync(p, content, 'utf8')
       } catch (e) { writeError = `${(e && e.code) || 'write error'} writing ${p}`; break }
-      touched.push({ path: p, content: f.content, is_new: isNew })
+      touched.push({ path: p, content, is_new: !existed })
     }
     if (writeError) {
       revertTouched(touched) // undo any partial writes from this step
