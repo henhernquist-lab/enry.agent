@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { checkWriteScope, commitFiles } from '@/lib/github'
 import { getDefaultBranch, readRepoFile } from '@/lib/cruise/github-actions'
-import { runnerFiles, isManaged, managedVersion, RUNNER_VERSION, WORKFLOW_PATH, GOAL_WORKFLOW_PATH } from '@/lib/cruise/runner-assets'
+import { runnerFiles, isManaged, managedVersion, RUNNER_VERSION, WORKFLOW_PATH } from '@/lib/cruise/runner-assets'
 
 export const maxDuration = 30
 
@@ -53,11 +53,8 @@ export async function POST(req: Request) {
   }
 
   // Commit on a fresh enable, OR when the repo is running an OLDER runner than
-  // the current code. A RUNNER_VERSION bump ships new/changed runner files
-  // (v2 added the goal-mode workflow + runner + shared analyzers), and a repo
-  // enabled at an earlier version won't have them. The previous logic only
-  // committed when enry-cruise.yml was wholly absent, so an already-enabled
-  // repo silently missed the v2 files and goal-run dispatch 404'd. commitFiles
+  // the current code. A RUNNER_VERSION bump ships new/changed runner files,
+  // and a repo enabled at an earlier version won't have them. commitFiles
   // create-or-updates each path via the Git Data API, so recommitting is safe
   // whether a given file already exists or not.
   const onRepoVersion = existing === null ? 0 : managedVersion(existing)
@@ -67,7 +64,7 @@ export async function POST(req: Request) {
     const { commitSha, error: commitError } = await commitFiles(
       githubToken, owner, name, defaultBranch,
       fresh
-        ? 'chore: enable Enry Cruise\n\nAdds the Cruise scan + goal workflows and Enry Relay. Managed by enry.agent.'
+        ? 'chore: enable Enry Cruise\n\nAdds the Cruise scan workflow and Enry Relay. Managed by enry.agent.'
         : `chore: update Enry Relay to v${RUNNER_VERSION}\n\nManaged by enry.agent.`,
       runnerFiles().map((f) => ({ ...f, isNew: fresh })),
     )
@@ -96,15 +93,13 @@ export async function POST(req: Request) {
     .single()
   if (upsertError) return Response.json({ error: `Enabled on GitHub but failed to record: ${upsertError.message}` }, { status: 500 })
 
-  // Read the goal-mode workflow back from the repo so the response confirms —
-  // via an independent GitHub API read, not the commit's own success report —
-  // that the file goal-run dispatch needs is actually on the default branch.
-  const { content: goalWorkflow } = await readRepoFile(githubToken, owner, name, GOAL_WORKFLOW_PATH)
+  // Confirm the scan workflow file is on the default branch.
+  const { content: scanWorkflow } = await readRepoFile(githubToken, owner, name, WORKFLOW_PATH)
   return Response.json({
     repo: data,
     committed: needsCommit,
     default_branch: defaultBranch,
-    goal_workflow_present: goalWorkflow !== null,
-    goal_workflow_version: goalWorkflow ? managedVersion(goalWorkflow) : 0,
+    workflow_present: scanWorkflow !== null,
+    workflow_version: scanWorkflow ? managedVersion(scanWorkflow) : 0,
   })
 }

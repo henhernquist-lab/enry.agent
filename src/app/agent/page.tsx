@@ -56,6 +56,10 @@ const DRIVE_SKILL_SLUGS = [
   // New coding skills (6)
   'code-reviewer', 'code-council', 'simplifier', 'architect',
   'rubber-duck', 'explainer',
+  // Execution booster skills (8)
+  'show-your-work', 'test-first', 'slow-down', 'prove-it-works',
+  'first-principles', 'adversarial-coding', 'two-model-consensus',
+  'codebase-grounded',
 ]
 const DRIVE_SKILLS = ALL_SKILLS.filter((s) => DRIVE_SKILL_SLUGS.includes(s.slug))
 

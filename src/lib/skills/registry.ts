@@ -38,6 +38,15 @@ import { simplifier } from './definitions/simplifier'
 import { architect } from './definitions/architect'
 import { rubberDuck } from './definitions/rubber-duck'
 import { explainer } from './definitions/explainer'
+// Execution booster skills (modify how the AI executes coding tasks)
+import { showYourWork } from './definitions/show-your-work'
+import { testFirst } from './definitions/test-first'
+import { slowDown } from './definitions/slow-down'
+import { proveItWorks } from './definitions/prove-it-works'
+import { firstPrinciples } from './definitions/first-principles'
+import { adversarialCoding } from './definitions/adversarial-coding'
+import { twoModelConsensus } from './definitions/two-model-consensus'
+import { codebaseGrounded } from './definitions/codebase-grounded'
 
 // The registry. Adding a skill = import its definition and add it to this
 // array. Everything else (invocation, banner, round-tracking, exit, the
@@ -70,6 +79,15 @@ export const SKILLS: SkillDefinition[] = [
   architect,
   rubberDuck,
   explainer,
+  // Execution booster skills (modify HOW the AI executes — Drive-only)
+  showYourWork,
+  testFirst,
+  slowDown,
+  proveItWorks,
+  firstPrinciples,
+  adversarialCoding,
+  twoModelConsensus,
+  codebaseGrounded,
   // Chat skills (homepage)
   devilAdvocate,
   steelmanDrill,

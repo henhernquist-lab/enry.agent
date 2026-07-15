@@ -5,18 +5,18 @@ import { signIn } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radar, Play, Loader2, ChevronRight, ShieldCheck, ShieldOff, AlertTriangle,
-  CheckCircle2, XCircle, Ban, RotateCcw, Clock, FileCode, Target, Check,
-  MessageCircleQuestion, GitPullRequest, Send, Wrench, Sparkles, Lock,
+  CheckCircle2, XCircle, Ban, RotateCcw, Clock, FileCode, Check,
+  Lock,
 } from 'lucide-react'
 import type {
   CruiseRepo, CruiseScan, CruiseFinding, CruiseSeverity,
-  CruiseGoalRun, CruiseGoalStep, CruiseScanfixCategory, CruiseScanfixMode, ScanfixConfig,
+  CruiseScanfixCategory, CruiseScanfixMode, ScanfixConfig,
 } from '@/lib/cruise/types'
-import { isGoalRunActive, SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG } from '@/lib/cruise/types'
+import { SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG } from '@/lib/cruise/types'
 
-// Enry Cruise — the autonomous-scan main pane. Phase 1: per-repo allowlist,
-// on-demand static scans, report-only, ranked findings with dismiss/not-a-bug.
-// Shares the page's repo selector / sidebar; only this pane is Cruise-specific.
+// Enry Cruise — the autonomous-scan main pane. Per-repo allowlist,
+// on-demand static scans, scan-and-fix categories, ranked findings with
+// dismiss/not-a-bug. Shares the page's repo selector / sidebar.
 
 const SEV_STYLE: Record<CruiseSeverity, string> = {
   critical: 'text-red-400 border-red-500/40 bg-red-500/10',
@@ -41,20 +41,9 @@ export function CruisePanel({ repo }: { repo: string }) {
   const [needsReauth, setNeedsReauth] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const [goalRuns, setGoalRuns] = useState<CruiseGoalRun[]>([])
-  const [goalSteps, setGoalSteps] = useState<Record<string, CruiseGoalStep[]>>({})
-  const [goalInput, setGoalInput] = useState('')
-  const [goalBusy, setGoalBusy] = useState(false)
-  const [goalError, setGoalError] = useState<string | null>(null)
   const [enableNote, setEnableNote] = useState<{ ok: boolean; text: string } | null>(null)
-  const [showCustomGoal, setShowCustomGoal] = useState(false)
   const [savingCat, setSavingCat] = useState(false)
   const [confirmButtons, setConfirmButtons] = useState(false)
-  // A scan whose completion should auto-chain a scanfix run (set by scanNow),
-  // and the scans already chained (so it fires at most once each).
-  const pendingChainRef = useRef<string | null>(null)
-  const chainedRef = useRef<Set<string>>(new Set())
-  const findingsScanIdRef = useRef<string | null>(null)
 
   const loadConfig = useCallback(async () => {
     if (!repo) return
@@ -77,34 +66,16 @@ export function CruisePanel({ repo }: { repo: string }) {
     const res = await fetch(`/api/cruise/findings?scan=${scanId}`)
     const data = await res.json()
     setFindings((data.findings ?? []) as CruiseFinding[])
-    findingsScanIdRef.current = scanId
   }, [])
 
-  const loadGoalRuns = useCallback(async () => {
-    if (!repo) return
-    const res = await fetch(`/api/cruise/goal-runs?repo=${encodeURIComponent(repo)}`)
-    const data = await res.json()
-    setGoalRuns((data.runs ?? []) as CruiseGoalRun[])
-  }, [repo])
-
-  const loadGoalSteps = useCallback(async (goalRunId: string) => {
-    const res = await fetch(`/api/cruise/goal-runs/${goalRunId}`)
-    const data = await res.json()
-    if (data.run) setGoalRuns((prev) => prev.map((r) => (r.id === goalRunId ? data.run : r)))
-    setGoalSteps((prev) => ({ ...prev, [goalRunId]: data.steps ?? [] }))
-  }, [])
-
-  // Reset + load whenever the selected repo changes. The resets are
-  // synchronous (clearing stale data from the previous repo before the new
-  // repo's fetches land) — not a cascading-render risk, just ordering.
+  // Reset + load whenever the selected repo changes.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setConfig(null); setScans([]); setSelectedScan(null); setFindings([]); setError(null); setNeedsReauth(false)
-    setGoalRuns([]); setGoalSteps({}); setGoalError(null)
     if (!repo) return
     setLoading(true)
-    Promise.all([loadConfig(), loadScans(), loadGoalRuns()]).finally(() => setLoading(false))
-  }, [repo, loadConfig, loadScans, loadGoalRuns])
+    Promise.all([loadConfig(), loadScans()]).finally(() => setLoading(false))
+  }, [repo, loadConfig, loadScans])
 
   // Load findings when the selected scan changes.
   useEffect(() => {
@@ -113,22 +84,19 @@ export function CruisePanel({ repo }: { repo: string }) {
     else setFindings([])
   }, [selectedScan, loadFindings])
 
-  // Poll while any scan or goal run is in flight, so status + progress update live.
+  // Poll while any scan is in flight.
   const hasActive = scans.some((s) => isActive(s.status))
-  const activeGoalRuns = goalRuns.filter((r) => isGoalRunActive(r.status))
-  const hasActiveGoal = activeGoalRuns.length > 0
   useEffect(() => {
-    if (!hasActive && !hasActiveGoal) {
+    if (!hasActive) {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
       return
     }
     pollRef.current = setInterval(() => {
       if (hasActive) { loadScans(); if (selectedScan) loadFindings(selectedScan) }
-      if (hasActiveGoal) { loadGoalRuns(); activeGoalRuns.forEach((r) => loadGoalSteps(r.id)) }
     }, 4000)
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasActive, hasActiveGoal, selectedScan, loadScans, loadFindings, loadGoalRuns])
+  }, [hasActive, selectedScan, loadScans, loadFindings])
 
   const enable = async () => {
     setBusy(true); setError(null); setNeedsReauth(false); setEnableNote(null)
@@ -140,10 +108,9 @@ export function CruisePanel({ repo }: { repo: string }) {
       const data = await res.json()
       if (res.status === 403 && data.error === 'missing_scope') { setNeedsReauth(true); setError(data.message); return }
       if (!res.ok) { setError(data.message ?? data.error ?? 'Enable failed'); return }
-      // Confirmation comes from the server's read-back of the goal workflow.
-      setEnableNote(data.goal_workflow_present
-        ? { ok: true, text: `Enry Relay v${data.goal_workflow_version} confirmed on ${data.default_branch}.` }
-        : { ok: false, text: 'Enabled, but the Enry Relay goal workflow is NOT on the default branch — goal runs will fail. Try disable + enable again.' })
+      setEnableNote(data.workflow_present
+        ? { ok: true, text: `Enry Relay v${data.workflow_version} confirmed on ${data.default_branch}.` }
+        : { ok: false, text: 'Enabled, but the Cruise scan workflow is NOT on the default branch. Try disable + enable again.' })
       await loadConfig()
     } finally { setBusy(false) }
   }
@@ -167,17 +134,12 @@ export function CruisePanel({ repo }: { repo: string }) {
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? 'Scan failed to start'); return }
       setSelectedScan(data.scan_id)
-      // Auto-chain: when this scan completes, if any auto-fix category produced
-      // findings, dispatch a scanfix run (one PR). See the effect below.
-      pendingChainRef.current = data.scan_id
       await loadScans()
     } finally { setBusy(false) }
   }
 
   const cats: ScanfixConfig = { ...DEFAULT_SCANFIX_CONFIG, ...(config?.scanfix_categories ?? {}) }
 
-  // Persist a category's mode (optimistic). Category 7 -> auto_fix carries the
-  // one-time confirmation flag.
   const saveCategory = async (category: CruiseScanfixCategory, mode: CruiseScanfixMode, confirmBtns?: boolean) => {
     const prev = config
     setConfig((c) => (c ? { ...c, scanfix_categories: { ...cats, [category]: mode }, buttons_autofix_confirmed: confirmBtns ?? c.buttons_autofix_confirmed } : c))
@@ -190,68 +152,6 @@ export function CruisePanel({ repo }: { repo: string }) {
       const data = await res.json()
       if (!res.ok) { setConfig(prev); setError(data.error ?? 'Could not save category config'); return }
     } catch { setConfig(prev) } finally { setSavingCat(false) }
-  }
-
-  // Dispatch a deterministic scan-and-fix run over the enabled auto-fix
-  // categories. Bundles every category's fixes into one PR.
-  const runScanfix = async (fromScanId: string | null) => {
-    setGoalBusy(true); setGoalError(null)
-    try {
-      const res = await fetch('/api/cruise/goal-runs', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repo, scanfix: true, ...(fromScanId ? { scan_id: fromScanId } : {}) }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setGoalError(data.error ?? 'Auto-fix failed to start'); return }
-      await loadGoalRuns()
-    } finally { setGoalBusy(false) }
-  }
-
-  const runGoal = async () => {
-    const goal = goalInput.trim()
-    if (!goal) return
-    setGoalBusy(true); setGoalError(null)
-    try {
-      const res = await fetch('/api/cruise/goal-runs', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo, goal }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setGoalError(data.error ?? 'Goal run failed to start'); return }
-      setGoalInput('')
-      await loadGoalRuns()
-    } finally { setGoalBusy(false) }
-  }
-
-  // Auto-chain the scanfix run once the scan we launched reaches a terminal
-  // state and its findings (for this scan) are loaded. Fires at most once per
-  // scan, and only if an auto-fix category actually has open findings — so a
-  // clean scan never opens an empty PR.
-  useEffect(() => {
-    const sid = selectedScan
-    if (!sid || hasActiveGoal || pendingChainRef.current !== sid) return
-    const scan = scans.find((s) => s.id === sid)
-    if (!scan || isActive(scan.status)) return
-    if (findingsScanIdRef.current !== sid || chainedRef.current.has(sid)) return
-    chainedRef.current.add(sid)
-    pendingChainRef.current = null
-    const autoCats = SCANFIX_CATEGORIES.filter((c) => cats[c] === 'auto_fix')
-    const hasFixable = findings.some((f) => f.status === 'open' && f.category && autoCats.includes(f.category))
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (hasFixable) runScanfix(sid)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scans, findings, selectedScan, hasActiveGoal])
-
-  const submitAnswer = async (goalRunId: string, answer: string) => {
-    if (!answer.trim()) return
-    setGoalBusy(true); setGoalError(null)
-    try {
-      const res = await fetch(`/api/cruise/goal-runs/${goalRunId}/answer`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setGoalError(data.error ?? 'Could not submit answer'); return }
-      await loadGoalRuns()
-    } finally { setGoalBusy(false) }
   }
 
   const act = async (findingId: string, action: 'dismiss' | 'not_a_bug' | 'reopen') => {
@@ -336,27 +236,6 @@ export function CruisePanel({ repo }: { repo: string }) {
                 </div>
               )}
 
-              {goalError && (
-                <div className="mb-4 flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-destructive" />
-                  <span className="font-mono text-[11px] text-destructive">{goalError}</span>
-                </div>
-              )}
-
-              {/* Autonomous runs (fix + goal) */}
-              {goalRuns.length > 0 && (
-                <div className="mb-6">
-                  <p className="mb-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <Target className="h-3 w-3" /> Autonomous runs
-                  </p>
-                  <div className="space-y-1.5">
-                    {goalRuns.slice(0, 5).map((r) => (
-                      <GoalRunCard key={r.id} run={r} steps={goalSteps[r.id] ?? []} onExpand={() => loadGoalSteps(r.id)} onAnswer={submitAnswer} busy={goalBusy} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Scan history */}
               {scans.length > 0 && (
                 <div className="mb-5">
@@ -369,42 +248,12 @@ export function CruisePanel({ repo }: { repo: string }) {
                 </div>
               )}
 
-              {/* Findings — grouped by category, report + dismiss */}
+              {/* Findings — grouped by category */}
               <FindingsList
                 findings={findings}
                 scan={scans.find((s) => s.id === selectedScan)}
                 onAct={act}
               />
-
-              {/* Advanced: open-ended custom goal (secondary path) */}
-              <div className="mt-8 border-t border-border/60 pt-4">
-                <button onClick={() => setShowCustomGoal((v) => !v)}
-                  className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground">
-                  <ChevronRight className={`h-3 w-3 transition-transform ${showCustomGoal ? 'rotate-90' : ''}`} /> Advanced — custom goal
-                </button>
-                {showCustomGoal && (
-                  <div className="mt-3">
-                    <div className="mb-2 flex items-center gap-2">
-                      <input
-                        value={goalInput}
-                        onChange={(e) => setGoalInput(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && !hasActiveGoal) runGoal() }}
-                        disabled={goalBusy || hasActiveGoal}
-                        placeholder='open-ended, e.g. "add basic dark mode support"'
-                        className="min-w-0 flex-1 rounded border border-border bg-surface-secondary px-3 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 focus:outline-none disabled:opacity-40"
-                      />
-                      <button onClick={runGoal} disabled={goalBusy || hasActiveGoal || !goalInput.trim()}
-                        className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
-                        {hasActiveGoal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}
-                        {hasActiveGoal ? 'working…' : 'Run'}
-                      </button>
-                    </div>
-                    <p className="font-mono text-[10px] leading-relaxed text-muted-foreground">
-                      Open-ended goals invent new code and are less reliable than fixing findings. Same pipeline: works on a branch, validates every edit, build-checks, opens a PR. Caps at {config?.goal_cap_files ?? 10} files / {config?.goal_cap_steps ?? 40} steps.
-                    </p>
-                  </div>
-                )}
-              </div>
             </>
           )}
         </div>
@@ -424,7 +273,7 @@ function EnableCard({ busy, needsReauth, error, onEnable, onReauth, repo }: {
       </div>
       <p className="mb-4 max-w-lg font-mono text-[11px] leading-relaxed text-muted-foreground">
         Enabling commits a managed workflow (<span className="text-foreground">.github/workflows/enry-cruise.yml</span>) and a
-        static analyzer to <span className="text-foreground">{repo}</span>&apos;s default branch. Nothing scans until you press Scan now, and Phase 1 only ever reports — it never writes fixes.
+        static analyzer to <span className="text-foreground">{repo}</span>&apos;s default branch. Nothing scans until you press Scan now.
       </p>
       {error && (
         <div className="mb-3 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-2">
@@ -458,9 +307,6 @@ const CAT_DESC: Record<CruiseScanfixCategory, string> = {
   non_functional_buttons: 'buttons with no onClick handler',
 }
 
-// Per-repo category config. 3-way per category: Off / Report / Fix. Fix on the
-// buttons category is locked behind a one-time confirm (it only inserts a TODO,
-// never guesses a handler).
 function CategoriesPanel({ cats, buttonsConfirmed, saving, onSet, confirmOpen, onConfirmOpen }: {
   cats: ScanfixConfig; buttonsConfirmed: boolean; saving: boolean
   onSet: (c: CruiseScanfixCategory, m: CruiseScanfixMode, confirmBtns?: boolean) => void
@@ -520,110 +366,6 @@ function CategoriesPanel({ cats, buttonsConfirmed, saving, onSet, confirmOpen, o
   )
 }
 
-const GOAL_STATUS_LABEL: Record<CruiseGoalRun['status'], string> = {
-  queued: 'queued', planning: 'planning', running: 'working',
-  awaiting_clarification: 'needs input', completed: 'completed', capped: 'capped',
-  no_changes: 'no changes', build_failed: 'build failing', failed: 'failed', cancelled: 'cancelled',
-}
-
-function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
-  run: CruiseGoalRun; steps: CruiseGoalStep[]; onExpand: () => void
-  onAnswer: (id: string, answer: string) => void; busy: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [answer, setAnswer] = useState('')
-  const active = isGoalRunActive(run.status)
-
-  const icon = run.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-    : run.status === 'capped' ? <AlertTriangle className="h-3.5 w-3.5 text-warning" />
-    : run.status === 'build_failed' ? <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-    : run.status === 'failed' ? <XCircle className="h-3.5 w-3.5 text-destructive" />
-    : run.status === 'no_changes' ? <Ban className="h-3.5 w-3.5 text-muted-foreground" />
-    : run.status === 'awaiting_clarification' ? <MessageCircleQuestion className="h-3.5 w-3.5 text-warning" />
-    : <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-
-  return (
-    <div className="overflow-hidden rounded border border-border bg-surface-secondary">
-      <button onClick={() => { const next = !open; setOpen(next); if (next) onExpand() }} className="flex w-full items-center gap-2 px-3 py-2 text-left">
-        <ChevronRight className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
-        {icon}
-        {run.mode === 'scanfix' && <Sparkles className="h-3 w-3 flex-shrink-0 text-primary" />}
-        {run.mode === 'fix' && <Wrench className="h-3 w-3 flex-shrink-0 text-muted-foreground" />}
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">{run.goal}</span>
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{GOAL_STATUS_LABEL[run.status]}</span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="border-t border-border/60 px-3 py-2.5">
-              {steps.length > 0 ? (
-                <div className="space-y-1 border-l border-border/60 pl-3">
-                  {steps.map((s) => (
-                    <div key={s.seq} className="flex items-start gap-2 font-mono text-[11px]">
-                      {s.status === 'done' ? <Check className="mt-0.5 h-3 w-3 flex-shrink-0 text-primary" />
-                        : s.status === 'failed' ? <XCircle className="mt-0.5 h-3 w-3 flex-shrink-0 text-destructive" />
-                        : s.status === 'running' ? <Loader2 className="mt-0.5 h-3 w-3 flex-shrink-0 animate-spin text-primary" />
-                        : <span className="mt-1 h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />}
-                      <div className="min-w-0">
-                        <p className={s.status === 'pending' ? 'text-muted-foreground' : 'text-foreground/90'}>{s.description}</p>
-                        {s.detail && <p className={`whitespace-pre-wrap text-[10px] ${s.status === 'failed' ? 'text-destructive/80' : 'text-muted-foreground'}`}>{s.detail}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : active ? (
-                <p className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> planning…</p>
-              ) : null}
-
-              {run.status === 'no_changes' && (
-                <p className="mt-3 font-mono text-[11px] text-muted-foreground">
-                  No PR opened — every edit was reverted for introducing type/lint errors, or the goal needed no changes. Expand the failed steps above for the exact errors.
-                </p>
-              )}
-
-              {run.status === 'awaiting_clarification' && (
-                <div className="mt-3 rounded border border-warning/30 bg-warning/5 px-3 py-2">
-                  <p className="mb-2 font-mono text-[11px] text-warning">{run.clarify_question}</p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={answer}
-                      onChange={(e) => setAnswer(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { onAnswer(run.id, answer); setAnswer('') } }}
-                      disabled={busy}
-                      placeholder="Answer…"
-                      className="min-w-0 flex-1 rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 focus:outline-none disabled:opacity-40"
-                    />
-                    <button onClick={() => { onAnswer(run.id, answer); setAnswer('') }} disabled={busy || !answer.trim()}
-                      className="flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
-                      <Send className="h-3 w-3" /> Send
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {run.remaining_summary && (
-                <div className="mt-3 rounded border border-border px-3 py-2">
-                  <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Remaining</p>
-                  <p className="whitespace-pre-wrap font-mono text-[11px] text-foreground/80">{run.remaining_summary}</p>
-                </div>
-              )}
-
-              {run.error && <p className="mt-3 font-mono text-[11px] text-destructive">{run.error}</p>}
-
-              {run.pr_url && (
-                <a href={run.pr_url} target="_blank" rel="noreferrer"
-                  className="mt-3 flex w-fit items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20">
-                  <GitPullRequest className="h-3 w-3" /> View PR
-                </a>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
 function ScanRow({ scan, selected, onSelect }: { scan: CruiseScan; selected: boolean; onSelect: () => void }) {
   const icon = scan.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
     : scan.status === 'failed' ? <XCircle className="h-3.5 w-3.5 text-destructive" />
@@ -663,7 +405,7 @@ function FindingsList({ findings, scan, onAct }: {
   const open = findings.filter((f) => f.status === 'open')
   const resolved = findings.filter((f) => f.status !== 'open')
 
-  // Group open findings by category; uncategorized (tsc/other lint) last.
+  // Group open findings by category; uncategorized last.
   const GROUP_ORDER: (CruiseScanfixCategory | 'other')[] = [...SCANFIX_CATEGORIES, 'other']
   const groups = new Map<CruiseScanfixCategory | 'other', CruiseFinding[]>()
   for (const f of open) {

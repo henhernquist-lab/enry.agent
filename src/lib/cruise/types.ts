@@ -21,8 +21,6 @@ export const SCANFIX_CATEGORIES: CruiseScanfixCategory[] = [
   'broken_imports', 'debug_statements', 'non_functional_buttons',
 ]
 
-// Category 7 (non_functional_buttons) is the only one that defaults to
-// report_only and needs an explicit per-repo confirmation to auto-fix.
 export const DEFAULT_SCANFIX_CONFIG: ScanfixConfig = {
   dead_code: 'auto_fix',
   formatting: 'auto_fix',
@@ -46,7 +44,6 @@ export type CruiseScanStatus = 'queued' | 'running' | 'partial' | 'completed' | 
 export type CruiseTrigger = 'on_demand' | 'scheduled' | 'on_pr'
 export type CruiseFindingStatus = 'open' | 'fix_requested' | 'fixed' | 'dismissed' | 'not_a_bug'
 
-// Severity rank for ordering findings (higher = worse).
 export const SEVERITY_RANK: Record<CruiseSeverity, number> = {
   critical: 4,
   high: 3,
@@ -68,8 +65,6 @@ export interface CruiseRepo {
   trigger_on_pr: boolean
   workflow_sha: string | null
   runner_version: number | null
-  goal_cap_files: number
-  goal_cap_steps: number
   scanfix_categories: ScanfixConfig
   buttons_autofix_confirmed: boolean
   created_at: string
@@ -110,7 +105,6 @@ export interface CruiseFinding {
   created_at: string
 }
 
-// The shape the runner posts to /api/cruise/ingest for each finding.
 export interface IncomingFinding {
   layer: CruiseLayer
   severity: CruiseSeverity
@@ -123,59 +117,4 @@ export interface IncomingFinding {
   detail: string
   suggested_fix?: string | null
   category?: CruiseScanfixCategory | null
-}
-
-// ── Goal-directed autonomous mode ────────────────────────────────────────────
-// A goal run works a natural-language goal to completion (or a cap, or a
-// clarify point) across one or more GitHub Actions dispatches, landing every
-// change on branch_name and opening a single PR at the end. Kept in sync with
-// supabase/migrations/009_cruise_goals.sql.
-
-export type CruiseGoalRunStatus =
-  | 'queued' | 'planning' | 'running' | 'awaiting_clarification'
-  | 'completed' | 'capped' | 'no_changes' | 'build_failed' | 'failed' | 'cancelled'
-
-export type CruiseGoalStepStatus = 'pending' | 'running' | 'done' | 'failed'
-
-export function isGoalRunActive(status: CruiseGoalRunStatus): boolean {
-  return status === 'queued' || status === 'planning' || status === 'running' || status === 'awaiting_clarification'
-}
-
-export type CruiseGoalMode = 'goal' | 'fix' | 'scanfix'
-
-export interface CruiseGoalRun {
-  id: string
-  repo_id: string
-  user_id: string
-  goal: string
-  mode: CruiseGoalMode
-  source_scan_id: string | null
-  status: CruiseGoalRunStatus
-  run_id: number | null
-  branch_name: string
-  base_branch: string
-  pr_number: number | null
-  pr_url: string | null
-  cap_files: number
-  cap_steps: number
-  llm_calls_used: number
-  plan: string[] | null
-  clarify_question: string | null
-  clarify_answer: string | null
-  remaining_summary: string | null
-  error: string | null
-  dispatched_at: string
-  heartbeat_at: string | null
-  finished_at: string | null
-}
-
-export interface CruiseGoalStep {
-  id: string
-  goal_run_id: string
-  seq: number
-  description: string
-  status: CruiseGoalStepStatus
-  detail: string | null
-  created_at: string
-  updated_at: string
 }
