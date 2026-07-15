@@ -1,4 +1,4 @@
-# enry-cruise:managed v2
+# enry-cruise:managed v11
 # Managed by enry.agent (Enry Cruise). Do not edit by hand — the marker on the
 # first line lets enry.agent detect this file as its own and update it safely.
 # Removing the marker will make the next enable/update report a conflict.
@@ -27,6 +27,10 @@ on:
         description: report_only | auto_fix | per_finding
         required: false
         default: report_only
+      categories:
+        description: JSON array of enabled scan-and-fix categories to detect
+        required: false
+        default: ''
 
 # Read-only: Phase 1 never writes to the repo. Fix branches (later phases) will
 # request contents:write explicitly.
@@ -66,4 +70,5 @@ jobs:
           ENRY_CALLBACK: ${{ inputs.callback }}
           ENRY_TOKEN: ${{ inputs.token }}
           ENRY_LAYERS: ${{ inputs.layers }}
+          ENRY_CATEGORIES: ${{ inputs.categories }}
           ENRY_REPO: ${{ github.repository }}
