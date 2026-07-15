@@ -39,10 +39,11 @@ type Mode = 'auto' | 'manual'
 // ─── Model & effort definitions ─────────────────────────────
 
 const MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro',  desc: 'Strongest free model. Best for complex tasks.' },
-  { id: 'minimax/minimax-m3',          label: 'MiniMax M3',        desc: 'Fast and capable. Great for general tasks.' },
-  { id: 'qwen/qwen3.5-122b-a10b',      label: 'Qwen 3.5 122B',    desc: 'Large reasoning model. Great for analysis.' },
-  { id: 'z-ai/glm-5.2',                label: 'GLM 5.2',          desc: 'Versatile all-rounder. Good at following instructions.' },
+  { id: 'deepseek-ai/deepseek-v4-pro',          label: 'DeepSeek V4 Pro', desc: 'Strongest free model. Best for complex tasks.' },
+  { id: 'minimax/minimax-m3',                    label: 'MiniMax M3',      desc: 'Fast and capable. Great for general tasks.' },
+  { id: 'qwen/qwen3.5-122b-a10b',                label: 'Qwen 3.5 122B',   desc: 'Large reasoning model. Great for analysis.' },
+  { id: 'z-ai/glm-5.2',                          label: 'GLM 5.2',         desc: 'Versatile all-rounder. Good at following instructions.' },
+  { id: 'nvidia/nemotron-3-ultra-550b-a55b',     label: 'Nemotron 3 Ultra', desc: 'NVIDIA flagship. 550B MoE, best for high-stakes generation.' },
 ] as const
 
 // Drive skills (coding-focused) — pulled from the shared registry.
@@ -72,11 +73,15 @@ const EFFORTS = [
 ]
 
 // Per-model default effort levels for the coding agent.
+// Nemotron is new and unproven on this codebase — start at 'medium' so we
+// get reasonable reasoning without the deepest/slowest mode until we have
+// real testing data.
 const MODEL_DEFAULTS: Record<string, EffortId> = {
-  'deepseek-ai/deepseek-v4-pro': 'none',
-  'z-ai/glm-5.2':               'medium',
-  'qwen/qwen3.5-122b-a10b':      'low',
-  'minimax/minimax-m3':          'none',
+  'deepseek-ai/deepseek-v4-pro':      'none',
+  'z-ai/glm-5.2':                    'medium',
+  'qwen/qwen3.5-122b-a10b':           'low',
+  'minimax/minimax-m3':               'none',
+  'nvidia/nemotron-3-ultra-550b-a55b': 'medium',
 }
 
 type EffortId = typeof EFFORTS[number]['id']

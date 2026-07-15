@@ -14,7 +14,7 @@ enry.agent is Henry's personal AI superagent — Next.js chat UI over NVIDIA NIM
 | Backend | NVIDIA NIM — `https://integrate.api.nvidia.com/v1` |
 | Package manager | pnpm |
 
-## Models & keys
+## Models & keys (Enry Engine)
 
 | Model ID | Label | Env var |
 |---|---|---|
@@ -22,8 +22,9 @@ enry.agent is Henry's personal AI superagent — Next.js chat UI over NVIDIA NIM
 | `minimax/minimax-m3` | MiniMax M3 | `MINIMAX_API_KEY` |
 | `qwen/qwen3.5-122b-a10b` | Qwen 3.5 122B | `QWEN_API_KEY` |
 | `z-ai/glm-5.2` | GLM 5.2 | `GLM_API_KEY` |
+| `nvidia/nemotron-3-ultra-550b-a55b` | Nemotron 3 Ultra | `NVIDIA_API_KEY` |
 
-Verify IDs against `GET /v1/models` before hardcoding — NIM model names don't match training data.
+Verify IDs against `GET /v1/models` before hardcoding — NIM model names don't match training data. The same allowlist lives in `src/lib/nim.ts` (Drive) and `src/app/api/chat/route.ts` (chatbot); keep both in sync when adding/removing a model.
 
 ## Streaming pipeline
 

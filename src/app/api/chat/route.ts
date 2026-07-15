@@ -12,10 +12,11 @@ import { getSkill, getSkills, buildMultiSkillPrompt } from '@/lib/skills/registr
 import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
-  'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
-  'minimax/minimax-m3':           () => process.env.MINIMAX_API_KEY ?? '',
-  'qwen/qwen3.5-122b-a10b':      () => process.env.QWEN_API_KEY ?? '',
-  'z-ai/glm-5.2':                () => process.env.GLM_API_KEY ?? '',
+  'deepseek-ai/deepseek-v4-pro':      () => process.env.DEEPSEEK_API_KEY ?? '',
+  'minimax/minimax-m3':                () => process.env.MINIMAX_API_KEY ?? '',
+  'qwen/qwen3.5-122b-a10b':           () => process.env.QWEN_API_KEY ?? '',
+  'z-ai/glm-5.2':                     () => process.env.GLM_API_KEY ?? '',
+  'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
 } as const
 
 type AllowedModel = keyof typeof MODEL_CONFIG

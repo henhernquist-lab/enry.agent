@@ -43,7 +43,7 @@ RULES:
 4. This is a defense against confident wrongness: the other model may catch errors you miss. Your job is to minimize those errors.
 
 FORMAT:
-- Start with "MODEL: [state which model you are — DeepSeek V4 Pro, MiniMax M3, Qwen 3.5 122B, or GLM 5.2]"
+- Start with "MODEL: [state which model you are — DeepSeek V4 Pro, MiniMax M3, Qwen 3.5 122B, GLM 5.2, or Nemotron 3 Ultra]"
 - Then produce your complete response (plan, code, explanation) as normal.
 
 Your output will be paired with another model's output. If both models substantively agree, the user sees the agreed solution flagged "HIGH CONFIDENCE — both agreed." If they differ, the user sees both side-by-side to decide manually.`,

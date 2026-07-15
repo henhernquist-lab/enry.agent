@@ -9,11 +9,16 @@ import { createOpenAI } from '@ai-sdk/openai'
 
 export const DEFAULT_NIM_MODEL = 'deepseek-ai/deepseek-v4-pro'
 
+// NVIDIA NIM hosts every model through the same /v1/chat/completions endpoint
+// with the same auth header — the only thing that changes per model is the
+// API key. New models are added by extending MODEL_KEYS and providing their
+// own NIM_API_KEY env var (matching their vendor prefix).
 const MODEL_KEYS: Record<string, () => string> = {
   'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
   'minimax/minimax-m3': () => process.env.MINIMAX_API_KEY ?? '',
   'qwen/qwen3.5-122b-a10b': () => process.env.QWEN_API_KEY ?? '',
   'z-ai/glm-5.2': () => process.env.GLM_API_KEY ?? '',
+  'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
 }
 
 export function nimClientFor(model: string = DEFAULT_NIM_MODEL) {
