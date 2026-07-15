@@ -18,7 +18,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync, mkdirSync } from 'node:fs'
 import { dirname, normalize, isAbsolute } from 'node:path'
 import { execSync } from 'node:child_process'
-import { blockingFindings } from './lib/analyzers.mjs'
+import { blockingFindings, CATEGORY_FIXERS } from './lib/analyzers.mjs'
 
 // Editor system prompts. GOAL builds features (may create files, append chunks);
 // FIX resolves already-flagged findings with the minimal change and removes dead
@@ -288,6 +288,139 @@ function formatErrors(findings) {
   return lines.join('\n')
 }
 
+// ── Scan-and-fix mode ────────────────────────────────────────────────────────
+// Canonical category order + labels. Must match SCANFIX_CATEGORIES in
+// src/lib/cruise/types.ts and the step-seeding order in the create route, so
+// each category's seq lines up with its seeded step row.
+const SCANFIX_ORDER = ['dead_code', 'formatting', 'lint_autofix', 'unused_deps', 'broken_imports', 'debug_statements', 'non_functional_buttons']
+const SCANFIX_LABEL = {
+  dead_code: 'Dead code removal', formatting: 'Formatting', lint_autofix: 'Lint auto-fixables',
+  unused_deps: 'Unused dependencies', broken_imports: 'Broken imports',
+  debug_statements: 'Debug statement cleanup', non_functional_buttons: 'Non-functional buttons',
+}
+
+// Discard the current (uncommitted) working-tree changes back to the last banked
+// state — the scanfix equivalent of revertTouched, used when a category's fix is
+// rejected. Restores tracked files and removes files it newly created.
+function gitClean() {
+  try { execSync('git checkout -- . ; git clean -fd', { stdio: 'ignore' }) } catch { /* best effort */ }
+}
+
+// "Bank" an accepted category as a local commit so the next category's git delta
+// is isolated (exact per-category commit payload + clean rollback). The runner
+// has no push access — these commits are throwaway, local to the Actions
+// checkout; every real write to the repo goes through the apply route.
+function gitBank() {
+  try { execSync('git add -A && git commit -q --no-verify -m "enry-cruise scanfix"', { stdio: 'ignore' }) } catch { /* best effort */ }
+}
+
+// This category's working-tree delta: [{ path, deleted, isNew }].
+function gitDelta() {
+  let out
+  try { out = execSync('git status --porcelain -uall', { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) } catch { return [] }
+  const files = []
+  for (const line of out.split('\n')) {
+    if (!line.trim()) continue
+    const x = line[0], y = line[1]
+    let path = line.slice(3)
+    if (path.includes(' -> ')) path = path.split(' -> ')[1] // rename: take the new path
+    if (path.startsWith('"') && path.endsWith('"')) { try { path = JSON.parse(path) } catch { /* keep */ } }
+    files.push({ path, deleted: x === 'D' || y === 'D', isNew: x === '?' || x === 'A' })
+  }
+  return files
+}
+
+async function runScanfix(ctx) {
+  // Local git identity so gitBank() can commit between categories.
+  try { execSync('git config user.email "cruise@enry.agent" && git config user.name "Enry Cruise"', { stdio: 'ignore' }) } catch { /* best effort */ }
+
+  const config = ctx.scanfix_categories || {}
+  const cats = SCANFIX_ORDER.filter((c) => config[c] === 'auto_fix')
+  if (cats.length === 0) {
+    await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'finalize', status: 'no_changes', goal_title: ctx.goal.slice(0, 200) })
+    return
+  }
+
+  const doneSeqs = new Set((ctx.steps || []).filter((s) => s.status === 'done').map((s) => s.seq))
+  let filesChanged = (ctx.files_changed || []).length
+  // Baseline blocking errors before any fix — an accepted fix must introduce
+  // none new (the same gate the goal loop uses). Advances after each accept.
+  let baselineFp = new Set((await blockingFindings(REPO)).map((f) => f.fingerprint))
+  let capped = false
+  const remaining = []
+
+  for (let seq = 0; seq < cats.length; seq++) {
+    if (doneSeqs.has(seq)) continue
+    const cat = cats[seq]
+    if (filesChanged >= CAP_FILES) { capped = true; remaining.push(SCANFIX_LABEL[cat]); continue }
+    await postStep(seq, 'running')
+
+    let note = ''
+    try { note = (CATEGORY_FIXERS[cat](REPO, null) || {}).note || '' }
+    catch (e) { gitClean(); await postStep(seq, 'failed', `Fixer crashed: ${(e && e.message) || e}`); continue }
+
+    const delta = gitDelta()
+    if (delta.length === 0) { await postStep(seq, 'done', `${note} — no changes`); continue }
+
+    const afterFindings = await blockingFindings(REPO)
+    const newErrors = afterFindings.filter((f) => !baselineFp.has(f.fingerprint))
+    if (newErrors.length > 0) {
+      gitClean()
+      await postStep(seq, 'failed', `Reverted — introduced ${newErrors.length} new error(s):\n${formatErrors(newErrors)}`)
+      continue
+    }
+
+    // Build the commit payload from the delta; deletions carry deleted:true.
+    const touched = []
+    for (const d of delta) {
+      if (d.deleted) { touched.push({ path: d.path, content: '', is_new: false, deleted: true }); continue }
+      let content
+      try { content = readFileSync(d.path, 'utf8') } catch { continue }
+      touched.push({ path: d.path, content, is_new: d.isNew })
+    }
+    if (touched.length === 0) { gitClean(); await postStep(seq, 'done', `${note} — nothing to commit`); continue }
+
+    // Commit in <=25-file chunks (the apply route's per-call limit); all chunks
+    // land on the same branch -> one PR.
+    let applyErr = null
+    for (let i = 0; i < touched.length; i += 25) {
+      const applyRes = await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/apply`, {
+        files: touched.slice(i, i + 25),
+        message: `Enry Cruise: ${SCANFIX_LABEL[cat]} — ${note}`.slice(0, 200),
+      })
+      if (applyRes.json?.error === 'file_cap_exceeded') { applyErr = 'cap'; break }
+      if (!applyRes.ok || !applyRes.json?.ok) { applyErr = applyRes.json?.error || `Apply failed (HTTP ${applyRes.status})`; break }
+      filesChanged = applyRes.json.files_changed
+    }
+    if (applyErr === 'cap') {
+      gitClean()
+      await postStep(seq, 'failed', 'Skipped — file cap reached')
+      capped = true
+      remaining.push(...cats.slice(seq).map((c) => SCANFIX_LABEL[c]))
+      break
+    }
+    if (applyErr) { gitClean(); await postStep(seq, 'failed', applyErr); continue }
+
+    gitBank()
+    baselineFp = new Set(afterFindings.map((f) => f.fingerprint))
+    await postStep(seq, 'done', `${note} — ${touched.length} file(s)`)
+  }
+
+  let buildOk = true, buildError = null
+  if (filesChanged > 0) { const b = runBuild(); buildOk = b.ok; buildError = b.error }
+  const status = filesChanged === 0 ? 'no_changes' : capped ? 'capped' : 'completed'
+  await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, {
+    phase: 'finalize',
+    status,
+    goal_title: ctx.goal.slice(0, 200),
+    pr_summary: `Enry Cruise scan-and-fix over ${cats.length} categor${cats.length === 1 ? 'y' : 'ies'}: ${cats.map((c) => SCANFIX_LABEL[c]).join(', ')}. ${filesChanged} file(s) changed.`,
+    remaining_summary: remaining.length > 0 ? remaining.map((s, i) => `${i + 1}. ${s}`).join('\n') : undefined,
+    build_ok: buildOk,
+    build_error: buildError,
+  })
+  console.log(`[enry-cruise-goal] scanfix done: status=${status} files_changed=${filesChanged} build_ok=${buildOk}`)
+}
+
 async function main() {
   await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'start' })
 
@@ -297,6 +430,12 @@ async function main() {
     process.exit(1)
   }
   const ctx = ctxRes.json
+
+  // Scan-and-fix mode: no LLM, no planning. Iterate the enabled auto-fix
+  // categories, each running a deterministic fixer through the same
+  // validate -> revert/commit -> build gate the goal loop uses.
+  if (ctx.mode === 'scanfix') { await runScanfix(ctx); return }
+
   let plan = ctx.plan
   const doneSeqs = new Set((ctx.steps || []).filter((s) => s.status === 'done').map((s) => s.seq))
   let filesChanged = (ctx.files_changed || []).length

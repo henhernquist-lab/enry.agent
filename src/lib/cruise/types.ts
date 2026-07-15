@@ -4,6 +4,44 @@
 export type CruiseSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 export type CruiseLayer = 'static' | 'llm_review' | 'runtime'
 export type CruiseFixMode = 'report_only' | 'auto_fix' | 'per_finding'
+
+// ── Scan-and-fix categories ──────────────────────────────────────────────────
+// The 7 concrete finding classes Cruise detects during a scan. Each is toggled
+// per repo to 'auto_fix' (deterministic fix + PR), 'report_only', or 'off'.
+export type CruiseScanfixCategory =
+  | 'dead_code' | 'formatting' | 'lint_autofix' | 'unused_deps'
+  | 'broken_imports' | 'debug_statements' | 'non_functional_buttons'
+
+export type CruiseScanfixMode = 'auto_fix' | 'report_only' | 'off'
+
+export type ScanfixConfig = Record<CruiseScanfixCategory, CruiseScanfixMode>
+
+export const SCANFIX_CATEGORIES: CruiseScanfixCategory[] = [
+  'dead_code', 'formatting', 'lint_autofix', 'unused_deps',
+  'broken_imports', 'debug_statements', 'non_functional_buttons',
+]
+
+// Category 7 (non_functional_buttons) is the only one that defaults to
+// report_only and needs an explicit per-repo confirmation to auto-fix.
+export const DEFAULT_SCANFIX_CONFIG: ScanfixConfig = {
+  dead_code: 'auto_fix',
+  formatting: 'auto_fix',
+  lint_autofix: 'auto_fix',
+  unused_deps: 'auto_fix',
+  broken_imports: 'auto_fix',
+  debug_statements: 'auto_fix',
+  non_functional_buttons: 'report_only',
+}
+
+export const SCANFIX_LABEL: Record<CruiseScanfixCategory, string> = {
+  dead_code: 'Dead code',
+  formatting: 'Formatting',
+  lint_autofix: 'Lint auto-fixables',
+  unused_deps: 'Unused dependencies',
+  broken_imports: 'Broken imports',
+  debug_statements: 'Debug statements',
+  non_functional_buttons: 'Non-functional buttons',
+}
 export type CruiseScanStatus = 'queued' | 'running' | 'partial' | 'completed' | 'failed' | 'cancelled'
 export type CruiseTrigger = 'on_demand' | 'scheduled' | 'on_pr'
 export type CruiseFindingStatus = 'open' | 'fix_requested' | 'fixed' | 'dismissed' | 'not_a_bug'
@@ -32,6 +70,8 @@ export interface CruiseRepo {
   runner_version: number | null
   goal_cap_files: number
   goal_cap_steps: number
+  scanfix_categories: ScanfixConfig
+  buttons_autofix_confirmed: boolean
   created_at: string
   updated_at: string
 }
@@ -65,6 +105,7 @@ export interface CruiseFinding {
   title: string
   detail: string
   suggested_fix: string | null
+  category: CruiseScanfixCategory | null
   status: CruiseFindingStatus
   created_at: string
 }
@@ -81,6 +122,7 @@ export interface IncomingFinding {
   title: string
   detail: string
   suggested_fix?: string | null
+  category?: CruiseScanfixCategory | null
 }
 
 // ── Goal-directed autonomous mode ────────────────────────────────────────────
@@ -99,7 +141,7 @@ export function isGoalRunActive(status: CruiseGoalRunStatus): boolean {
   return status === 'queued' || status === 'planning' || status === 'running' || status === 'awaiting_clarification'
 }
 
-export type CruiseGoalMode = 'goal' | 'fix'
+export type CruiseGoalMode = 'goal' | 'fix' | 'scanfix'
 
 export interface CruiseGoalRun {
   id: string

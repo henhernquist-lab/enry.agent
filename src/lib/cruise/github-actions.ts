@@ -58,6 +58,7 @@ export interface DispatchInputs {
   token: string
   layers: string // JSON array string, e.g. '["static"]'
   fix_mode: string
+  categories: string // JSON array of enabled scan-and-fix categories, or ''
 }
 
 // Fires the workflow_dispatch event for enry-cruise.yml on the given ref.

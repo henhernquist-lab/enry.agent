@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { getDefaultBranch, dispatchScan } from '@/lib/cruise/github-actions'
-import type { CruiseRepo } from '@/lib/cruise/types'
+import { SCANFIX_CATEGORIES, DEFAULT_SCANFIX_CONFIG, type CruiseRepo, type ScanfixConfig } from '@/lib/cruise/types'
 
 export const maxDuration = 30
 
@@ -42,6 +42,12 @@ export async function POST(req: Request) {
   const token = randomBytes(24).toString('hex')
   const tokenHash = createHash('sha256').update(token).digest('hex')
 
+  // The categories to detect this scan = every category the repo hasn't turned
+  // off. Snapshotted onto the scan row (like fix_mode/layers) and passed to the
+  // runner so a config change mid-flight doesn't retroactively alter this scan.
+  const config: ScanfixConfig = { ...DEFAULT_SCANFIX_CONFIG, ...(repo.scanfix_categories ?? {}) }
+  const enabledCategories = SCANFIX_CATEGORIES.filter((c) => config[c] !== 'off')
+
   // Insert first so the runner's callback always finds a scan row. The partial
   // unique index (one live scan per repo) rejects a second concurrent scan.
   const { data: scan, error: insertErr } = await supabase
@@ -52,6 +58,7 @@ export async function POST(req: Request) {
       trigger: 'on_demand',
       fix_mode: repo.fix_mode,
       layers: repo.layers,
+      scanfix_categories: config,
       status: 'queued',
       token_hash: tokenHash,
     })
@@ -77,6 +84,7 @@ export async function POST(req: Request) {
     token,
     layers: JSON.stringify(repo.layers),
     fix_mode: repo.fix_mode,
+    categories: JSON.stringify(enabledCategories),
   })
   if (!ok) {
     await supabase.from('cruise_scans').update({ status: 'failed', error: dispatchErr, finished_at: new Date().toISOString() }).eq('id', scan.id)

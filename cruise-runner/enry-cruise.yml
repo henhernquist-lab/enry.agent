@@ -27,6 +27,10 @@ on:
         description: report_only | auto_fix | per_finding
         required: false
         default: report_only
+      categories:
+        description: JSON array of enabled scan-and-fix categories to detect
+        required: false
+        default: ''
 
 # Read-only: Phase 1 never writes to the repo. Fix branches (later phases) will
 # request contents:write explicitly.
@@ -66,4 +70,5 @@ jobs:
           ENRY_CALLBACK: ${{ inputs.callback }}
           ENRY_TOKEN: ${{ inputs.token }}
           ENRY_LAYERS: ${{ inputs.layers }}
+          ENRY_CATEGORIES: ${{ inputs.categories }}
           ENRY_REPO: ${{ github.repository }}

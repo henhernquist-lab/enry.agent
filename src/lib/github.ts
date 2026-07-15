@@ -237,6 +237,8 @@ export interface CommitFileChange {
   // file being modified. Informational only — the tree entry shape is the
   // same either way.
   isNew: boolean
+  // true = remove the path from the tree (deletion). content is ignored.
+  deleted?: boolean
 }
 
 // Bundles one or more file changes into a single real commit on `branch`,
@@ -264,9 +266,14 @@ export async function commitFiles(
     const baseTreeSha = parentCommit.tree?.sha
     if (!baseTreeSha) return { commitSha: null, error: 'Could not resolve base tree' }
 
-    // One blob per changed file.
-    const blobShas: { path: string; sha: string }[] = []
+    // One blob per changed file; deletions carry no blob (tree entry sha:null).
+    type TreeEntryPut = { path: string; mode: '100644'; type: 'blob'; sha: string | null }
+    const treeEntries: TreeEntryPut[] = []
     for (const change of changes) {
+      if (change.deleted) {
+        treeEntries.push({ path: change.path, mode: '100644', type: 'blob', sha: null })
+        continue
+      }
       const blobRes = await ghFetch(accessToken, `/repos/${owner}/${repo}/git/blobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -274,16 +281,13 @@ export async function commitFiles(
       })
       if (!blobRes.ok) return { commitSha: null, error: `GitHub API error ${blobRes.status} creating blob for ${change.path}` }
       const blobData = await blobRes.json()
-      blobShas.push({ path: change.path, sha: blobData.sha })
+      treeEntries.push({ path: change.path, mode: '100644', type: 'blob', sha: blobData.sha })
     }
 
     const treeRes = await ghFetch(accessToken, `/repos/${owner}/${repo}/git/trees`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        base_tree: baseTreeSha,
-        tree: blobShas.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
-      }),
+      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
     })
     if (!treeRes.ok) return { commitSha: null, error: `GitHub API error ${treeRes.status} creating tree` }
     const treeData = await treeRes.json()

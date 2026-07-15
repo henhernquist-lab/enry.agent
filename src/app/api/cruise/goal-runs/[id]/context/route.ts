@@ -21,7 +21,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     .maybeSingle()
   if (!run || run.token_hash !== tokenHash) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: repoRow } = await supabase.from('cruise_repos').select('full_name').eq('id', run.repo_id).maybeSingle()
+  const { data: repoRow } = await supabase.from('cruise_repos').select('full_name, scanfix_categories').eq('id', run.repo_id).maybeSingle()
 
   const { data: steps } = await supabase
     .from('cruise_goal_steps')
@@ -37,6 +37,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   return Response.json({
     goal: run.goal,
     mode: run.mode ?? 'goal',
+    scanfix_categories: repoRow?.scanfix_categories ?? null,
     repo: repoRow?.full_name ?? null,
     branch: run.branch_name,
     base_branch: run.base_branch,

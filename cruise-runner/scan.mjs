@@ -15,6 +15,16 @@ const TOKEN = process.env.ENRY_TOKEN
 const REPO = process.env.ENRY_REPO || ''
 const MAX_FINDINGS = 500
 
+// Which scan-and-fix categories to detect (those the repo hasn't turned off),
+// passed as a JSON array dispatch input. Absent/unparseable -> null, which makes
+// collectFindings fall back to the legacy tsc+eslint-only scan.
+function enabledCategories() {
+  try {
+    const arr = JSON.parse(process.env.ENRY_CATEGORIES || 'null')
+    return Array.isArray(arr) && arr.length > 0 ? arr : null
+  } catch { return null }
+}
+
 if (!SCAN_ID || !CALLBACK || !TOKEN) {
   console.error('[enry-cruise] missing ENRY_SCAN_ID / ENRY_CALLBACK / ENRY_TOKEN')
   process.exit(1)
@@ -41,7 +51,7 @@ async function post(path, body) {
 async function main() {
   await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'start', layer_status: { static: 'running' } })
   try {
-    const findings = (await collectFindings(REPO)).slice(0, MAX_FINDINGS)
+    const findings = (await collectFindings(REPO, enabledCategories())).slice(0, MAX_FINDINGS)
     await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'findings', findings })
     await post('/api/cruise/ingest', {
       scan_id: SCAN_ID,

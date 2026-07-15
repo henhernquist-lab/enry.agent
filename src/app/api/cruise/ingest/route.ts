@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { supabase } from '@/lib/supabase'
-import type { CruiseSeverity, CruiseLayer, IncomingFinding } from '@/lib/cruise/types'
+import { SCANFIX_CATEGORIES, type CruiseSeverity, type CruiseLayer, type IncomingFinding } from '@/lib/cruise/types'
 
 export const maxDuration = 30
 
@@ -74,6 +74,7 @@ export async function POST(req: Request) {
         title: clampStr(f.title, 300) || '(untitled finding)',
         detail: clampStr(f.detail, 8000),
         suggested_fix: f.suggested_fix ? clampStr(f.suggested_fix, 20000) : null,
+        category: f.category && SCANFIX_CATEGORIES.includes(f.category) ? f.category : null,
       }))
 
     if (rows.length > 0) {

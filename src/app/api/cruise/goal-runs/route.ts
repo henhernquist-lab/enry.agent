@@ -3,11 +3,28 @@ import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { getDefaultBranch, dispatchGoalRun } from '@/lib/cruise/github-actions'
-import { SEVERITY_RANK, type CruiseRepo, type CruiseGoalRun, type CruiseFinding } from '@/lib/cruise/types'
+import {
+  SEVERITY_RANK, SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG,
+  type CruiseRepo, type CruiseGoalRun, type CruiseFinding, type CruiseGoalMode,
+  type ScanfixConfig, type CruiseScanfixCategory,
+} from '@/lib/cruise/types'
 
 export const maxDuration = 30
 
 const MAX_GOAL_LEN = 2000
+// Deterministic broad fixes (a prettier reformat, an eslint --fix) legitimately
+// touch many files, so a scanfix run gets a much higher file cap than an
+// LLM-driven goal/fix run. Still bounded, so a pathological run can't rewrite the
+// whole repo unchecked.
+const SCANFIX_CAP_FILES = 200
+
+// The enabled auto-fix categories for a scanfix run, in canonical order. The
+// runner filters identically (config[c]==='auto_fix'), so step seq aligns. The
+// buttons category can only be 'auto_fix' here if it was confirmed at config
+// time (the config route enforces that), so no extra guard is needed.
+function scanfixCats(config: ScanfixConfig): CruiseScanfixCategory[] {
+  return SCANFIX_CATEGORIES.filter((c) => config[c] === 'auto_fix')
+}
 
 // Turns a scan's findings into a fix-run plan: one step per file (fixing all of
 // that file's findings in a single editor call is more coherent and respects the
@@ -56,6 +73,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const repoName = String(body.repo ?? '').trim()
   const scanId = typeof body.scan_id === 'string' ? body.scan_id : null
+  const wantScanfix = body.scanfix === true
   if (!repoName) return Response.json({ error: 'Missing repo' }, { status: 400 })
 
   const { data: repoRow, error: repoErr } = await supabase
@@ -68,14 +86,23 @@ export async function POST(req: Request) {
   const repo = repoRow as CruiseRepo | null
   if (!repo || !repo.enabled) return Response.json({ error: 'Cruise is not enabled for this repo.' }, { status: 403 })
 
-  // Two modes share this route. Fix mode (scan_id present): the plan is derived
-  // from the scan's findings — the primary path. Goal mode (a natural-language
-  // goal): the runner plans it itself — the advanced path.
-  const mode: 'goal' | 'fix' = scanId ? 'fix' : 'goal'
+  // Three modes share this route. Scanfix (scanfix:true): the primary path —
+  // one step per enabled auto-fix category, fixed deterministically. Fix
+  // (scan_id, no scanfix): LLM fixes over a scan's findings. Goal (a
+  // natural-language goal): the runner plans it itself — the advanced path.
+  const mode: CruiseGoalMode = wantScanfix ? 'scanfix' : scanId ? 'fix' : 'goal'
   let goal: string
   let seedPlan: string[] | null = null
+  let capFiles = repo.goal_cap_files
 
-  if (mode === 'fix') {
+  if (mode === 'scanfix') {
+    const config: ScanfixConfig = { ...DEFAULT_SCANFIX_CONFIG, ...(repo.scanfix_categories ?? {}) }
+    const cats = scanfixCats(config)
+    if (cats.length === 0) return Response.json({ error: 'No auto-fix categories are enabled for this repo.' }, { status: 400 })
+    seedPlan = cats.map((c) => `${SCANFIX_LABEL[c]} — deterministic auto-fix`)
+    goal = `Scan-and-fix: ${cats.length} categor${cats.length === 1 ? 'y' : 'ies'}`
+    capFiles = SCANFIX_CAP_FILES
+  } else if (mode === 'fix') {
     // Verify the scan belongs to this user's allowlisted repo.
     const { data: scan } = await supabase
       .from('cruise_scans')
@@ -155,10 +182,10 @@ export async function POST(req: Request) {
       github_token: githubToken,
       branch_name: branchName,
       base_branch: defaultBranch,
-      // Fix mode's plan is known up front (from findings); goal mode's is null
-      // and the runner generates it. When plan is set the runner skips planning.
+      // Scanfix/fix plans are known up front; goal mode's is null and the runner
+      // generates it. When plan is set the runner skips planning.
       plan: seedPlan,
-      cap_files: repo.goal_cap_files,
+      cap_files: capFiles,
       cap_steps: repo.goal_cap_steps,
     })
   if (insertErr) {
@@ -181,7 +208,7 @@ export async function POST(req: Request) {
     callback: callbackBase,
     token,
     branch: branchName,
-    cap_files: String(repo.goal_cap_files),
+    cap_files: String(capFiles),
     cap_steps: String(repo.goal_cap_steps),
   })
   if (!ok) {

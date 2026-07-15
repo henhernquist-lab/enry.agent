@@ -29,6 +29,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return Response.json({ error: 'Bad request: malformed file entry' }, { status: 400 })
     }
   }
+  // A deleted entry still occupies one "file changed" slot (it's a path this run
+  // touched) but carries no content — the cap accounting below treats it the same.
 
   const { data: run } = await supabase
     .from('cruise_goal_runs')
@@ -60,10 +62,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { error: branchErr } = await createOrSwitchBranch(run.github_token, owner, name, run.branch_name, run.base_branch)
   if (branchErr) return Response.json({ error: `Could not prepare branch: ${branchErr}` }, { status: 502 })
 
-  const changes: CommitFileChange[] = files.map((f: { path: string; content: string; is_new?: boolean }) => ({
+  const changes: CommitFileChange[] = files.map((f: { path: string; content: string; is_new?: boolean; deleted?: boolean }) => ({
     path: f.path,
     content: f.content,
     isNew: f.is_new ?? !existingPaths.has(f.path),
+    deleted: f.deleted === true,
   }))
   const { commitSha, error: commitErr } = await commitFiles(run.github_token, owner, name, run.branch_name, message, changes)
   if (!commitSha) return Response.json({ error: `Commit failed: ${commitErr}` }, { status: 502 })

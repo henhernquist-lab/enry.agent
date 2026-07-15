@@ -6,13 +6,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radar, Play, Loader2, ChevronRight, ShieldCheck, ShieldOff, AlertTriangle,
   CheckCircle2, XCircle, Ban, RotateCcw, Clock, FileCode, Target, Check,
-  MessageCircleQuestion, GitPullRequest, Send, Wrench,
+  MessageCircleQuestion, GitPullRequest, Send, Wrench, Sparkles, Lock,
 } from 'lucide-react'
 import type {
   CruiseRepo, CruiseScan, CruiseFinding, CruiseSeverity,
-  CruiseGoalRun, CruiseGoalStep,
+  CruiseGoalRun, CruiseGoalStep, CruiseScanfixCategory, CruiseScanfixMode, ScanfixConfig,
 } from '@/lib/cruise/types'
-import { isGoalRunActive } from '@/lib/cruise/types'
+import { isGoalRunActive, SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG } from '@/lib/cruise/types'
 
 // Enry Cruise — the autonomous-scan main pane. Phase 1: per-repo allowlist,
 // on-demand static scans, report-only, ranked findings with dismiss/not-a-bug.
@@ -47,8 +47,14 @@ export function CruisePanel({ repo }: { repo: string }) {
   const [goalBusy, setGoalBusy] = useState(false)
   const [goalError, setGoalError] = useState<string | null>(null)
   const [enableNote, setEnableNote] = useState<{ ok: boolean; text: string } | null>(null)
-  const [selectedFindings, setSelectedFindings] = useState<Set<string>>(new Set())
   const [showCustomGoal, setShowCustomGoal] = useState(false)
+  const [savingCat, setSavingCat] = useState(false)
+  const [confirmButtons, setConfirmButtons] = useState(false)
+  // A scan whose completion should auto-chain a scanfix run (set by scanNow),
+  // and the scans already chained (so it fires at most once each).
+  const pendingChainRef = useRef<string | null>(null)
+  const chainedRef = useRef<Set<string>>(new Set())
+  const findingsScanIdRef = useRef<string | null>(null)
 
   const loadConfig = useCallback(async () => {
     if (!repo) return
@@ -71,6 +77,7 @@ export function CruisePanel({ repo }: { repo: string }) {
     const res = await fetch(`/api/cruise/findings?scan=${scanId}`)
     const data = await res.json()
     setFindings((data.findings ?? []) as CruiseFinding[])
+    findingsScanIdRef.current = scanId
   }, [])
 
   const loadGoalRuns = useCallback(async () => {
@@ -160,8 +167,44 @@ export function CruisePanel({ repo }: { repo: string }) {
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? 'Scan failed to start'); return }
       setSelectedScan(data.scan_id)
+      // Auto-chain: when this scan completes, if any auto-fix category produced
+      // findings, dispatch a scanfix run (one PR). See the effect below.
+      pendingChainRef.current = data.scan_id
       await loadScans()
     } finally { setBusy(false) }
+  }
+
+  const cats: ScanfixConfig = { ...DEFAULT_SCANFIX_CONFIG, ...(config?.scanfix_categories ?? {}) }
+
+  // Persist a category's mode (optimistic). Category 7 -> auto_fix carries the
+  // one-time confirmation flag.
+  const saveCategory = async (category: CruiseScanfixCategory, mode: CruiseScanfixMode, confirmBtns?: boolean) => {
+    const prev = config
+    setConfig((c) => (c ? { ...c, scanfix_categories: { ...cats, [category]: mode }, buttons_autofix_confirmed: confirmBtns ?? c.buttons_autofix_confirmed } : c))
+    setSavingCat(true); setError(null)
+    try {
+      const res = await fetch('/api/cruise/repos/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo, categories: { [category]: mode }, ...(confirmBtns !== undefined ? { buttons_autofix_confirmed: confirmBtns } : {}) }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setConfig(prev); setError(data.error ?? 'Could not save category config'); return }
+    } catch { setConfig(prev) } finally { setSavingCat(false) }
+  }
+
+  // Dispatch a deterministic scan-and-fix run over the enabled auto-fix
+  // categories. Bundles every category's fixes into one PR.
+  const runScanfix = async (fromScanId: string | null) => {
+    setGoalBusy(true); setGoalError(null)
+    try {
+      const res = await fetch('/api/cruise/goal-runs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo, scanfix: true, ...(fromScanId ? { scan_id: fromScanId } : {}) }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setGoalError(data.error ?? 'Auto-fix failed to start'); return }
+      await loadGoalRuns()
+    } finally { setGoalBusy(false) }
   }
 
   const runGoal = async () => {
@@ -179,21 +222,24 @@ export function CruisePanel({ repo }: { repo: string }) {
     } finally { setGoalBusy(false) }
   }
 
-  // Fix mode — dispatch an autonomous fix run over scan findings. findingIds
-  // null = fix all open findings of the scan; a list = just that subset.
-  const fixFindings = async (scanId: string, findingIds: string[] | null) => {
-    setGoalBusy(true); setGoalError(null)
-    try {
-      const res = await fetch('/api/cruise/goal-runs', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repo, scan_id: scanId, ...(findingIds ? { finding_ids: findingIds } : {}) }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setGoalError(data.error ?? 'Fix run failed to start'); return }
-      setSelectedFindings(new Set())
-      await loadGoalRuns()
-    } finally { setGoalBusy(false) }
-  }
+  // Auto-chain the scanfix run once the scan we launched reaches a terminal
+  // state and its findings (for this scan) are loaded. Fires at most once per
+  // scan, and only if an auto-fix category actually has open findings — so a
+  // clean scan never opens an empty PR.
+  useEffect(() => {
+    const sid = selectedScan
+    if (!sid || hasActiveGoal || pendingChainRef.current !== sid) return
+    const scan = scans.find((s) => s.id === sid)
+    if (!scan || isActive(scan.status)) return
+    if (findingsScanIdRef.current !== sid || chainedRef.current.has(sid)) return
+    chainedRef.current.add(sid)
+    pendingChainRef.current = null
+    const autoCats = SCANFIX_CATEGORIES.filter((c) => cats[c] === 'auto_fix')
+    const hasFixable = findings.some((f) => f.status === 'open' && f.category && autoCats.includes(f.category))
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (hasFixable) runScanfix(sid)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scans, findings, selectedScan, hasActiveGoal])
 
   const submitAnswer = async (goalRunId: string, answer: string) => {
     if (!answer.trim()) return
@@ -238,9 +284,13 @@ export function CruisePanel({ repo }: { repo: string }) {
             </div>
             <div className="min-w-0">
               <h1 className="font-mono text-[13px] font-semibold text-foreground">Enry Cruise</h1>
-              <p className="font-mono text-[10px] text-muted-foreground">autonomous scan · <span className="text-foreground">{repo}</span></p>
+              <p className="font-mono text-[10px] text-muted-foreground">scan &amp; fix · <span className="text-foreground">{repo}</span></p>
             </div>
-            <span className="ml-auto rounded border border-border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">report-only</span>
+            {enabled && (
+              <span className="ml-auto rounded border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+                {SCANFIX_CATEGORIES.filter((c) => cats[c] === 'auto_fix').length} auto-fix
+              </span>
+            )}
           </div>
 
           {loading ? (
@@ -262,6 +312,15 @@ export function CruisePanel({ repo }: { repo: string }) {
                   <ShieldOff className="h-3 w-3" /> disable
                 </button>
               </div>
+
+              <CategoriesPanel
+                cats={cats}
+                buttonsConfirmed={!!config?.buttons_autofix_confirmed}
+                saving={savingCat}
+                onSet={saveCategory}
+                confirmOpen={confirmButtons}
+                onConfirmOpen={setConfirmButtons}
+              />
 
               {error && (
                 <div className="mb-4 flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
@@ -310,15 +369,11 @@ export function CruisePanel({ repo }: { repo: string }) {
                 </div>
               )}
 
-              {/* Findings — fix-first: select + auto-fix */}
+              {/* Findings — grouped by category, report + dismiss */}
               <FindingsList
                 findings={findings}
                 scan={scans.find((s) => s.id === selectedScan)}
                 onAct={act}
-                selected={selectedFindings}
-                onToggle={(id) => setSelectedFindings((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })}
-                onFix={fixFindings}
-                fixBusy={goalBusy || hasActiveGoal}
               />
 
               {/* Advanced: open-ended custom goal (secondary path) */}
@@ -393,6 +448,78 @@ function EnableCard({ busy, needsReauth, error, onEnable, onReauth, repo }: {
   )
 }
 
+const CAT_DESC: Record<CruiseScanfixCategory, string> = {
+  dead_code: 'unused imports/vars, orphaned files',
+  formatting: 'prettier --write (repo config)',
+  lint_autofix: 'eslint --fix, safe rules only',
+  unused_deps: 'remove never-imported packages',
+  broken_imports: 'repath imports to moved files',
+  debug_statements: 'console.log / debugger / stale TODOs',
+  non_functional_buttons: 'buttons with no onClick handler',
+}
+
+// Per-repo category config. 3-way per category: Off / Report / Fix. Fix on the
+// buttons category is locked behind a one-time confirm (it only inserts a TODO,
+// never guesses a handler).
+function CategoriesPanel({ cats, buttonsConfirmed, saving, onSet, confirmOpen, onConfirmOpen }: {
+  cats: ScanfixConfig; buttonsConfirmed: boolean; saving: boolean
+  onSet: (c: CruiseScanfixCategory, m: CruiseScanfixMode, confirmBtns?: boolean) => void
+  confirmOpen: boolean; onConfirmOpen: (v: boolean) => void
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const MODES: { key: CruiseScanfixMode; label: string }[] = [
+    { key: 'off', label: 'Off' }, { key: 'report_only', label: 'Report' }, { key: 'auto_fix', label: 'Fix' },
+  ]
+  return (
+    <div className="mb-5 rounded-md border border-border bg-surface-secondary/50">
+      <button onClick={() => setExpanded((v) => !v)} className="flex w-full items-center gap-2 px-3 py-2">
+        <ChevronRight className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Categories</span>
+        {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+        <span className="ml-auto font-mono text-[9px] text-muted-foreground/70">Fix opens one PR per scan</span>
+      </button>
+      {expanded && (
+        <div className="divide-y divide-border/60 border-t border-border/60">
+          {SCANFIX_CATEGORIES.map((c) => {
+            const mode = cats[c]
+            const isButtons = c === 'non_functional_buttons'
+            return (
+              <div key={c} className="flex items-center gap-3 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="font-mono text-[11px] text-foreground">{SCANFIX_LABEL[c]}</p>
+                  <p className="truncate font-mono text-[9px] text-muted-foreground">{CAT_DESC[c]}</p>
+                </div>
+                <div className="flex flex-shrink-0 overflow-hidden rounded border border-border">
+                  {MODES.map((m) => {
+                    const active = mode === m.key
+                    const lockedFix = isButtons && m.key === 'auto_fix' && !buttonsConfirmed
+                    return (
+                      <button key={m.key} disabled={saving}
+                        onClick={() => { if (lockedFix) { onConfirmOpen(true); return } onSet(c, m.key) }}
+                        className={`flex items-center gap-1 px-2 py-1 font-mono text-[9px] uppercase transition-colors disabled:opacity-50 ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                        {lockedFix && <Lock className="h-2.5 w-2.5" />}{m.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+          {confirmOpen && (
+            <div className="flex items-center gap-2 bg-warning/5 px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-warning" />
+              <p className="min-w-0 flex-1 font-mono text-[10px] text-warning">Button auto-fix only inserts a TODO comment above the button — it never guesses a handler. Enable it for this repo?</p>
+              <button onClick={() => { onSet('non_functional_buttons', 'auto_fix', true); onConfirmOpen(false) }}
+                className="flex-shrink-0 rounded border border-warning/40 bg-warning/10 px-2 py-1 font-mono text-[9px] uppercase text-warning">Enable</button>
+              <button onClick={() => onConfirmOpen(false)} className="flex-shrink-0 font-mono text-[9px] uppercase text-muted-foreground">Cancel</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const GOAL_STATUS_LABEL: Record<CruiseGoalRun['status'], string> = {
   queued: 'queued', planning: 'planning', running: 'working',
   awaiting_clarification: 'needs input', completed: 'completed', capped: 'capped',
@@ -420,6 +547,7 @@ function GoalRunCard({ run, steps, onExpand, onAnswer, busy }: {
       <button onClick={() => { const next = !open; setOpen(next); if (next) onExpand() }} className="flex w-full items-center gap-2 px-3 py-2 text-left">
         <ChevronRight className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
         {icon}
+        {run.mode === 'scanfix' && <Sparkles className="h-3 w-3 flex-shrink-0 text-primary" />}
         {run.mode === 'fix' && <Wrench className="h-3 w-3 flex-shrink-0 text-muted-foreground" />}
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">{run.goal}</span>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{GOAL_STATUS_LABEL[run.status]}</span>
@@ -516,11 +644,9 @@ function ScanRow({ scan, selected, onSelect }: { scan: CruiseScan; selected: boo
   )
 }
 
-function FindingsList({ findings, scan, onAct, selected, onToggle, onFix, fixBusy }: {
+function FindingsList({ findings, scan, onAct }: {
   findings: CruiseFinding[]; scan?: CruiseScan
   onAct: (id: string, a: 'dismiss' | 'not_a_bug' | 'reopen') => void
-  selected: Set<string>; onToggle: (id: string) => void
-  onFix: (scanId: string, findingIds: string[] | null) => void; fixBusy: boolean
 }) {
   if (!scan) return null
   if (isActive(scan.status) && findings.length === 0) {
@@ -536,53 +662,54 @@ function FindingsList({ findings, scan, onAct, selected, onToggle, onFix, fixBus
   }
   const open = findings.filter((f) => f.status === 'open')
   const resolved = findings.filter((f) => f.status !== 'open')
-  // Only file-scoped findings can be auto-fixed by an edit.
-  const fixableSelected = [...selected].filter((id) => open.some((f) => f.id === id && f.file_path))
-  const scanDone = !isActive(scan.status)
+
+  // Group open findings by category; uncategorized (tsc/other lint) last.
+  const GROUP_ORDER: (CruiseScanfixCategory | 'other')[] = [...SCANFIX_CATEGORIES, 'other']
+  const groups = new Map<CruiseScanfixCategory | 'other', CruiseFinding[]>()
+  for (const f of open) {
+    const key = (f.category ?? 'other') as CruiseScanfixCategory | 'other'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(f)
+  }
+
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2">
-        <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          Findings · <span className="text-foreground">{open.length} open</span>{resolved.length > 0 && ` · ${resolved.length} resolved`}
-        </p>
-        {scanDone && open.length > 0 && (
-          <div className="ml-auto flex items-center gap-1.5">
-            {fixableSelected.length > 0 && (
-              <button onClick={() => onFix(scan.id, fixableSelected)} disabled={fixBusy}
-                className="flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
-                {fixBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wrench className="h-3 w-3" />} Fix selected ({fixableSelected.length})
-              </button>
-            )}
-            <button onClick={() => onFix(scan.id, null)} disabled={fixBusy}
-              className="flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
-              {fixBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wrench className="h-3 w-3" />} Auto-fix all open
-            </button>
+      <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Findings · <span className="text-foreground">{open.length} open</span>{resolved.length > 0 && ` · ${resolved.length} resolved`}
+      </p>
+      <div className="space-y-4">
+        {GROUP_ORDER.filter((k) => groups.has(k)).map((k) => (
+          <div key={k}>
+            <p className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+              <span className="text-foreground/80">{k === 'other' ? 'Type / other' : SCANFIX_LABEL[k]}</span>
+              <span className="text-muted-foreground/60">· {groups.get(k)!.length}</span>
+            </p>
+            <div className="space-y-1.5">
+              {groups.get(k)!.map((f) => <FindingCard key={f.id} f={f} onAct={onAct} />)}
+            </div>
+          </div>
+        ))}
+        {resolved.length > 0 && (
+          <div>
+            <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">Resolved · {resolved.length}</p>
+            <div className="space-y-1.5">
+              {resolved.map((f) => <FindingCard key={f.id} f={f} onAct={onAct} />)}
+            </div>
           </div>
         )}
-      </div>
-      <div className="space-y-1.5">
-        {[...open, ...resolved].map((f) => (
-          <FindingCard key={f.id} f={f} onAct={onAct} selected={selected.has(f.id)} onToggle={onToggle} />
-        ))}
       </div>
     </div>
   )
 }
 
-function FindingCard({ f, onAct, selected, onToggle }: {
+function FindingCard({ f, onAct }: {
   f: CruiseFinding; onAct: (id: string, a: 'dismiss' | 'not_a_bug' | 'reopen') => void
-  selected: boolean; onToggle: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const resolved = f.status !== 'open'
-  const selectable = !resolved && !!f.file_path
   return (
-    <div className={`overflow-hidden rounded border ${resolved ? 'border-border opacity-60' : selected ? 'border-primary/40' : 'border-border'} bg-surface-secondary`}>
+    <div className={`overflow-hidden rounded border ${resolved ? 'border-border opacity-60' : 'border-border'} bg-surface-secondary`}>
       <div className="flex w-full items-center gap-2 px-3 py-2">
-        {selectable ? (
-          <input type="checkbox" checked={selected} onChange={() => onToggle(f.id)}
-            className="h-3 w-3 flex-shrink-0 accent-primary" title="Select to auto-fix" />
-        ) : <span className="w-3 flex-shrink-0" />}
         <button onClick={() => setOpen((o) => !o)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <ChevronRight className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
         <span className={`rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase ${SEV_STYLE[f.severity]}`}>{f.severity}</span>
