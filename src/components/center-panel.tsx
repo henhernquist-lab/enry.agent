@@ -193,6 +193,10 @@ export function CenterPanel({
       onActivity({ type: 'assistant-complete', content: '', at: Date.now() })
     },
     onError: (err) => {
+      // Previously unlogged — a raw network/timeout failure (the function
+      // killed by maxDuration before any response) left zero trace anywhere,
+      // same invisible-failure gap Drive's terminal-exec had.
+      console.error('[chat] streamText error:', err)
       // A request that errors (a timeout, a degraded upstream model) never
       // reaches onFinish, so without this the user's own message — already
       // visible in the UI — was never saved anywhere. Save whatever exists

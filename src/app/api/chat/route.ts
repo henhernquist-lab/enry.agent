@@ -357,6 +357,12 @@ export async function POST(req: Request) {
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
         providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
       } : {}),
+      // No explicit timeout, and the AI SDK defaults maxRetries to 2 when
+      // unset — a slow/degraded model plus an automatic retry can silently
+      // double wall-clock past this route's maxDuration (60s) before any
+      // error surfaces, same root cause as Drive's terminal-exec timeout bug.
+      // maxRetries: 0 fails once, cleanly, instead of doubling in the dark.
+      maxRetries: 0,
       onError: ({ error }) => { console.error('streamText multi-skill error:', error) },
       onFinish: async ({ text }) => {
         if (invocationId) {
@@ -619,6 +625,13 @@ ${userProfile ? `\n${userProfile}` : ''}`,
       providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
     } : {}),
     tools: allTools,
+    // Same reasoning as the multi-skill call above: unset here defaults to
+    // maxRetries 2, and this path additionally runs up to 7 tool-calling
+    // steps (stopWhen) in one invocation — a broad request that triggers
+    // several recall_memory/web_search/GitHub calls can legitimately run
+    // 40-50s+ even on a healthy model (confirmed empirically), leaving very
+    // little margin before a retry-doubled attempt blows past maxDuration.
+    maxRetries: 0,
     onError: ({ error }) => {
       console.error('streamText error:', error)
     },

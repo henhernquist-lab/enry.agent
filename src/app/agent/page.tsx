@@ -408,8 +408,13 @@ export default function AgentPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [repo, sessionId])
 
-  const exec = useCallback(
-    async (command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; skillSlug?: string; skillSlugs?: string[] }) => {
+  // A plain function declaration (not useCallback) \u2014 the auto-chain hop below
+  // calls exec recursively, which would be a TDZ hazard against a `const`
+  // bound via useCallback. Recreated every render like the rest of this
+  // file's handlers that reference it; harmless, nothing depends on exec's
+  // identity being stable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  async function exec(command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; skillSlug?: string; skillSlugs?: string[]; _chainDepth?: number }) {
       if (!repo) {
         setLines((l) => [...l, { kind: 'system', text: 'select a repository first' }])
         return
@@ -439,10 +444,33 @@ export default function AgentPage() {
           body: JSON.stringify(body),
           signal: controller.signal,
         })
+        if (!res.ok) {
+          const detail = await res.text().catch(() => '')
+          let parsed: { error?: string } | null = null
+          try { parsed = JSON.parse(detail) } catch { /* not JSON */ }
+          setLines((l) => [...l, { kind: 'error', text: parsed?.error || `Request failed (HTTP ${res.status})` }])
+          return
+        }
         const data = await res.json()
         if (data.session_id) setSessionId(data.session_id)
         setCurrentBranch(data.current_branch ?? null)
         setHasPendingDiff(!!data.has_pending_diff)
+
+        // Auto-mode NL edits: the server classifies the target file and stops
+        // there (see /api/terminal/exec's dispatch()) so classification and
+        // full-file generation get separate maxDuration budgets instead of
+        // stacking two blocking LLM calls in one invocation. Chain the
+        // follow-up request invisibly \u2014 same pattern as terminal-chat.tsx.
+        if (data.action === 'target_resolved' && (opts?._chainDepth ?? 0) < 1) {
+          await exec(command, {
+            proceed: true,
+            targetFile: data.target_file,
+            isNewFile: data.is_new_file,
+            instruction: opts?.instruction ?? command,
+            _chainDepth: (opts?._chainDepth ?? 0) + 1,
+          })
+          return
+        }
 
         const text = (data.output ?? data.error ?? '').toString()
         const action = data.action
@@ -481,15 +509,14 @@ export default function AgentPage() {
         if ((e as Error).name === 'AbortError') {
           setLines((l) => [...l, { kind: 'system', text: 'Cancelled' }])
         } else {
-          setLines((l) => [...l, { kind: 'error', text: 'Network error \u2014 retry' }])
+          console.error('[agent] exec request failed:', e)
+          setLines((l) => [...l, { kind: 'error', text: 'Request failed or timed out \u2014 retry' }])
         }
       } finally {
         setRunning(false)
         abortRef.current = null
       }
-    },
-    [repo, sessionId, model, effort, mode, focusMode, reasoningDepth],
-  )
+  }
 
   const handleSend = useCallback(() => {
     const text = input.trim()
