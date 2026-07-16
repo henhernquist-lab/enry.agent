@@ -10,6 +10,7 @@ import {
   Clock, Timer, RefreshCw,
 } from 'lucide-react'
 import type { PromptRevisionRow, LabStats, EvolutionCandidate, OvernightIdeaRow, OvernightRunRow } from '@/lib/lab/types'
+import { LiveWorkspace } from '@/components/live-workspace'
 
 const SKILL_SLUGS = [
   'cartographer', 'ghost-hunter', 'bisector', 'build-vs-buy-vs-skip',
@@ -57,6 +58,8 @@ export default function LabPage() {
   const [overnightLoading, setOvernightLoading] = useState(true)
   const [overnightDispatchingId, setOvernightDispatchingId] = useState<string | null>(null)
   const [overnightError, setOvernightError] = useState<string | null>(null)
+  // Track the active run ID for live workspace polling
+  const [activeOvernightRunId, setActiveOvernightRunId] = useState<string | null>(null)
 
   const loadOvernightData = () => {
     fetch('/api/lab/overnight/ideas')
@@ -145,6 +148,8 @@ export default function LabPage() {
         setOvernightError(data.error ?? 'Dispatch failed')
         return
       }
+      // Track the run ID so the LiveWorkspace can poll for steps
+      if (data.run?.id) setActiveOvernightRunId(data.run.id)
       loadOvernightData()
     } catch (e) {
       setOvernightError(e instanceof Error ? e.message : 'Network error')
@@ -359,6 +364,20 @@ export default function LabPage() {
               <span className="font-mono text-[11px] text-warning">{overnightError}</span>
             </div>
           )}
+
+          {/* Live Workspace — shown when an overnight run is dispatching or active */}
+          <div className="mt-3">
+            <LiveWorkspace
+              pollUrl={activeOvernightRunId ? `/api/lab/overnight/live-steps?run_id=${activeOvernightRunId}` : null}
+              controlUrl={activeOvernightRunId ? '/api/lab/overnight/control' : null}
+              controlId={activeOvernightRunId}
+              hidden={!activeOvernightRunId}
+              onFinished={(status) => {
+                console.log(`[lab] overnight run finished: ${status}`)
+                loadOvernightData()
+              }}
+            />
+          </div>
 
           {overnightLoading ? (
             <p className="mt-3 text-[11px] text-muted-foreground">Loading ideas…</p>

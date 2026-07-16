@@ -410,7 +410,7 @@ export async function getOvernightRuns(
 
 export async function updateOvernightRun(
   runId: string,
-  data: Partial<Pick<OvernightRunRow, 'status' | 'gh_run_id' | 'heartbeat_at' | 'result_summary' | 'result_detail' | 'error' | 'run_time_ms' | 'finished_at'>>,
+  data: Partial<Pick<OvernightRunRow, 'status' | 'gh_run_id' | 'heartbeat_at' | 'live_steps' | 'control_signal' | 'control_instructions' | 'result_summary' | 'result_detail' | 'error' | 'run_time_ms' | 'finished_at'>>,
 ): Promise<void> {
   const { error } = await supabase
     .from('overnight_runs')

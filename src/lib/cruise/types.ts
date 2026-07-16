@@ -95,6 +95,8 @@ export interface CruiseRepo extends AutoRunConfig {
   updated_at: string
 }
 
+export type CruiseControlSignal = 'pause' | 'cancel' | null
+
 export interface CruiseScan {
   id: string
   repo_id: string
@@ -106,6 +108,8 @@ export interface CruiseScan {
   run_id: number | null
   layer_status: Record<string, string>
   error: string | null
+  control_signal: CruiseControlSignal
+  control_instructions: string | null
   dispatched_at: string
   heartbeat_at: string | null
   finished_at: string | null
@@ -187,6 +191,8 @@ export interface CruiseGoalRun {
   clarify_answer: string | null
   remaining_summary: string | null
   error: string | null
+  control_signal: CruiseControlSignal
+  control_instructions: string | null
   dispatched_at: string
   heartbeat_at: string | null
   finished_at: string | null

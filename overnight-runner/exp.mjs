@@ -70,6 +70,17 @@ function heartbeat() {
   })
 }
 
+function stepUpdate(action, { file = null, command = null, output_preview = null } = {}) {
+  return api('POST', '/api/lab/overnight/ingest', {
+    run_id: RUN_ID,
+    phase: 'step_update',
+    action,
+    file,
+    command,
+    output_preview,
+  })
+}
+
 function postResult(data) {
   return api('POST', '/api/lab/overnight/ingest', {
     run_id: RUN_ID,
@@ -79,6 +90,36 @@ function postResult(data) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Check for pause/cancel signals from the UI. Called between steps.
+async function checkControlSignal() {
+  const { json } = await heartbeat()
+  const signal = json?.control_signal
+  if (signal === 'cancel') {
+    console.log('[enry-overnight] cancel signal received, exiting cleanly')
+    await postResult({ error: 'Cancelled by user', run_time_ms: Date.now() - startTime })
+    process.exit(0)
+  }
+  if (signal === 'pause') {
+    console.log('[enry-overnight] pause signal received, waiting...')
+    await stepUpdate('control: paused by user', { output_preview: json?.control_instructions || 'Waiting for resume signal' })
+    while (true) {
+      await sleep(10000)
+      const check = await heartbeat()
+      if (check.json?.control_signal === 'cancel') {
+        console.log('[enry-overnight] cancel during pause, exiting')
+        await postResult({ error: 'Cancelled by user', run_time_ms: Date.now() - startTime })
+        process.exit(0)
+      }
+      if (!check.json?.control_signal) {
+        console.log('[enry-overnight] pause cleared, resuming')
+        await stepUpdate('control: resumed')
+        return 'paused'
+      }
+    }
+  }
+  return 'proceed'
+}
 
 // ── Exploration steps ───────────────────────────────────────────────────────
 
@@ -170,35 +211,54 @@ async function main() {
   let error = null
 
   try {
+    // Check for pause/cancel signals before starting
+    await checkControlSignal()
+
     // Step 1: Survey the scratch repo
     await heartbeat()
+    await checkControlSignal()
+    await stepUpdate('survey: scanning repo structure', { action: 'survey' })
     const techStack = detectTechStack()
     const fileTree = repoOverview()
     const manifests = readManifests()
+    await stepUpdate(`survey: found ${techStack} project`, { output_preview: `Tech stack: ${techStack}\n${fileTree.slice(0, 300)}` })
 
     // Step 2: Install dependencies
     await heartbeat()
+    await checkControlSignal()
+    await stepUpdate('install: installing dependencies', { command: 'npm install / pnpm install' })
     const installResult = tryInstall()
     if (!installResult.ok) {
       console.warn('[enry-overnight] dep install had issues, continuing...')
     }
+    await stepUpdate(installResult.ok ? 'install: dependencies installed' : 'install: dependency install had issues', { output_preview: installResult.output.slice(0, 300) })
 
     // Step 3: Try to build/test the scratch repo
     await heartbeat()
+    await checkControlSignal()
+    await stepUpdate('test: running checks', { command: 'lint + typecheck + test + build' })
     const testResults = []
     
     if (existsSync('package.json')) {
+      await stepUpdate('test: running lint', { command: 'npx eslint . --ext .ts,.tsx,.js,.jsx' })
       const lintResult = tryCommand('npx eslint . --ext .ts,.tsx,.js,.jsx 2>&1 || true')
       testResults.push({ name: 'lint', ...lintResult })
+      await stepUpdate(lintResult.ok ? 'test: lint passed' : 'test: lint issues found', { output_preview: lintResult.output.slice(0, 200) })
       
+      await stepUpdate('test: running typecheck', { command: 'npx tsc --noEmit' })
       const tscResult = tryCommand('npx tsc --noEmit 2>&1 || true')
       testResults.push({ name: 'typecheck', ...tscResult })
+      await stepUpdate(tscResult.ok ? 'test: typecheck passed' : 'test: typecheck issues found', { output_preview: tscResult.output.slice(0, 200) })
       
+      await stepUpdate('test: running tests', { command: 'npm test' })
       const testResult = tryCommand('npm test 2>&1 || true')
       testResults.push({ name: 'tests', ...testResult })
+      await stepUpdate(testResult.ok ? 'test: tests passed' : 'test: tests failed', { output_preview: testResult.output.slice(0, 200) })
       
+      await stepUpdate('test: running build', { command: 'npm run build' })
       const buildResult = tryCommand('npm run build 2>&1 || true')
       testResults.push({ name: 'build', ...buildResult })
+      await stepUpdate(buildResult.ok ? 'test: build passed' : 'test: build failed', { output_preview: buildResult.output.slice(0, 200) })
     }
     
     if (existsSync('Cargo.toml')) {
@@ -216,6 +276,7 @@ async function main() {
     }
 
     // Step 4: Determine verdict based on concrete signals
+    await checkControlSignal()
     const passedTests = testResults.filter((t) => t.ok).length
     const totalTests = testResults.length
     const buildWorked = testResults.find((t) => t.name === 'build')?.ok === true

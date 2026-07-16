@@ -37,6 +37,7 @@ import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/a
 
 import { setAgentBusy } from '@/lib/agent-presence'
 import { SkillBanner } from './skill-banner'
+import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
 import { parseReasoningTrace } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS } from '@/lib/skills/registry'
@@ -136,7 +137,22 @@ const TOOL_BADGES = [
   { label: 'Memory', glyph: 'M', available: true },
 ]
 
-const transport = new DefaultChatTransport({ api: '/api/chat' })
+// Module-level compaction state — written by the transport's custom fetch,
+// read by the component's useEffect after each response settles.
+let _pendingCompaction: { compacted: boolean; summary: string | null } | null = null
+
+const transport = new DefaultChatTransport({
+  api: '/api/chat',
+  fetch: async (url, options) => {
+    const response = await fetch(url, options)
+    const compacted = response.headers.get('X-Context-Compacted')
+    if (compacted === 'true') {
+      const summary = response.headers.get('X-Context-Compacted-Summary')
+      _pendingCompaction = { compacted: true, summary: summary ? decodeURIComponent(summary) : null }
+    }
+    return response
+  },
+})
 
 export function CenterPanel({
   agentStatus,
@@ -172,6 +188,11 @@ export function CenterPanel({
   const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false)
   const reasoningDropdownRef = useRef<HTMLDivElement>(null)
 
+  // Context compaction state — set from X-Context-Compacted response header
+  // Populated by the custom fetch in the transport, synced after useChat below
+  const [contextCompacted, setContextCompacted] = useState(false)
+  const [compactionSummary, setCompactionSummary] = useState<string | null>(null)
+
   const REASONING_DEPTHS = [
     { id: 'off' as const, label: 'Think: Off', desc: 'Show only the final answer' },
     { id: 'summary' as const, label: 'Think: Brief', desc: 'Show a condensed reasoning summary' },
@@ -206,6 +227,16 @@ export function CenterPanel({
     },
   })
   useEffect(() => { messagesRef.current = messages }, [messages])
+
+  // Sync compaction state after each response (written by transport's custom fetch)
+  useEffect(() => {
+    if (status === 'ready' && _pendingCompaction) {
+      setContextCompacted(_pendingCompaction.compacted)
+      setCompactionSummary(_pendingCompaction.summary)
+      _pendingCompaction = null
+    }
+  }, [status])
+
   const [input, setInput] = useState('')
   // ─── Skill mode ───────────────────────────────────────────────
   // activeSkill is the current conversation mode (null = normal chat).
@@ -559,6 +590,8 @@ export function CenterPanel({
       {/* Messages Area */}
       <div className="relative flex-1 overflow-y-auto px-8 py-6 scrollbar-hidden">
         <div className="mx-auto max-w-3xl space-y-6">
+          {/* Compaction indicator — shown after server-side compaction */}
+          <CompactionIndicator compacted={contextCompacted} summary={compactionSummary} messageCount={messages.length} />
           {/* Welcome Section - shown when no messages */}
           {messages.length === 0 && (
             <motion.div

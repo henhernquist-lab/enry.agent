@@ -96,6 +96,8 @@ export interface OvernightIdeaRow {
   updated_at: string
 }
 
+export type LabControlSignal = 'pause' | 'cancel' | null
+
 export interface OvernightRunRow {
   id: string
   idea_id: string
@@ -104,6 +106,9 @@ export interface OvernightRunRow {
   scratch_repo_full: string
   gh_run_id: number | null
   dispatch_token_hash: string
+  live_steps: Record<string, unknown>[] | null
+  control_signal: LabControlSignal
+  control_instructions: string | null
   heartbeat_at: string | null
   result_summary: string | null
   result_detail: string | null

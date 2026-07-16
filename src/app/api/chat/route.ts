@@ -9,8 +9,9 @@ import { createBranch, createFile, updateFile, createPR, createRepo } from '@/li
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { supabase } from '@/lib/supabase'
 import { getSkill, getSkills, buildMultiSkillPrompt } from '@/lib/skills/registry'
-import { insertSkillInvocation, updateSkillInvocationOutput } from '@/lib/lab/db'
+import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
+import { compactMessages } from '@/lib/compaction'
 import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
@@ -215,58 +216,28 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
         return { status: 'ok', name, url: result.url, private: isPrivate }
       },
     })
+
+    tools.github_read_enryrules = tool({
+      description: 'Read .enryrules from a repo — project-specific conventions, naming patterns, "always/never" rules. Call before editing any repo file. Returns empty if the repo has no .enryrules file.',
+      inputSchema: z.object({
+        owner: z.string().describe('Repository owner'),
+        repo: z.string().describe('Repository name'),
+      }),
+      execute: async ({ owner, repo }) => {
+        const { content, error } = await getFileContent(githubToken, owner, repo, '.enryrules')
+        if (error && error.includes('404')) return { content: null, exists: false, note: 'No .enryrules file in this repo. Proceed with standard conventions.' }
+        if (error) return { content: null, error }
+        return { content, exists: true }
+      },
+    })
   }
 
   return tools
 }
 
 // ─── Context Compaction ────────────────────────────────────────────────
-// When total conversation text exceeds the threshold, compress older
-// messages into a compact summary so the LLM context window stays
-// manageable. The full original messages remain stored in Supabase.
-const COMPACT_THRESHOLD_CHARS = 16000
-const COMPACT_KEEP_RECENT = 6
-
-function compactMessages(messages: ReturnType<typeof convertToModelMessages> extends Promise<infer T> ? T : never): {
-  messages: typeof messages
-  compacted: boolean
-} {
-  const totalChars = messages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0)
-  if (totalChars <= COMPACT_THRESHOLD_CHARS || messages.length <= 10) {
-    return { messages, compacted: false }
-  }
-
-  const olderMsgs = messages.slice(0, -COMPACT_KEEP_RECENT)
-  const recentMsgs = messages.slice(-COMPACT_KEEP_RECENT)
-
-  // Extract key topics from older user messages
-  const userQs = olderMsgs
-    .filter(m => m.role === 'user')
-    .map(m => typeof m.content === 'string' ? m.content.slice(0, 150) : '')
-    .filter(Boolean)
-
-  // Extract any code/technical references from older assistant messages
-  const assistantRefs = olderMsgs
-    .filter(m => m.role === 'assistant')
-    .map(m => {
-      const c = typeof m.content === 'string' ? m.content : ''
-      const codeMatch = c.match(/`([^`]+)`/g)
-      return codeMatch ? codeMatch.slice(0, 3).join(', ') : ''
-    })
-    .filter(Boolean)
-
-  const summaryParts = [`[Earlier context compacted — ${olderMsgs.length} messages summarized]`]
-  if (userQs.length > 0) summaryParts.push(`Topics: ${userQs.join(' | ')}`)
-  if (assistantRefs.length > 0) summaryParts.push(`Refs: ${assistantRefs.join('; ')}`)
-  const summary = summaryParts.join('\n').slice(0, 600)
-
-  const compactedMessages = [
-    { role: 'system' as const, content: summary },
-    ...recentMsgs,
-  ]
-
-  return { messages: compactedMessages, compacted: true }
-}
+// Delegated to src/lib/compaction.ts — extracts key decisions, files
+// touched, and unresolved questions from older messages.
 
 // ─── Main Route ────────────────────────────────────────────────────────
 
@@ -296,8 +267,9 @@ export async function POST(req: Request) {
 
   const modelMessages = await convertToModelMessages(messages)
 
-  // Apply context compaction
-  const { messages: finalMessages, compacted } = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
+  // Apply context compaction (extracts decisions, files, unresolved Qs)
+  const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
+  const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
 
   const client = createOpenAI({
     baseURL: 'https://integrate.api.nvidia.com/v1',
@@ -324,16 +296,27 @@ export async function POST(req: Request) {
     const userText = finalMessages.findLast((m) => m.role === 'user')?.content ?? ''
     let invocationId: string | null = null
 
-    const anyOverride = activeSkills.some((s) => {
-      const base = getSkill(s.slug)
-      return base && s.systemPrompt !== base.systemPrompt
-    })
+    // Determine prompt version — check for active DB overrides
+    let promptVersion = 'base'
+    if (uid) {
+      try {
+        const overrides = await Promise.all(
+          activeSkills.map((s) => getActivePromptOverride(uid, s.slug)),
+        )
+        const activeOverride = overrides.find((o) => o !== null)
+        if (activeOverride) {
+          promptVersion = `override:${activeOverride.id}`
+        }
+      } catch (err) {
+        console.error('[chat/route] failed to check prompt overrides:', err)
+      }
+    }
 
     if (uid) {
       try {
         invocationId = await insertSkillInvocation(uid, {
           skill_slug: multiSlugs.join('+'),
-          prompt_version: anyOverride ? 'override' : 'base',
+          prompt_version: promptVersion,
           input_topic: String(userText).slice(0, 2000),
           output_text: '',
           model_used: selectedModel,
@@ -353,7 +336,7 @@ export async function POST(req: Request) {
     const skillResult = streamText({
       model: client.chat(selectedModel),
       system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}`,
-      messages: finalMessages,
+      messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
         providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
       } : {}),
@@ -373,7 +356,7 @@ export async function POST(req: Request) {
       },
     })
     return skillResult.toUIMessageStreamResponse({
-      headers: compacted ? { 'X-Context-Compacted': 'true' } : undefined,
+      headers: compacted ? { 'X-Context-Compacted': 'true', 'X-Context-Compacted-Summary': encodeURIComponent(compactionSummary ?? '') } : undefined,
       onError: (error) => {
         console.error('chat route multi-skill error:', error)
         return error instanceof Error ? error.message : 'Something went wrong'
@@ -511,6 +494,16 @@ export async function POST(req: Request) {
         return { status: 'ok', name, url: result.url, private: isPrivate }
       },
     })
+    allTools.github_read_enryrules = tool({
+      description: 'Read .enryrules from a repo — project-specific conventions, naming patterns, "always/never" rules. Call before editing any repo file. Returns empty if the repo has no .enryrules file.',
+      inputSchema: z.object({ owner: z.string().describe('Repository owner'), repo: z.string().describe('Repository name') }),
+      execute: async ({ owner, repo }: { owner: string; repo: string }) => {
+        const { content, error } = await getFileContent(githubToken, owner, repo, '.enryrules')
+        if (error && error.includes('404')) return { content: null, exists: false, note: 'No .enryrules file in this repo. Proceed with standard conventions.' }
+        if (error) return { content: null, error }
+        return { content, exists: true }
+      },
+    })
   }
 
   const result = streamText({
@@ -619,7 +612,7 @@ GITHUB WRITE SAFETY RAILS — these are non-negotiable, enforced server-side:
 Bound strictly to the above. If a task needs a tool not on this list, state that instead of improvising.
 ${focusDirective}
 ${userProfile ? `\n${userProfile}` : ''}`,
-    messages: finalMessages,
+    messages: finalMessages as any,
     stopWhen: stepCountIs(7),
     ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
       providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
@@ -638,7 +631,7 @@ ${userProfile ? `\n${userProfile}` : ''}`,
   })
 
   return result.toUIMessageStreamResponse({
-    headers: compacted ? { 'X-Context-Compacted': 'true' } : undefined,
+    headers: compacted ? { 'X-Context-Compacted': 'true', 'X-Context-Compacted-Summary': encodeURIComponent(compactionSummary ?? '') } : undefined,
     onError: (error) => {
       console.error('chat route error:', error)
       return error instanceof Error ? error.message : 'Something went wrong'

@@ -43,7 +43,38 @@ export async function POST(req: Request) {
     patch.status = 'running'
     if (body.layer_status && typeof body.layer_status === 'object') patch.layer_status = body.layer_status
     await supabase.from('cruise_scans').update(patch).eq('id', scan.id)
-    return Response.json({ ok: true })
+
+    // Return control signal so the runner knows if it should pause/cancel immediately
+    const { data: refreshed } = await supabase.from('cruise_scans').select('control_signal, control_instructions').eq('id', scan.id).maybeSingle()
+    return Response.json({
+      ok: true,
+      control_signal: (refreshed as Record<string, unknown> | null)?.control_signal ?? null,
+      control_instructions: (refreshed as Record<string, unknown> | null)?.control_instructions ?? null,
+    })
+  }
+
+  if (phase === 'step_update') {
+    // Live workspace step — append to a live_steps JSONB array on the scan row.
+    const step = {
+      at: nowIso,
+      action: clampStr(body.action, 50) || 'step',
+      file: body.file ? clampStr(body.file, 500) : null,
+      command: body.command ? clampStr(body.command, 2000) : null,
+      output_preview: body.output_preview ? clampStr(body.output_preview, 8000) : null,
+    }
+    // Fetch current live_steps, append, and update
+    const { data: current } = await supabase
+      .from('cruise_scans')
+      .select('live_steps')
+      .eq('id', scan.id)
+      .maybeSingle()
+    const steps = Array.isArray((current as Record<string, unknown> | null)?.live_steps)
+      ? [...((current as Record<string, unknown>).live_steps as unknown[]), step]
+      : [step]
+    // Keep only last 200 steps to bound row size
+    if (steps.length > 200) steps.splice(0, steps.length - 200)
+    await supabase.from('cruise_scans').update({ live_steps: steps, heartbeat_at: nowIso }).eq('id', scan.id)
+    return Response.json({ ok: true, step_index: steps.length - 1 })
   }
 
   if (phase === 'findings') {
@@ -125,6 +156,12 @@ export async function POST(req: Request) {
   }
 
   // Unknown phase — still bump the heartbeat so the watchdog sees liveness.
+  // Also return current control signal so the runner can check for pause/cancel.
   await supabase.from('cruise_scans').update(patch).eq('id', scan.id)
-  return Response.json({ ok: true })
+  const { data: currentState } = await supabase.from('cruise_scans').select('control_signal, control_instructions').eq('id', scan.id).maybeSingle()
+  return Response.json({
+    ok: true,
+    control_signal: (currentState as Record<string, unknown> | null)?.control_signal ?? null,
+    control_instructions: (currentState as Record<string, unknown> | null)?.control_instructions ?? null,
+  })
 }

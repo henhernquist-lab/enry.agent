@@ -13,6 +13,7 @@ import {
 import { CruisePanel } from '@/components/agent/cruise-panel'
 import { SkillFeedbackBar } from '@/components/skill-feedback-bar'
 import { ThinkingTrace } from '@/components/thinking-trace'
+import { CompactionIndicator } from '@/components/compaction-indicator'
 import { SKILLS as ALL_SKILLS, detectSkillInvocation, detectSkillInvocations, buildMultiSkillPrompt } from '@/lib/skills/registry'
 
 // ─── Types ──────────────────────────────────────────────────
@@ -272,6 +273,11 @@ export default function AgentPage() {
   const [focusMenuOpen, setFocusMenuOpen] = useState(false)
   const focusMenuRef = useRef<HTMLDivElement>(null)
 
+  // Context compaction — collapse older lines when conversation grows large
+  const DRIVE_COMPACT_THRESHOLD = 50
+  const DRIVE_KEEP_RECENT = 15
+  const [compactionExpanded, setCompactionExpanded] = useState(false)
+
   // .enryrules state
   const [hasEnryRules, setHasEnryRules] = useState(false)
   const [enryRulesContent, setEnryRulesContent] = useState('')
@@ -308,6 +314,36 @@ export default function AgentPage() {
   const currentReasoningDepth = REASONING_DEPTHS.find((r) => r.id === reasoningDepth)!
 
   const tree = useMemo(() => buildTree(filePaths), [filePaths])
+
+  // Drive context compaction — collapses older lines when conversation exceeds threshold
+  const driveCompaction = useMemo(() => {
+    if (lines.length <= DRIVE_COMPACT_THRESHOLD) {
+      return { isCompacted: false, summary: null, compactedCount: 0, visibleLines: lines }
+    }
+    const compactedCount = lines.length - DRIVE_KEEP_RECENT
+    const older = lines.slice(0, compactedCount)
+    const files = new Set<string>()
+    const skills = new Set<string>()
+    const errs: string[] = []
+    const topics: string[] = []
+    for (const l of older) {
+      if (l.kind === 'proposal' && 'file' in l) files.add(l.file)
+      if (l.kind === 'applied' && l.text) files.add(l.text.split(' ').slice(0, 3).join(' '))
+      if (l.kind === 'skill' && l.skillName) skills.add(l.skillName)
+      if (l.kind === 'error') errs.push(l.text.slice(0, 100))
+      if (l.kind === 'prompt') {
+        const s = l.text.split('\n')[0].slice(0, 100)
+        if (s) topics.push(s)
+      }
+    }
+    const parts: string[] = []
+    if (files.size > 0) parts.push(`Files: ${[...files].slice(0, 5).join(', ')}`)
+    if (skills.size > 0) parts.push(`Skills: ${[...skills].join(', ')}`)
+    if (errs.length > 0) parts.push(`Errors: ${errs.slice(0, 3).join(' | ')}`)
+    if (topics.length > 0) parts.push(`Topics: ${topics.slice(-5).join(' → ')}`)
+    const summary = parts.join('\n') || `${compactedCount} earlier messages summarized`
+    return { isCompacted: true, summary, compactedCount, visibleLines: lines.slice(compactedCount) }
+  }, [lines])
   const selectedRepo = repos.find((r) => r.full_name === repo)
   const currentModel = MODELS.find((m) => m.id === model)
   const currentEffort = EFFORTS.find((e) => e.id === effort)
@@ -896,7 +932,16 @@ USER REQUEST: ${userText}`
         <div className={`min-w-0 flex-1 flex-col ${cruiseMode === 'cruise' ? 'hidden' : 'flex'}`}>
           <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hidden">
             <div className="mx-auto max-w-[720px] px-8 py-6">
-              {lines.map((line, i) => {
+              {driveCompaction.isCompacted && (
+                <CompactionIndicator
+                  compacted={true}
+                  summary={driveCompaction.summary}
+                  messageCount={driveCompaction.compactedCount}
+                  onToggle={() => setCompactionExpanded((e) => !e)}
+                  externalExpanded={compactionExpanded}
+                />
+              )}
+              {(compactionExpanded ? lines : driveCompaction.visibleLines).map((line, i) => {
                 if (line.kind === 'system') {
                   return <div key={i} className="mb-3"><p className="font-mono text-[11px] leading-relaxed text-muted-foreground/60">{line.text}</p></div>
                 }

@@ -34,13 +34,46 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Invalid token' }, { status: 403 })
   }
 
+  if (phase === 'step_update') {
+    // Live workspace step — append to a live_steps JSONB array on the run row.
+    const step = {
+      at: new Date().toISOString(),
+      action: String(body.action ?? 'step').slice(0, 50),
+      file: body.file ? String(body.file).slice(0, 500) : null,
+      command: body.command ? String(body.command).slice(0, 2000) : null,
+      output_preview: body.output_preview ? String(body.output_preview).slice(0, 8000) : null,
+    }
+    const { data: current } = await supabase
+      .from('overnight_runs')
+      .select('live_steps')
+      .eq('id', runId)
+      .maybeSingle()
+    const steps: Record<string, unknown>[] = Array.isArray((current as Record<string, unknown> | null)?.live_steps)
+      ? [...((current as Record<string, unknown>).live_steps as Record<string, unknown>[]), step]
+      : [step]
+    if (steps.length > 200) steps.splice(0, steps.length - 200)
+    await updateOvernightRun(runId, { live_steps: steps, heartbeat_at: new Date().toISOString() })
+    return Response.json({ ok: true, step_index: steps.length - 1 })
+  }
+
   if (phase === 'heartbeat') {
-    // Simple heartbeat — update the heartbeat timestamp
+    // Simple heartbeat — update the heartbeat timestamp.
+    // Also return current control signal so the runner can check for pause/cancel.
     await updateOvernightRun(runId, {
       status: 'running',
       heartbeat_at: new Date().toISOString(),
     })
-    return Response.json({ ok: true, phase: 'heartbeat' })
+    const { data: currentState } = await supabase
+      .from('overnight_runs')
+      .select('control_signal, control_instructions')
+      .eq('id', runId)
+      .maybeSingle()
+    return Response.json({
+      ok: true,
+      phase: 'heartbeat',
+      control_signal: (currentState as Record<string, unknown> | null)?.control_signal ?? null,
+      control_instructions: (currentState as Record<string, unknown> | null)?.control_instructions ?? null,
+    })
   }
 
   if (phase === 'result') {
