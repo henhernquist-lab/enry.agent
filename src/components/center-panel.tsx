@@ -418,6 +418,8 @@ export function CenterPanel({
   const currentChatEffort = CHAT_EFFORTS.find((e) => e.id === chatEffort)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
+
+
   return (
     <main className="flex flex-1 flex-col overflow-hidden bg-surface-base">
       {/* Status Bar */}
@@ -663,6 +665,8 @@ export function CenterPanel({
                         </button>
                       </div>
                     )}
+
+
                   </div>
                 </motion.div>
               )

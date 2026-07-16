@@ -8,7 +8,7 @@ import { AutomationsSection } from './automations-section'
 import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
 import Link from 'next/link'
-import { MessageSquarePlus, MessageSquare, Trash2, Download, X, Wrench, BookMarked, BookOpen, Swords } from 'lucide-react'
+import { MessageSquarePlus, MessageSquare, Trash2, Download, X, Wrench, BookMarked, BookOpen, Swords, FlaskConical } from 'lucide-react'
 
 interface LeftSidebarProps {
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
@@ -146,6 +146,13 @@ export function LeftSidebar({
         >
           <BookOpen className="h-4 w-4" />
           Reading List
+        </Link>
+        <Link
+          href="/lab"
+          className="flex w-full items-center justify-center gap-2 rounded border border-border bg-surface-elevated px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          <FlaskConical className="h-4 w-4" />
+          Enry Lab
         </Link>
         <button
           onClick={() => setShowComingSoon(true)}

@@ -11,6 +11,7 @@ import {
   Car, Radar, Swords,
 } from 'lucide-react'
 import { CruisePanel } from '@/components/agent/cruise-panel'
+import { SkillFeedbackBar } from '@/components/skill-feedback-bar'
 import { SKILLS as ALL_SKILLS, detectSkillInvocation, detectSkillInvocations, buildMultiSkillPrompt } from '@/lib/skills/registry'
 
 // ─── Types ──────────────────────────────────────────────────
@@ -33,6 +34,7 @@ type ChatLine =
   | { kind: 'error'; text: string }
   | { kind: 'filePreview'; path: string; content: string }
   | { kind: 'question'; questionText: string; options: string[] }
+  | { kind: 'skill'; text: string; invocationId?: string; skillName?: string }
 
 type Mode = 'auto' | 'manual'
 
@@ -420,6 +422,8 @@ export default function AgentPage() {
           setLines((l) => [...l, { kind: 'pr', text: text }])
         } else if (data.exit_code !== 0) {
           setLines((l) => [...l, { kind: 'error', text: text || 'command failed' }])
+        } else if (data.invocation_id) {
+          setLines((l) => [...l, { kind: 'skill', text: text || '(done)', invocationId: data.invocation_id, skillName: activeSkill?.name ?? activeSkills.map((s) => s.name).join(' + ') }])
         } else {
           setLines((l) => [...l, { kind: 'system', text: text || '(done)' }])
         }
@@ -908,6 +912,21 @@ USER REQUEST: ${userText}`
 
                 if (line.kind === 'pr') {
                   return <div key={i} className="mb-4"><div className="border-l-2 border-primary/20 pl-4"><div className="mb-0.5 font-mono text-[10px] uppercase tracking-wider text-primary/50">Pull Request</div><p className="font-mono text-[11px] leading-relaxed text-muted-foreground">{line.text}</p></div></div>
+                }
+
+                if (line.kind === 'skill') {
+                  return (
+                    <motion.div key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="mb-5">
+                      <div className="border-l-2 border-warning/40 pl-4">
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <Swords className="h-3 w-3 text-warning" />
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-warning/70">{line.skillName || 'Skill output'}</span>
+                        </div>
+                        <div className="whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-foreground/80">{line.text}</div>
+                        <SkillFeedbackBar invocationId={line.invocationId} skillName={line.skillName} />
+                      </div>
+                    </motion.div>
+                  )
                 }
 
                 return null

@@ -9,6 +9,7 @@ import { createBranch, createFile, updateFile, createPR, createRepo } from '@/li
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { supabase } from '@/lib/supabase'
 import { getSkill, getSkills, buildMultiSkillPrompt } from '@/lib/skills/registry'
+import { insertSkillInvocation, updateSkillInvocationOutput } from '@/lib/lab/db'
 import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
@@ -68,6 +69,32 @@ export async function POST(req: Request) {
       activeSkills.map((skill) => ({ skill, topic: '', via: 'command' as const })),
     )
     const turn = Number.isFinite(skillTurn) ? Math.max(1, Math.floor(skillTurn)) : 1
+
+    // Log the skill invocation for Enry Lab feedback/revision loops.
+    const userText = modelMessages.findLast((m) => m.role === 'user')?.content ?? ''
+    let invocationId: string | null = null
+    if (uid) {
+      try {
+        invocationId = await insertSkillInvocation(uid, {
+          skill_slug: multiSlugs.join('+'),
+          prompt_version: 'base',
+          input_topic: String(userText).slice(0, 2000),
+          output_text: '',
+          model_used: selectedModel,
+          effort_used: 'medium',
+          mode: 'chat',
+          source: 'chat',
+          explicit_feedback: null,
+          implicit_score: 0,
+          conversation_id: null,
+          follow_up_message_id: null,
+        })
+        // Chat UI feedback bar is Drive-only for v1; server-side logging is enough here.
+      } catch (err) {
+        console.error('[chat/route] failed to log skill invocation:', err)
+      }
+    }
+
     const skillResult = streamText({
       model: client.chat(selectedModel),
       system: `${combinedSystem}
@@ -76,6 +103,13 @@ CURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.`,
       messages: modelMessages,
       onError: ({ error }) => {
         console.error('streamText multi-skill error:', error)
+      },
+      onFinish: async ({ text }) => {
+        if (invocationId) {
+          await updateSkillInvocationOutput(invocationId, text).catch((err) => {
+            console.error('[chat/route] failed to update skill invocation output:', err)
+          })
+        }
       },
     })
     return skillResult.toUIMessageStreamResponse({

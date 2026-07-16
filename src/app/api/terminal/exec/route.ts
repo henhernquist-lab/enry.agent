@@ -11,8 +11,10 @@ import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openP
 import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
 import { getSkill, SKILLS, buildMultiSkillPrompt } from '@/lib/skills/registry'
+import { getSkillWithOverride } from '@/lib/skills/loader'
 import { generateText } from 'ai'
 import { nimClientFor, DEFAULT_NIM_MODEL } from '@/lib/nim'
+import { insertSkillInvocation, updateSkillInvocationOutput } from '@/lib/lab/db'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
 
 export const maxDuration = 60
@@ -111,7 +113,7 @@ export async function POST(req: Request) {
     resolvedInstruction,
   }
 
-  const { result, action, planTarget } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false, skillSlug, skillSlugs)
+  const { result, action, planTarget, invocationId } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false, skillSlug, skillSlugs)
 
   const entry: TerminalCommand = {
     cmd: command,
@@ -138,6 +140,7 @@ export async function POST(req: Request) {
     has_pending_diff,
     pending_file,
     reasoning: result.reasoning ?? null,
+    ...(invocationId ? { invocation_id: invocationId } : {}),
     ...(planTarget ? { target_file: planTarget.file, is_new_file: planTarget.isNewFile } : {}),
   })
 }
@@ -161,6 +164,7 @@ interface DispatchResult {
   result: { output: string; exitCode: number; reasoning?: string }
   action?: TerminalCommand['action']
   planTarget?: { file: string; isNewFile: boolean }
+  invocationId?: string
 }
 
 // Dispatch order:
@@ -172,15 +176,15 @@ interface DispatchResult {
 async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false, skillSlug?: string, skillSlugs?: string[]): Promise<DispatchResult> {
   // ── Multi-skill response path (read-only, text analysis) ──
   if (skillSlugs && skillSlugs.length > 1) {
-    const result = await runMultiSkillResponse(ctx, skillSlugs, command)
-    return { result }
+    const skillResult = await runMultiSkillResponse(ctx, skillSlugs, command)
+    return { result: skillResult, invocationId: skillResult.invocationId }
   }
 
   // ── Skill response path (read-only, text analysis) ───────────
   if (skillSlug || (skillSlugs && skillSlugs.length === 1)) {
     const slug = skillSlug ?? skillSlugs![0]
-    const result = await runSkillResponse(ctx, slug, command)
-    return { result }
+    const skillResult = await runSkillResponse(ctx, slug, command)
+    return { result: skillResult, invocationId: skillResult.invocationId }
   }
   const meta = parseMetaCommand(command)
   if (meta.ok) {
@@ -338,8 +342,8 @@ async function runSkillResponse(
   ctx: WriteOpsContext,
   skillSlug: string,
   wrappedCommand: string,
-): Promise<{ output: string; exitCode: number; reasoning?: string }> {
-  const skill = getSkill(skillSlug)
+): Promise<{ output: string; exitCode: number; reasoning?: string; invocationId?: string }> {
+  const skill = await getSkillWithOverride(ctx.userId, skillSlug)
   if (!skill) {
     return { output: `Unknown skill: ${skillSlug}`, exitCode: 1 }
   }
@@ -350,6 +354,26 @@ async function runSkillResponse(
   const userRequest = userIdx !== -1
     ? wrappedCommand.slice(userIdx + userMarker.length).trim()
     : wrappedCommand
+
+  // Log the invocation before generating.
+  let invocationId: string | null = null
+  try {
+    invocationId = await insertSkillInvocation(ctx.userId, {
+      skill_slug: skillSlug,
+      prompt_version: 'base',
+      input_topic: userRequest.slice(0, 2000),
+      output_text: '',
+      model_used: ctx.model ?? DEFAULT_NIM_MODEL,
+      effort_used: ctx.effort ?? 'none',
+      mode: ctx.mode ?? null,
+      source: 'drive',
+      explicit_feedback: null,
+      implicit_score: 0,
+      conversation_id: ctx.sessionId,
+    })
+  } catch (err) {
+    console.error('[terminal/skill-response] failed to log invocation:', err)
+  }
 
   try {
     const client = nimClientFor(ctx.model)
@@ -362,11 +386,14 @@ async function runSkillResponse(
       timeout: 60_000,
       maxRetries: 1,
     })
-    return { output: text, exitCode: 0 }
+    if (invocationId) {
+      await updateSkillInvocationOutput(invocationId, text)
+    }
+    return { output: text, exitCode: 0, invocationId: invocationId ?? undefined }
   } catch (err) {
     console.error('[terminal/skill-response] generation threw:', err)
     const detail = err instanceof Error ? err.message : String(err)
-    return { output: `Skill analysis failed: ${detail}`, exitCode: 1 }
+    return { output: `Skill analysis failed: ${detail}`, exitCode: 1, invocationId: invocationId ?? undefined }
   }
 }
 
@@ -378,9 +405,10 @@ async function runMultiSkillResponse(
   ctx: WriteOpsContext,
   skillSlugs: string[],
   wrappedCommand: string,
-): Promise<{ output: string; exitCode: number; reasoning?: string }> {
-  const skills = skillSlugs.map((s) => getSkill(s)).filter(Boolean)
-  if (skills.length === 0) {
+): Promise<{ output: string; exitCode: number; reasoning?: string; invocationId?: string }> {
+  const skills = await Promise.all(skillSlugs.map((s) => getSkillWithOverride(ctx.userId, s)))
+  const validSkills = skills.filter(Boolean)
+  if (validSkills.length === 0) {
     return { output: `No valid skills found: ${skillSlugs.join(', ')}`, exitCode: 1 }
   }
 
@@ -391,13 +419,33 @@ async function runMultiSkillResponse(
     ? wrappedCommand.slice(userIdx + userMarker.length).trim()
     : wrappedCommand
 
-  const invocations = skills.map((skill) => ({
+  const invocations = validSkills.map((skill) => ({
     skill: skill!,
     topic: userRequest,
     via: 'command' as const,
   }))
 
   const combinedPrompt = buildMultiSkillPrompt(invocations)
+
+  // Log the invocation before generating.
+  let invocationId: string | null = null
+  try {
+    invocationId = await insertSkillInvocation(ctx.userId, {
+      skill_slug: skillSlugs.join('+'),
+      prompt_version: 'base',
+      input_topic: userRequest.slice(0, 2000),
+      output_text: '',
+      model_used: ctx.model ?? DEFAULT_NIM_MODEL,
+      effort_used: ctx.effort ?? 'none',
+      mode: ctx.mode ?? null,
+      source: 'drive',
+      explicit_feedback: null,
+      implicit_score: 0,
+      conversation_id: ctx.sessionId,
+    })
+  } catch (err) {
+    console.error('[terminal/multi-skill-response] failed to log invocation:', err)
+  }
 
   try {
     const client = nimClientFor(ctx.model)
@@ -410,11 +458,14 @@ async function runMultiSkillResponse(
       timeout: 90_000,
       maxRetries: 1,
     })
-    return { output: text, exitCode: 0 }
+    if (invocationId) {
+      await updateSkillInvocationOutput(invocationId, text)
+    }
+    return { output: text, exitCode: 0, invocationId: invocationId ?? undefined }
   } catch (err) {
     console.error('[terminal/multi-skill-response] generation threw:', err)
     const detail = err instanceof Error ? err.message : String(err)
-    return { output: `Multi-skill analysis failed: ${detail}`, exitCode: 1 }
+    return { output: `Multi-skill analysis failed: ${detail}`, exitCode: 1, invocationId: invocationId ?? undefined }
   }
 }
 

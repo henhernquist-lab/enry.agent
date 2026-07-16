@@ -31,6 +31,7 @@ import {
   TerminalSquare,
   AlertOctagon,
   Ghost,
+  FlaskConical,
 } from 'lucide-react'
 
 interface NavItem {
@@ -46,6 +47,7 @@ const MAIN_ROUTES: NavItem[] = [
   { label: 'Saved Items', path: '/resources/saved', icon: Archive },
   { label: 'Prompt Library', path: '/prompts', icon: BookMarked, keywords: 'prompts' },
   { label: 'Reading List', path: '/reading-list', icon: BookOpen },
+  { label: 'Enry Lab', path: '/lab', icon: FlaskConical, keywords: 'lab experiments skills revisions' },
   { label: 'Settings', path: '/settings', icon: Settings },
 ]
 
