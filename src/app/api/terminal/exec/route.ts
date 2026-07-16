@@ -23,6 +23,13 @@ export const maxDuration = 60
 
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/
 
+// Synthetic absolute root for confinePath on the snapshot-free generation hop.
+// confinePath is a pure-string escape check (path.resolve/relative), so no real
+// directory needs to exist — a constant root gives identical safety semantics
+// (any path resolving outside it still yields a leading '..' and is rejected)
+// without downloading the repo tarball. See the isGenerationHop branch in POST.
+const GENERATION_HOP_ROOT = '/enry-generation-hop'
+
 // In-memory sliding-window rate limiter. Per serverless instance, which is
 // acceptable for a single-user app; the ceiling is a safety valve, not a
 // billing control.
@@ -90,34 +97,67 @@ export async function POST(req: Request) {
 
   const [owner, name] = repo.split('/')
 
-  const snap = await ensureSnapshot(githubToken, owner, name)
-  if (!snap.ok) {
-    return Response.json({ output: snap.error, exit_code: 1, session_id: sessionId })
+  // The generation hop (a resolved NL-edit target coming back for diff
+  // generation via proposeEdit — auto hop-2 or manual proceed) reads the
+  // target file through the GitHub API and only needs a pure-string path check,
+  // NEVER the repo contents. So skip ensureSnapshot's tarball download +
+  // extract for it (measured ~884ms cold / ~308ms warm on a real repo — a
+  // modest but guaranteed slice of the 60s budget, and it removes a
+  // variable-latency dependency from the most timeout-sensitive path). Every
+  // other command type (read commands over the snapshot, apply) still gets the
+  // real snapshot. dispatch() routes this hop straight to proposeEdit before
+  // any snapshot-dependent parsing, so the synthetic dir is never dereferenced.
+  const isGenerationHop = (proceed ?? false) && !!resolvedFile
+
+  let writeCtx: WriteOpsContext
+  let headSha = ''
+  if (isGenerationHop) {
+    writeCtx = {
+      accessToken: githubToken,
+      owner,
+      repo: name,
+      defaultBranch: '',            // unused by proposeEdit
+      sessionId,
+      userId: uid,
+      snapshotDir: GENERATION_HOP_ROOT,       // confinePath root only (pure string)
+      pristineSnapshotDir: GENERATION_HOP_ROOT, // unused by proposeEdit
+      model,
+      effort,
+      mode,
+      proceed,
+      resolvedFile,
+      resolvedIsNew,
+      resolvedInstruction,
+    }
+  } else {
+    const snap = await ensureSnapshot(githubToken, owner, name)
+    if (!snap.ok) {
+      return Response.json({ output: snap.error, exit_code: 1, session_id: sessionId })
+    }
+    // Session-scoped writable overlay if this session has any applied-but-
+    // uncommitted files; otherwise the shared pristine snapshot directly.
+    const execDir = await resolveExecutionDir(sessionId, snap.dir)
+    headSha = snap.headSha
+    writeCtx = {
+      accessToken: githubToken,
+      owner,
+      repo: name,
+      defaultBranch: snap.defaultBranch,
+      sessionId,
+      userId: uid,
+      snapshotDir: execDir,
+      pristineSnapshotDir: snap.dir,
+      model,
+      effort,
+      mode,
+      proceed,
+      resolvedFile,
+      resolvedIsNew,
+      resolvedInstruction,
+    }
   }
 
-  // Session-scoped writable overlay if this session has any applied-but-
-  // uncommitted files; otherwise the shared pristine snapshot directly.
-  const execDir = await resolveExecutionDir(sessionId, snap.dir)
-
-  const writeCtx: WriteOpsContext = {
-    accessToken: githubToken,
-    owner,
-    repo: name,
-    defaultBranch: snap.defaultBranch,
-    sessionId,
-    userId: uid,
-    snapshotDir: execDir,
-    pristineSnapshotDir: snap.dir,
-    model,
-    effort,
-    mode,
-    proceed,
-    resolvedFile,
-    resolvedIsNew,
-    resolvedInstruction,
-  }
-
-  const { result, action, planTarget, invocationId, reasoningTrace } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false, skillSlug, skillSlugs, reasoningDepth)
+  const { result, action, planTarget, invocationId, reasoningTrace } = await dispatch(command, writeCtx, headSha, mode, proceed ?? false, skillSlug, skillSlugs, reasoningDepth)
 
   // Check for .enryrules and include its existence in the response so the
   // client can show/hide the editor UI.
@@ -202,6 +242,25 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
     const skillResult = await runSkillResponse(ctx, slug, command, reasoningDepth)
     return { result: skillResult, invocationId: skillResult.invocationId, reasoningTrace: skillResult.reasoningTrace }
   }
+
+  // ── Generation hop (already-resolved target) ─────────────────
+  // A resolved target already in hand — hop 2 of the auto-mode chain, or
+  // manual-mode proceed — goes straight to proposeEdit, skipping both the NL
+  // classifier (already ran in hop 1) AND the meta/command parsing below. That
+  // parsing assumes a real downloaded snapshot (runCommand reads over it); this
+  // path uses only the GitHub API + a pure-string confinePath, so the route
+  // deliberately skips the snapshot tarball download for it (see the POST
+  // handler's isGenerationHop branch). Routing here first is what makes that
+  // skip airtight — this hop can never fall through to a snapshot-dependent
+  // branch even if the original NL text happened to look like a command.
+  if (ctx.resolvedFile) {
+    const file = ctx.resolvedFile
+    const isNew = ctx.resolvedIsNew ?? false
+    const instr = ctx.resolvedInstruction ?? command
+    const result = await proposeEdit(ctx, file, instr, isNew)
+    return { result, action: 'propose_edit' }
+  }
+
   const meta = parseMetaCommand(command)
   if (meta.ok) {
     return { result: await runMeta(meta.command, ctx), action: metaAction(meta.command.kind) }
@@ -236,20 +295,6 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
       const result = await runSkillResponse(ctx, detected.slug, command)
       return { result }
     }
-  }
-
-  // A resolved target already in hand (manual-mode proceed, or hop 2 of the
-  // auto-mode chain below) skips resolveNLEditTarget entirely — it already
-  // ran once. Re-running it here was dead weight on every proceed/hop-2 call:
-  // a second classification round trip that could only ever confirm what the
-  // client already told us, while eating another slice of this invocation's
-  // wall-clock budget.
-  if (ctx.resolvedFile) {
-    const file = ctx.resolvedFile
-    const isNew = ctx.resolvedIsNew ?? false
-    const instr = ctx.resolvedInstruction ?? command
-    const result = await proposeEdit(ctx, file, instr, isNew)
-    return { result, action: 'propose_edit' }
   }
 
   // Genuinely unrecognized input -> treat as a natural-language coding
