@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
-import { getOvernightIdeas, insertOvernightRun, updateOvernightIdea, updateOvernightRun } from '@/lib/lab/db'
+import { getOvernightIdeas, insertOvernightRun, updateOvernightIdea, updateOvernightRun, reclaimStaleOvernightRuns } from '@/lib/lab/db'
 import { createHash, randomUUID } from 'node:crypto'
 
 export const maxDuration = 20
@@ -31,6 +31,11 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(googleId ?? null)
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   if (!githubToken) return Response.json({ error: 'GitHub not connected. Sign in with GitHub first.' }, { status: 400 })
+
+  // Reclaim any run stuck without a heartbeat before touching the queue —
+  // otherwise a dead run's idea stays wedged in 'running' forever with no
+  // periodic job to notice (see reclaimStaleOvernightRuns's own comment).
+  await reclaimStaleOvernightRuns()
 
   const body = await req.json().catch(() => ({}))
   const ideaId = String(body.idea_id ?? '').trim()

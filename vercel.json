@@ -3,10 +3,6 @@
     {
       "path": "/api/cron/daily-content",
       "schedule": "0 10 * * *"
-    },
-    {
-      "path": "/api/cron/overnight-reclaim",
-      "schedule": "*/10 * * * *"
     }
   ]
 }

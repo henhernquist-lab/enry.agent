@@ -437,3 +437,32 @@ export async function getStaleOvernightRuns(): Promise<OvernightRunRow[]> {
   }
   return (data ?? []) as OvernightRunRow[]
 }
+
+// Marks any run with no heartbeat for 30+ minutes as 'stale' and re-queues its
+// parent idea. Opportunistic — called right before dispatching the next idea
+// (see /api/lab/overnight/dispatch), the same moment Cruise's goal-run
+// dispatch reclaims its own stale runs — rather than on a standalone timer.
+// Vercel Hobby caps cron jobs at once/day, which a periodic reclaim job (this
+// needs sub-hour granularity to be useful) can't satisfy; piggybacking on the
+// action that already needs a live queue removes the cron entirely.
+export async function reclaimStaleOvernightRuns(): Promise<number> {
+  const now = new Date().toISOString()
+  const staleRuns = await getStaleOvernightRuns()
+
+  for (const run of staleRuns) {
+    await updateOvernightRun(run.id, {
+      status: 'stale',
+      error: `Run marked stale — no heartbeat for 30+ minutes. Last heartbeat: ${run.heartbeat_at || 'never'}`,
+      finished_at: now,
+    })
+    await updateOvernightIdea(run.idea_id, run.user_id, {
+      status: 'queued',
+      latest_run_id: null,
+    })
+  }
+
+  if (staleRuns.length > 0) {
+    console.log(`[lab/db] reclaimed ${staleRuns.length} stale overnight run(s) at ${now}`)
+  }
+  return staleRuns.length
+}
