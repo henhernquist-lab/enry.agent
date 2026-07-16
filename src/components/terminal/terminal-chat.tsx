@@ -27,11 +27,17 @@ type ChatLine =
 
 // ─── Model definitions ──────────────────────────────────────
 
+// Qwen is first (and default — see MODELS[0] below) because deepseek-ai's NIM
+// function is currently in a live DEGRADED/hanging state on NVIDIA's side
+// (confirmed directly against their API — deepseek-v4-flash returns an
+// explicit "DEGRADED function cannot be invoked", deepseek-v4-pro hangs to a
+// full timeout with zero response). Not a code bug — nothing here can fix an
+// upstream outage. Move DeepSeek back to the front once NVIDIA resolves it.
 const MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro',  desc: 'Strongest free model. Best for complex tasks.' },
-  { id: 'minimax/minimax-m3',          label: 'MiniMax M3',        desc: 'Fast and capable. Great for general tasks.' },
   { id: 'qwen/qwen3.5-122b-a10b',      label: 'Qwen 3.5 122B',    desc: 'Large reasoning model. Great for analysis.' },
   { id: 'z-ai/glm-5.2',                label: 'GLM 5.2',          desc: 'Versatile all-rounder. Good at following instructions.' },
+  { id: 'minimax/minimax-m3',          label: 'MiniMax M3',        desc: 'Fast and capable. Great for general tasks.' },
+  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro',  desc: '⚠ currently degraded on NVIDIA’s side — likely to time out.' },
 ] as const
 
 const EFFORTS = [
