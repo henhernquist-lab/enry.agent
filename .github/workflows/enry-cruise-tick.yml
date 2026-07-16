@@ -1,0 +1,39 @@
+# Enry Cruise — schedule tick.
+#
+# Drives Cruise Auto-run: pings the deployed app's /api/cron/cruise-tick every
+# ~15 min. The endpoint evaluates each Auto-run-enabled repo's DST-safe schedule
+# and dispatches any that are due. Hosted here (not a Vercel cron) so it works on
+# Vercel Hobby, is free, and survives redeploys.
+#
+# GitHub's scheduler is best-effort — a run can land 5–15 min late (occasionally
+# more under load), so wall-clock precision is ~quarter-hour, not exact.
+#
+# Requires two repo secrets:
+#   CRON_SECRET  — must match the app's CRON_SECRET env var
+#   DEPLOY_URL   — the app's public base URL, e.g. https://enry-agent.vercel.app
+name: Enry Cruise — schedule tick
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+# Never overlap ticks.
+concurrency:
+  group: enry-cruise-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Cruise tick endpoint
+        run: |
+          code=$(curl -sS -o /tmp/tick.json -w "%{http_code}" -X GET \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.DEPLOY_URL }}/api/cron/cruise-tick")
+          echo "HTTP $code"
+          cat /tmp/tick.json 2>/dev/null || true
+          echo
+          test "$code" = "200"

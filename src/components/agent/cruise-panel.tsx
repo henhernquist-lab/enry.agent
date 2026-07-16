@@ -6,14 +6,15 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radar, Play, Loader2, ChevronRight, ShieldCheck, ShieldOff, AlertTriangle,
   CheckCircle2, XCircle, Ban, RotateCcw, Clock, FileCode, Check, Lock,
-  Target, GitPullRequest, Sparkles,
+  Target, GitPullRequest, Sparkles, CalendarClock,
 } from 'lucide-react'
 import type {
   CruiseRepo, CruiseScan, CruiseFinding, CruiseSeverity,
   CruiseScanfixCategory, CruiseScanfixMode, ScanfixConfig,
-  CruiseGoalRun, CruiseGoalStep,
+  CruiseGoalRun, CruiseGoalStep, CruiseAutoRunFrequency,
 } from '@/lib/cruise/types'
 import { SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG, isGoalRunActive } from '@/lib/cruise/types'
+import { nextRun } from '@/lib/cruise/schedule'
 
 // Enry Cruise — the autonomous-scan main pane. Per-repo allowlist, on-demand
 // static scans, scan-and-fix categories, ranked findings with dismiss/not-a-bug.
@@ -47,6 +48,7 @@ export function CruisePanel({ repo }: { repo: string }) {
   const [enableNote, setEnableNote] = useState<{ ok: boolean; text: string } | null>(null)
   const [savingCat, setSavingCat] = useState(false)
   const [confirmButtons, setConfirmButtons] = useState(false)
+  const [autoSaving, setAutoSaving] = useState(false)
 
   const [goalRuns, setGoalRuns] = useState<CruiseGoalRun[]>([])
   const [goalSteps, setGoalSteps] = useState<Record<string, CruiseGoalStep[]>>({})
@@ -191,6 +193,22 @@ export function CruisePanel({ repo }: { repo: string }) {
     } catch { setConfig(prev) } finally { setSavingCat(false) }
   }
 
+  // Persist the Auto-run schedule config. Returns whether it saved (so the panel
+  // can surface a validation error inline).
+  const saveAutoRun = async (payload: Record<string, unknown>): Promise<boolean> => {
+    setAutoSaving(true); setError(null)
+    try {
+      const res = await fetch('/api/cruise/repos/autorun', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo, ...payload }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? 'Could not save schedule'); return false }
+      await loadConfig()
+      return true
+    } finally { setAutoSaving(false) }
+  }
+
   // Dispatch a deterministic scan-and-fix run over the enabled auto-fix
   // categories. Bundles every category's fixes into one PR.
   const runScanfix = async () => {
@@ -291,6 +309,10 @@ export function CruisePanel({ repo }: { repo: string }) {
                 confirmOpen={confirmButtons}
                 onConfirmOpen={setConfirmButtons}
               />
+
+              {config && (
+                <AutoRunPanel key={repo} config={config} saving={autoSaving} onSave={saveAutoRun} />
+              )}
 
               {error && (
                 <div className="mb-4 flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2">
@@ -451,6 +473,114 @@ function CategoriesPanel({ cats, buttonsConfirmed, saving, onSet, confirmOpen, o
               <button onClick={() => onConfirmOpen(false)} className="flex-shrink-0 font-mono text-[9px] uppercase text-muted-foreground">Cancel</button>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+// Per-repo scheduled auto-scan-and-fix. Time is local (browser tz); the server
+// evaluates it DST-safely each tick. Fully autonomous — opens a PR, never merges.
+function AutoRunPanel({ config, saving, onSave }: {
+  config: CruiseRepo; saving: boolean; onSave: (payload: Record<string, unknown>) => Promise<boolean>
+}) {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const buttonsConfirmed = !!config.buttons_autofix_confirmed
+  const defaultCats = (config.auto_run_categories?.length ? config.auto_run_categories : SCANFIX_CATEGORIES.filter((c) => config.scanfix_categories?.[c] === 'auto_fix'))
+  const [enabled, setEnabled] = useState(config.auto_run_enabled)
+  const [time, setTime] = useState(config.auto_run_time ?? '03:00')
+  const [freq, setFreq] = useState<CruiseAutoRunFrequency>(config.auto_run_frequency ?? 'daily')
+  const [weekday, setWeekday] = useState(config.auto_run_weekday ?? 4)
+  const [intervalDays, setIntervalDays] = useState(config.auto_run_interval_days ?? 3)
+  const [sel, setSel] = useState<Set<CruiseScanfixCategory>>(new Set(defaultCats))
+
+  const preview = nextRun(
+    { auto_run_enabled: true, auto_run_time: time, auto_run_tz: tz, auto_run_frequency: freq, auto_run_weekday: weekday, auto_run_interval_days: intervalDays, auto_run_anchor_date: null, auto_run_categories: [...sel], auto_run_last_fired_local_date: null, auto_run_monthly_cap: 30, auto_run_month: null, auto_run_month_count: 0 },
+    new Date(),
+  )
+  const previewText = preview
+    ? preview.toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit', timeZone: tz })
+    : null
+
+  const toggle = () => {
+    if (enabled) { setEnabled(false); onSave({ enabled: false }) }
+    else setEnabled(true)
+  }
+  const save = () => onSave({
+    enabled: true, time, tz, frequency: freq,
+    ...(freq === 'weekly' ? { weekday } : {}),
+    ...(freq === 'every_n_days' ? { interval_days: intervalDays } : {}),
+    categories: [...sel],
+  })
+  const toggleCat = (c: CruiseScanfixCategory) => setSel((prev) => { const n = new Set(prev); if (n.has(c)) n.delete(c); else n.add(c); return n })
+
+  return (
+    <div className="mb-5 rounded-md border border-border bg-surface-secondary/50">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <CalendarClock className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Auto-run</span>
+        {config.auto_run_enabled && previewText && (
+          <span className="truncate font-mono text-[9px] text-primary/80">next: {previewText} your time</span>
+        )}
+        {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+        <button onClick={toggle} disabled={saving}
+          className={`ml-auto flex h-4 w-7 flex-shrink-0 items-center rounded-full px-0.5 transition-colors disabled:opacity-50 ${enabled ? 'justify-end bg-primary/70' : 'justify-start bg-border'}`}>
+          <span className="h-3 w-3 rounded-full bg-background" />
+        </button>
+      </div>
+
+      {enabled && (
+        <div className="space-y-3 border-t border-border/60 px-3 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
+              className="rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[11px] text-foreground focus:border-primary/40 focus:outline-none" />
+            <select value={freq} onChange={(e) => setFreq(e.target.value as CruiseAutoRunFrequency)}
+              className="rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[11px] text-foreground focus:border-primary/40 focus:outline-none">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly on</option>
+              <option value="every_n_days">Every N days</option>
+            </select>
+            {freq === 'weekly' && (
+              <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}
+                className="rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[11px] text-foreground focus:border-primary/40 focus:outline-none">
+                {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+              </select>
+            )}
+            {freq === 'every_n_days' && (
+              <input type="number" min={1} max={60} value={intervalDays} onChange={(e) => setIntervalDays(Number(e.target.value))}
+                className="w-16 rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[11px] text-foreground focus:border-primary/40 focus:outline-none" />
+            )}
+            <span className="font-mono text-[9px] text-muted-foreground">{tz}</span>
+          </div>
+
+          <div>
+            <p className="mb-1.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Categories allowed on schedule</p>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              {SCANFIX_CATEGORIES.map((c) => {
+                const locked = c === 'non_functional_buttons' && !buttonsConfirmed
+                return (
+                  <label key={c} className={`flex items-center gap-1.5 font-mono text-[10px] ${locked ? 'opacity-40' : 'text-foreground/90'}`}>
+                    <input type="checkbox" checked={sel.has(c)} disabled={locked}
+                      onChange={() => toggleCat(c)} className="h-3 w-3 accent-primary" />
+                    {locked && <Lock className="h-2.5 w-2.5" />}{SCANFIX_LABEL[c]}
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button onClick={save} disabled={saving || sel.size === 0}
+              className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save schedule
+            </button>
+            {previewText && <span className="font-mono text-[9px] text-muted-foreground">next auto-run: {previewText} your time</span>}
+          </div>
+          <p className="font-mono text-[9px] leading-relaxed text-muted-foreground/70">
+            Runs autonomously on schedule, fixing only the checked categories. Opens a PR (draft if the build fails) — never auto-merged. Skipped if a run is already active or the monthly cap ({config.auto_run_monthly_cap}) is hit.
+          </p>
         </div>
       )}
     </div>

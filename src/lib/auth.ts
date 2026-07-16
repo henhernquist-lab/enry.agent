@@ -165,6 +165,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // never-should-happen case where signIn didn't run.
         const linkedGoogleId = (user as Record<string, unknown> | undefined)?.linkedGoogleId as string | undefined
         const profileId = (user as Record<string, unknown> | undefined)?.profileId as string | undefined
+        // Persist the OAuth token durably so the session-less Cruise cron tick
+        // can dispatch scheduled runs (the JWT copy below only lives in the
+        // browser cookie). OAuth-App tokens don't expire; refreshed each sign-in.
+        if (profileId && account.access_token) {
+          await supabase.from('profiles').update({ github_token: account.access_token }).eq('id', profileId)
+        }
         return {
           ...token,
           googleId: linkedGoogleId ?? `github_${account.providerAccountId}`,

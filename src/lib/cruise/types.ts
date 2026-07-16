@@ -40,6 +40,26 @@ export const SCANFIX_LABEL: Record<CruiseScanfixCategory, string> = {
   debug_statements: 'Debug statements',
   non_functional_buttons: 'Non-functional buttons',
 }
+
+export type CruiseAutoRunFrequency = 'daily' | 'weekly' | 'every_n_days'
+
+// Per-repo scheduled-run config. Stored in the user's LOCAL time + IANA zone and
+// evaluated in that zone each tick — see src/lib/cruise/schedule.ts.
+export interface AutoRunConfig {
+  auto_run_enabled: boolean
+  auto_run_time: string | null            // "HH:MM" 24h local
+  auto_run_tz: string | null              // IANA
+  auto_run_frequency: CruiseAutoRunFrequency | null
+  auto_run_weekday: number | null         // 0=Sun..6=Sat
+  auto_run_interval_days: number | null
+  auto_run_anchor_date: string | null     // YYYY-MM-DD local
+  auto_run_categories: CruiseScanfixCategory[]
+  auto_run_last_fired_local_date: string | null
+  auto_run_monthly_cap: number
+  auto_run_month: string | null           // YYYY-MM local
+  auto_run_month_count: number
+}
+
 export type CruiseScanStatus = 'queued' | 'running' | 'partial' | 'completed' | 'failed' | 'cancelled'
 export type CruiseTrigger = 'on_demand' | 'scheduled' | 'on_pr'
 export type CruiseFindingStatus = 'open' | 'fix_requested' | 'fixed' | 'dismissed' | 'not_a_bug'
@@ -52,7 +72,7 @@ export const SEVERITY_RANK: Record<CruiseSeverity, number> = {
   info: 0,
 }
 
-export interface CruiseRepo {
+export interface CruiseRepo extends AutoRunConfig {
   id: string
   user_id: string
   full_name: string
