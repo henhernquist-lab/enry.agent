@@ -248,14 +248,17 @@ async function generateFileContent(
       prompt: `File: ${filePath}\n${isNewFile ? '(new file — no existing content)' : `Current content:\n${baseContent}`}\n\nInstruction: ${instruction}\n\nProduce your plan, then ${CONTENT_SENTINEL}, then the complete new file content.`,
       temperature: effort.temperature,
       maxOutputTokens: effort.maxOutputTokens,
-      // Since the terminal/exec route now dispatches classification and
-      // generation as two separate invocations (see exec/route.ts's
-      // 'target_resolved' hop), this call runs alone in its own maxDuration
-      // budget rather than sharing one with resolveNLEditTarget — safe to use
-      // most of it. maxRetries: 0 for the same reason as nl-edit.ts: a retry
-      // here would silently double worst-case wall-clock past the invocation
-      // ceiling instead of failing cleanly.
-      timeout: 50_000,
+      // 40s, NOT 50s — this call does not own the full 60s maxDuration alone.
+      // The same invocation first runs ensureSnapshot (up to a full repo
+      // tarball re-download on a cold Vercel instance) + 4-5 GitHub API calls
+      // (resolveHead x2, checkWriteScope, getFileContent) before reaching
+      // here, which can eat 10-20s. At the old 50s, a large-file generation
+      // that legitimately ran ~48s tipped the total past 60s and Vercel
+      // returned an opaque 504 BEFORE this AbortController could fire and let
+      // the route surface its own clean error. 40s guarantees the abort wins
+      // the race, converting the 504 into an actionable "timed out" message.
+      // maxRetries: 0 so a retry can't silently double wall-clock past 60s.
+      timeout: 40_000,
       maxRetries: 0,
     })
 
@@ -277,13 +280,17 @@ async function generateFileContent(
     return { reasoning, content, truncated }
   } catch (err) {
     console.error('[terminal/write-ops] generateFileContent threw:', err)
-    // A distinct, real reason instead of a bare "generation failed" — an
-    // AI-SDK-level timeout abort (a legitimately slow generation for a large
-    // file at a high effort level) reads very differently from an actual
-    // upstream error, and the difference is exactly what tells the user
-    // whether to retry, lower effort, or narrow the request.
-    const detail = err instanceof Error ? err.message : String(err)
-    return { error: detail }
+    // Distinguish a timeout abort from a genuine upstream error — they call
+    // for different user actions. A timeout on a large file/high effort means
+    // "the model couldn't finish inside the budget"; surface that as an
+    // actionable message rather than a raw "Aborted"/TimeoutError string.
+    const name = err instanceof Error ? err.name : ''
+    const msg = err instanceof Error ? err.message : String(err)
+    const isTimeout = name === 'TimeoutError' || name === 'AbortError' || /abort|timed?\s?out/i.test(msg)
+    if (isTimeout) {
+      return { error: `generation timed out before finishing this file — it's too large or the request too broad to complete in one pass. Try a lower effort level, or narrow the change to a smaller, more specific edit.` }
+    }
+    return { error: msg }
   }
 }
 
@@ -411,7 +418,11 @@ Keep the plan under ${Math.round(effort.maxOutputTokens / 2)} words.${rules ? bu
       temperature: effort.temperature,
       maxOutputTokens: Math.round(effort.maxOutputTokens / 2),
       timeout: 30_000,
-      maxRetries: 1,
+      // Was maxRetries: 1 — the last retry-doubling leftover in this file. A
+      // retried 30s timeout is up to 60s of LLM alone, which plus the same
+      // snapshot + GitHub overhead as the generation path blows past the 60s
+      // maxDuration into a 504. 0 = fail once, cleanly.
+      maxRetries: 0,
     })
     return { output: `Plan for ${filePath}`, exitCode: 0, reasoning: text.trim() }
   } catch (err) {
