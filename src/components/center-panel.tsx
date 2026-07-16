@@ -23,6 +23,9 @@ import {
   Clock,
   Cpu,
   Database,
+  Brain,
+  Globe,
+  Folder,
 } from 'lucide-react'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
@@ -34,6 +37,8 @@ import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/a
 
 import { setAgentBusy } from '@/lib/agent-presence'
 import { SkillBanner } from './skill-banner'
+import { ThinkingTrace } from './thinking-trace'
+import { parseReasoningTrace } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS } from '@/lib/skills/registry'
 import type { SkillDefinition } from '@/lib/skills/types'
 import type { ActivityEvent } from '@/lib/chat-history'
@@ -147,6 +152,32 @@ export function CenterPanel({
   const [model, setModel] = useState<ModelId>('deepseek-ai/deepseek-v4-pro')
   const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS['deepseek-ai/deepseek-v4-pro'] ?? 'medium')
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
+
+  // Focus mode — controls what context the agent draws from
+  type FocusMode = 'all' | 'memory_only' | 'web_only' | 'repo_only'
+  const [focusMode, setFocusMode] = useState<FocusMode>('all')
+  const [focusMenuOpen, setFocusMenuOpen] = useState(false)
+  const focusDropdownRef = useRef<HTMLDivElement>(null)
+
+  const FOCUS_MODES = [
+    { id: 'all' as const, label: 'All', icon: Zap, desc: 'No restrictions — web, memory, repo' },
+    { id: 'memory_only' as const, label: 'Memory', icon: Brain, desc: 'Only stored memories/notes' },
+    { id: 'web_only' as const, label: 'Web', icon: Globe, desc: 'Web search only' },
+    { id: 'repo_only' as const, label: 'Repo', icon: Folder, desc: 'Only repo files' },
+  ]
+  const currentFocus = FOCUS_MODES.find((f) => f.id === focusMode)!
+
+  // Reasoning trace depth — how much model thinking to surface
+  const [reasoningDepth, setReasoningDepth] = useState<'off' | 'summary' | 'full'>('off')
+  const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false)
+  const reasoningDropdownRef = useRef<HTMLDivElement>(null)
+
+  const REASONING_DEPTHS = [
+    { id: 'off' as const, label: 'Think: Off', desc: 'Show only the final answer' },
+    { id: 'summary' as const, label: 'Think: Brief', desc: 'Show a condensed reasoning summary' },
+    { id: 'full' as const, label: 'Think: Full', desc: 'Show the complete reasoning trace' },
+  ]
+  const currentReasoning = REASONING_DEPTHS.find((r) => r.id === reasoningDepth)!
   const { messages, sendMessage, status, error } = useChat({
     transport,
     messages: initialMessages,
@@ -241,6 +272,15 @@ export function CenterPanel({
     return () => document.removeEventListener('mousedown', handler)
   }, [effortMenuOpen])
 
+  useEffect(() => {
+    if (!reasoningMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!reasoningDropdownRef.current?.contains(e.target as Node)) setReasoningMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [reasoningMenuOpen])
+
   // Assistant turns produced since the active skill began — source of truth for
   // the phase indicator and the automatic exit.
   const skillTurnsCompleted = activeSkill
@@ -269,7 +309,7 @@ export function CenterPanel({
     const turnsSoFar = messages.slice(startIndex).filter((m) => m.role === 'assistant').length
     onActivity({ type: 'user-sent', content: text, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
-    sendMessage({ text }, { body: { model, effort: chatEffort, skill: skill.slug, skillTurn: turnsSoFar + 1 } })
+    sendMessage({ text }, { body: { model, effort: chatEffort, skill: skill.slug, skillTurn: turnsSoFar + 1, focusMode, reasoningDepth } })
   }
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -316,7 +356,7 @@ export function CenterPanel({
 
     onActivity({ type: 'user-sent', content: text || `[Attached: ${attachment?.filename}]`, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
-    const body: Record<string, unknown> = { model, effort: chatEffort }
+    const body: Record<string, unknown> = { model, effort: chatEffort, focusMode, reasoningDepth }
 
     // Only attach the raw image to the model when the selected model actually
     // supports vision — otherwise the text description in finalText is the
@@ -592,6 +632,12 @@ export function CenterPanel({
                 isStreaming &&
                 index === messages.length - 1 &&
                 message.role === 'assistant'
+              // Parse reasoning trace from completed (non-streaming) assistant messages
+              const isAssistant = message.role === 'assistant'
+              const { reasoning: rawTrace, answer: cleanAnswer } = isAssistant && !isCurrentStream
+                ? parseReasoningTrace(text)
+                : { reasoning: null, answer: text }
+              const displayAnswer = isAssistant && !isCurrentStream ? cleanAnswer : text
               return (
                 <motion.div
                   key={message.id}
@@ -606,6 +652,9 @@ export function CenterPanel({
                         <FileAttachmentCard attachment={attachment} />
                       </div>
                     )}
+                    {isAssistant && rawTrace && (
+                      <ThinkingTrace reasoning={rawTrace} depth={reasoningDepth} />
+                    )}
                     <div
                       className={`rounded border px-4 py-3 transition-colors duration-300 ${
                         message.role === 'assistant'
@@ -617,9 +666,9 @@ export function CenterPanel({
                     >
                       <p className={`whitespace-pre-wrap text-sm leading-relaxed ${message.role === 'assistant' ? 'font-mono text-primary/90' : 'text-foreground'}`}>
                         {isCurrentStream ? (
-                          <TypingText text={text} isStreaming={true} />
+                          <TypingText text={displayAnswer} isStreaming={true} />
                         ) : (
-                          text
+                          displayAnswer
                         )}
                       </p>
                     </div>
@@ -651,7 +700,7 @@ export function CenterPanel({
                     {message.role === 'assistant' && (
                       <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                         <button
-                          onClick={() => handleCopy(text, message.id)}
+                          onClick={() => handleCopy(displayAnswer, message.id)}
                           className="rounded p-1 hover:bg-surface-elevated"
                         >
                           {copiedId === message.id ? (
@@ -857,6 +906,70 @@ export function CenterPanel({
                         {m.desc}
                       </span>
                     </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Reasoning Depth selector */}
+          <div ref={reasoningDropdownRef} className="relative flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setReasoningMenuOpen((o) => !o)}
+              className={`flex h-12 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
+              }`}
+              title={currentReasoning.desc}
+            >
+              <Brain className="h-3 w-3" />
+              {reasoningDepth === 'off' ? 'Think' : currentReasoning.label.replace('Think: ', '')}
+            </button>
+            {reasoningMenuOpen && (
+              <div className="absolute bottom-full right-0 z-50 mb-1 w-48 border border-border bg-surface-secondary shadow-xl">
+                {REASONING_DEPTHS.map((r) => (
+                  <button
+                    type="button"
+                    key={r.id}
+                    onClick={() => { setReasoningDepth(r.id); setReasoningMenuOpen(false) }}
+                    className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                      reasoningDepth === r.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <span className="font-mono text-[10px] font-semibold">{r.label}</span>
+                    <span className="font-sans text-[9px] text-muted-foreground leading-tight">{r.desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Focus Mode selector */}
+          <div ref={focusDropdownRef} className="relative flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setFocusMenuOpen((o) => !o)}
+              className={`flex h-12 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                focusMode !== 'all' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
+              }`}
+              title={`Focus: ${currentFocus.desc}`}
+            >
+              {currentFocus.icon && <currentFocus.icon className="h-3 w-3" />}
+              {currentFocus.label}
+            </button>
+            {focusMenuOpen && (
+              <div className="absolute bottom-full right-0 z-50 mb-1 w-44 border border-border bg-surface-secondary shadow-xl">
+                {FOCUS_MODES.map((f) => (
+                  <button
+                    type="button"
+                    key={f.id}
+                    onClick={() => { setFocusMode(f.id); setFocusMenuOpen(false) }}
+                    className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                      focusMode === f.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <span className="font-mono text-[10px] font-semibold">{f.label}</span>
+                    <span className="font-sans text-[9px] text-muted-foreground leading-tight">{f.desc}</span>
                   </button>
                 ))}
               </div>

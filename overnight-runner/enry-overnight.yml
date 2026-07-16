@@ -1,0 +1,71 @@
+# enry-overnight:managed v1
+# Managed by enry.agent (Enry Lab). Do not edit by hand — the marker on the
+# first line lets enry.agent detect this file as its own and update it safely.
+#
+# Overnight Autonomous R&D: dispatched by the Lab UI to a scratch repo in the
+# enry-lab-experiments org. The runner explores the idea, runs any tests/builds
+# already in the repo, and reports results back to enry.agent.
+#
+# GUARDRAIL: contents: read only. This runner CANNOT push to any repo.
+# All exploration happens in the checkout; results are posted via the callback.
+name: Enry Overnight
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: enry.agent overnight run id
+        required: true
+      idea_id:
+        description: enry.agent idea id
+        required: true
+      idea_title:
+        description: title of the idea being explored
+        required: true
+      idea_description:
+        description: description of the idea
+        required: false
+        default: ''
+      callback:
+        description: enry.agent base URL to post results to
+        required: true
+      token:
+        description: per-run callback token
+        required: true
+
+permissions:
+  contents: read
+
+# Only allow one run per repo at a time
+concurrency:
+  group: enry-overnight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    # Hard ceiling — 50 minutes. The runner self-terminates at 45, this is the backstop.
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+
+      # Install whatever deps the scratch repo already has — the experiment
+      # idea's code was already committed before the dispatch.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile || pnpm install || npm install || true
+
+      - name: Run Enry Overnight experiment
+        run: node .enry-overnight/exp.mjs
+        env:
+          ENRY_RUN_ID: ${{ inputs.run_id }}
+          ENRY_CALLBACK: ${{ inputs.callback }}
+          ENRY_TOKEN: ${{ inputs.token }}
+          ENRY_IDEA_TITLE: ${{ inputs.idea_title }}
+          ENRY_IDEA_DESC: ${{ inputs.idea_description }}

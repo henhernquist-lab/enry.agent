@@ -189,7 +189,7 @@ export async function proposeEdit(
 // file's own code — which routinely contains quotes, braces, and backslashes
 // that would break JSON parsing.
 const CONTENT_SENTINEL = '===FILE==='
-const EDIT_SYSTEM_PROMPT = `You are enry's coding agent, proposing exactly one file's new full content.
+const BASE_EDIT_SYSTEM_PROMPT = `You are enry's coding agent, proposing exactly one file's new full content.
 
 You receive the target file's current content (empty for a new file) and an instruction. Respond in TWO parts, in this exact order:
 
@@ -199,6 +199,37 @@ You receive the target file's current content (empty for a new file) and an inst
 
 If the instruction is not actually about changing this file's content, put a one-line explanation in the plan and output the original content unchanged after the sentinel.`
 
+// ── .enryrules ───────────────────────────────────────────────
+// When a repo has a .enryrules file at its root, its contents are injected
+// into every coding-agent prompt. This lets the user encode repo-specific
+// conventions ("always use const, never let", "Tailwind v4 CSS-first config",
+// "no default exports") that the agent must follow.
+
+let enryrulesCache: { repo: string; content: string; ts: number } | null = null
+const ENRYRULES_CACHE_TTL = 300_000 // 5 min in-memory cache per serverless instance
+
+async function loadEnryRules(ctx: WriteOpsContext): Promise<string | null> {
+  const key = `${ctx.owner}/${ctx.repo}`
+  if (enryrulesCache && enryrulesCache.repo === key && Date.now() - enryrulesCache.ts < ENRYRULES_CACHE_TTL) {
+    return enryrulesCache.content || null
+  }
+  try {
+    const { content, error } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, '.enryrules')
+    if (error || !content) {
+      enryrulesCache = { repo: key, content: '', ts: Date.now() }
+      return null
+    }
+    enryrulesCache = { repo: key, content, ts: Date.now() }
+    return content
+  } catch {
+    return null
+  }
+}
+
+function buildEnryRulesBlock(content: string): string {
+  return `\n\nREPOSITORY RULES (.enryrules) — these are non-negotiable conventions for this repo. Follow them exactly:\n${content}`
+}
+
 async function generateFileContent(
   ctx: WriteOpsContext,
   filePath: string,
@@ -207,11 +238,13 @@ async function generateFileContent(
   isNewFile: boolean,
 ): Promise<{ reasoning: string; content: string; truncated: boolean } | { error: string }> {
   const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
+  const rules = await loadEnryRules(ctx)
+  const system = BASE_EDIT_SYSTEM_PROMPT.replace('{{PLAN_DEPTH}}', effort.planDepth) + (rules ? buildEnryRulesBlock(rules) : '')
   try {
     const client = nimClientFor(ctx.model)
     const { text, finishReason } = await generateText({
       model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
-      system: EDIT_SYSTEM_PROMPT.replace('{{PLAN_DEPTH}}', effort.planDepth),
+      system,
       prompt: `File: ${filePath}\n${isNewFile ? '(new file — no existing content)' : `Current content:\n${baseContent}`}\n\nInstruction: ${instruction}\n\nProduce your plan, then ${CONTENT_SENTINEL}, then the complete new file content.`,
       temperature: effort.temperature,
       maxOutputTokens: effort.maxOutputTokens,
@@ -355,6 +388,7 @@ export async function planEdit(
   }
 
   const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
+  const rules = await loadEnryRules(ctx)
   const PLAN_SYSTEM = `You are enry's coding agent, producing a plan BEFORE writing code.
 
 Given a file and an instruction, produce a clear, structured plan for what you will change.
@@ -366,7 +400,7 @@ ambiguous, ask one or two clarifying questions at the end of your plan.
 
 If the instruction is not about changing code, say so in one sentence and refuse.
 
-Keep the plan under ${Math.round(effort.maxOutputTokens / 2)} words.`
+Keep the plan under ${Math.round(effort.maxOutputTokens / 2)} words.${rules ? buildEnryRulesBlock(rules) : ''}`
 
   try {
     const client = nimClientFor(ctx.model)

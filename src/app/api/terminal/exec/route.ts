@@ -15,6 +15,8 @@ import { getSkillWithOverride } from '@/lib/skills/loader'
 import { generateText } from 'ai'
 import { nimClientFor, DEFAULT_NIM_MODEL } from '@/lib/nim'
 import { insertSkillInvocation, updateSkillInvocationOutput } from '@/lib/lab/db'
+import { getFileContent } from '@/lib/github'
+import { parseReasoningTrace, renderReasoningTrace, reasoningExtraBody, type ReasoningDepth } from '@/lib/reasoning-trace'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
 
 export const maxDuration = 60
@@ -60,6 +62,8 @@ export async function POST(req: Request) {
   const model = typeof body.model === 'string' ? body.model : undefined
   const effort = ['low', 'medium', 'high', 'none', 'deep'].includes(body.effort) ? body.effort : undefined
   const mode = body.mode === 'manual' ? 'manual' as const : 'auto' as const
+  const focusMode = ['all','memory_only','web_only','repo_only'].includes(body.focus_mode) ? body.focus_mode as string : undefined
+  const reasoningDepth: ReasoningDepth = ['off','summary','full'].includes(body.reasoning_depth) ? body.reasoning_depth : 'off'
   const proceed = body.proceed === true
   const resolvedFile = typeof body.target_file === 'string' ? body.target_file : undefined
   const resolvedIsNew = body.is_new_file === true
@@ -113,7 +117,15 @@ export async function POST(req: Request) {
     resolvedInstruction,
   }
 
-  const { result, action, planTarget, invocationId } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false, skillSlug, skillSlugs)
+  const { result, action, planTarget, invocationId, reasoningTrace } = await dispatch(command, writeCtx, snap.headSha, mode, proceed ?? false, skillSlug, skillSlugs, reasoningDepth)
+
+  // Check for .enryrules and include its existence in the response so the
+  // client can show/hide the editor UI.
+  let hasEnryRules = false
+  try {
+    const { content } = await getFileContent(githubToken, owner, name, '.enryrules')
+    hasEnryRules = content !== null
+  } catch { /* ignore */ }
 
   const entry: TerminalCommand = {
     cmd: command,
@@ -140,8 +152,11 @@ export async function POST(req: Request) {
     has_pending_diff,
     pending_file,
     reasoning: result.reasoning ?? null,
+    reasoning_trace: reasoningTrace,
+    reasoning_depth: reasoningDepth,
     ...(invocationId ? { invocation_id: invocationId } : {}),
     ...(planTarget ? { target_file: planTarget.file, is_new_file: planTarget.isNewFile } : {}),
+    has_enryrules: hasEnryRules,
   })
 }
 
@@ -165,6 +180,7 @@ interface DispatchResult {
   action?: TerminalCommand['action']
   planTarget?: { file: string; isNewFile: boolean }
   invocationId?: string
+  reasoningTrace?: string | null
 }
 
 // Dispatch order:
@@ -173,18 +189,18 @@ interface DispatchResult {
 //    run before the NL classifier so that natural-language skill triggers
 //    ("should I add X?") don't get rejected as non-code-edit requests.
 // 2. Meta-command → read-only allowlist → natural language (code edit).
-async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false, skillSlug?: string, skillSlugs?: string[]): Promise<DispatchResult> {
+async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false, skillSlug?: string, skillSlugs?: string[], reasoningDepth?: ReasoningDepth): Promise<DispatchResult> {
   // ── Multi-skill response path (read-only, text analysis) ──
   if (skillSlugs && skillSlugs.length > 1) {
-    const skillResult = await runMultiSkillResponse(ctx, skillSlugs, command)
-    return { result: skillResult, invocationId: skillResult.invocationId }
+    const skillResult = await runMultiSkillResponse(ctx, skillSlugs, command, reasoningDepth)
+    return { result: skillResult, invocationId: skillResult.invocationId, reasoningTrace: skillResult.reasoningTrace }
   }
 
   // ── Skill response path (read-only, text analysis) ───────────
   if (skillSlug || (skillSlugs && skillSlugs.length === 1)) {
     const slug = skillSlug ?? skillSlugs![0]
-    const skillResult = await runSkillResponse(ctx, slug, command)
-    return { result: skillResult, invocationId: skillResult.invocationId }
+    const skillResult = await runSkillResponse(ctx, slug, command, reasoningDepth)
+    return { result: skillResult, invocationId: skillResult.invocationId, reasoningTrace: skillResult.reasoningTrace }
   }
   const meta = parseMetaCommand(command)
   if (meta.ok) {
@@ -342,7 +358,8 @@ async function runSkillResponse(
   ctx: WriteOpsContext,
   skillSlug: string,
   wrappedCommand: string,
-): Promise<{ output: string; exitCode: number; reasoning?: string; invocationId?: string }> {
+  reasoningDepth?: ReasoningDepth,
+): Promise<{ output: string; exitCode: number; reasoning?: string; invocationId?: string; reasoningTrace?: string | null }> {
   const skill = await getSkillWithOverride(ctx.userId, skillSlug)
   if (!skill) {
     return { output: `Unknown skill: ${skillSlug}`, exitCode: 1 }
@@ -355,12 +372,16 @@ async function runSkillResponse(
     ? wrappedCommand.slice(userIdx + userMarker.length).trim()
     : wrappedCommand
 
+  // Detect whether an Enry Lab prompt override is active for this skill.
+  const baseSkill = getSkill(skillSlug)
+  const hasOverride = baseSkill && skill.systemPrompt !== baseSkill.systemPrompt
+
   // Log the invocation before generating.
   let invocationId: string | null = null
   try {
     invocationId = await insertSkillInvocation(ctx.userId, {
       skill_slug: skillSlug,
-      prompt_version: 'base',
+      prompt_version: hasOverride ? 'override' : 'base',
       input_topic: userRequest.slice(0, 2000),
       output_text: '',
       model_used: ctx.model ?? DEFAULT_NIM_MODEL,
@@ -375,21 +396,32 @@ async function runSkillResponse(
     console.error('[terminal/skill-response] failed to log invocation:', err)
   }
 
+  // Load .enryrules for this repo so skill invocations follow repo-specific conventions.
+  let enryrulesContent = ''
+  try {
+    const { content } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, '.enryrules')
+    if (content) enryrulesContent = `\n\nREPOSITORY RULES (.enryrules) — follow these conventions:\n${content}`
+  } catch { /* ignore */ }
+
   try {
     const client = nimClientFor(ctx.model)
     const { text } = await generateText({
       model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
-      system: skill.systemPrompt,
+      system: skill.systemPrompt + enryrulesContent,
       prompt: `Repository: ${ctx.owner}/${ctx.repo}\n\nUser request: ${userRequest}\n\nProvide your analysis now.`,
       temperature: 0.7,
       maxOutputTokens: 3000,
       timeout: 60_000,
       maxRetries: 1,
+      ...(reasoningDepth !== 'off' ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
     })
+
+    // Parse reasoning trace from the response
+    const { reasoning: trace, answer } = parseReasoningTrace(text)
     if (invocationId) {
-      await updateSkillInvocationOutput(invocationId, text)
+      await updateSkillInvocationOutput(invocationId, answer)
     }
-    return { output: text, exitCode: 0, invocationId: invocationId ?? undefined }
+    return { output: answer, exitCode: 0, invocationId: invocationId ?? undefined, reasoningTrace: trace }
   } catch (err) {
     console.error('[terminal/skill-response] generation threw:', err)
     const detail = err instanceof Error ? err.message : String(err)
@@ -405,7 +437,8 @@ async function runMultiSkillResponse(
   ctx: WriteOpsContext,
   skillSlugs: string[],
   wrappedCommand: string,
-): Promise<{ output: string; exitCode: number; reasoning?: string; invocationId?: string }> {
+  reasoningDepth?: ReasoningDepth,
+): Promise<{ output: string; exitCode: number; reasoning?: string; invocationId?: string; reasoningTrace?: string | null }> {
   const skills = await Promise.all(skillSlugs.map((s) => getSkillWithOverride(ctx.userId, s)))
   const validSkills = skills.filter(Boolean)
   if (validSkills.length === 0) {
@@ -427,12 +460,19 @@ async function runMultiSkillResponse(
 
   const combinedPrompt = buildMultiSkillPrompt(invocations)
 
+  // Detect whether any of the loaded skills has an active prompt override.
+  const anyOverride = skillSlugs.some((slug) => {
+    const base = getSkill(slug)
+    const override = validSkills.find((s) => s && s.slug === slug)
+    return base && override && base.systemPrompt !== override.systemPrompt
+  })
+
   // Log the invocation before generating.
   let invocationId: string | null = null
   try {
     invocationId = await insertSkillInvocation(ctx.userId, {
       skill_slug: skillSlugs.join('+'),
-      prompt_version: 'base',
+      prompt_version: anyOverride ? 'override' : 'base',
       input_topic: userRequest.slice(0, 2000),
       output_text: '',
       model_used: ctx.model ?? DEFAULT_NIM_MODEL,
@@ -447,21 +487,31 @@ async function runMultiSkillResponse(
     console.error('[terminal/multi-skill-response] failed to log invocation:', err)
   }
 
+  // Load .enryrules for this repo so multi-skill invocations follow repo conventions.
+  let enryrulesContent = ''
+  try {
+    const { content } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, '.enryrules')
+    if (content) enryrulesContent = `\n\nREPOSITORY RULES (.enryrules) — follow these conventions:\n${content}`
+  } catch { /* ignore */ }
+
   try {
     const client = nimClientFor(ctx.model)
     const { text } = await generateText({
       model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
-      system: combinedPrompt,
+      system: combinedPrompt + enryrulesContent,
       prompt: `Repository: ${ctx.owner}/${ctx.repo}\n\nUser request: ${userRequest}\n\nProvide your multi-lens analysis now.`,
       temperature: 0.7,
       maxOutputTokens: 4000,
       timeout: 90_000,
       maxRetries: 1,
+      ...(reasoningDepth !== 'off' ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
     })
+
+    const { reasoning: trace, answer } = parseReasoningTrace(text)
     if (invocationId) {
-      await updateSkillInvocationOutput(invocationId, text)
+      await updateSkillInvocationOutput(invocationId, answer)
     }
-    return { output: text, exitCode: 0, invocationId: invocationId ?? undefined }
+    return { output: answer, exitCode: 0, invocationId: invocationId ?? undefined, reasoningTrace: trace }
   } catch (err) {
     console.error('[terminal/multi-skill-response] generation threw:', err)
     const detail = err instanceof Error ? err.message : String(err)

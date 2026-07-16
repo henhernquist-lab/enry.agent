@@ -8,10 +8,11 @@ import Link from 'next/link'
 import {
   ArrowLeft, ChevronDown, ChevronRight, Check, X, Send, Loader2,
   GitBranch, Folder, File, Lock, Sliders, Zap, TerminalSquare, Eye, Play,
-  Car, Radar, Swords,
+  Car, Radar, Swords, FileText, Pencil, Brain, Globe,
 } from 'lucide-react'
 import { CruisePanel } from '@/components/agent/cruise-panel'
 import { SkillFeedbackBar } from '@/components/skill-feedback-bar'
+import { ThinkingTrace } from '@/components/thinking-trace'
 import { SKILLS as ALL_SKILLS, detectSkillInvocation, detectSkillInvocations, buildMultiSkillPrompt } from '@/lib/skills/registry'
 
 // ─── Types ──────────────────────────────────────────────────
@@ -34,7 +35,7 @@ type ChatLine =
   | { kind: 'error'; text: string }
   | { kind: 'filePreview'; path: string; content: string }
   | { kind: 'question'; questionText: string; options: string[] }
-  | { kind: 'skill'; text: string; invocationId?: string; skillName?: string }
+  | { kind: 'skill'; text: string; invocationId?: string; skillName?: string; reasoningTrace?: string | null }
 
 type Mode = 'auto' | 'manual'
 
@@ -265,6 +266,18 @@ export default function AgentPage() {
   const [activeSkillSlugs, setActiveSkillSlugs] = useState<string[]>([])
   const [skillMenuOpen, setSkillMenuOpen] = useState(false)
 
+  // Focus mode — limits what context the agent draws from
+  type FocusMode = 'all' | 'memory_only' | 'web_only' | 'repo_only'
+  const [focusMode, setFocusMode] = useState<FocusMode>('all')
+  const [focusMenuOpen, setFocusMenuOpen] = useState(false)
+  const focusMenuRef = useRef<HTMLDivElement>(null)
+
+  // .enryrules state
+  const [hasEnryRules, setHasEnryRules] = useState(false)
+  const [enryRulesContent, setEnryRulesContent] = useState('')
+  const [enryRulesEditing, setEnryRulesEditing] = useState(false)
+  const [enryRulesSaving, setEnryRulesSaving] = useState(false)
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const repoMenuRef = useRef<HTMLDivElement>(null)
@@ -272,6 +285,27 @@ export default function AgentPage() {
   const effortMenuRef = useRef<HTMLDivElement>(null)
   const skillMenuRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  const FOCUS_MODES = [
+    { id: 'all' as const, label: 'All', icon: null, desc: 'No restrictions — web, memory, and repo' },
+    { id: 'memory_only' as const, label: 'Memory', icon: Brain, desc: 'Only stored memories/notes, no web or repo' },
+    { id: 'web_only' as const, label: 'Web', icon: Globe, desc: 'Web search only, no memory or repo context' },
+    { id: 'repo_only' as const, label: 'Repo', icon: File, desc: 'Only current repo files, no memory or web' },
+  ]
+  const currentFocusMode = FOCUS_MODES.find((f) => f.id === focusMode)!
+
+  // Reasoning trace — how much of the model's thinking to surface
+  type ReasoningDepth = 'off' | 'summary' | 'full'
+  const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>('off')
+  const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false)
+  const reasoningMenuRef = useRef<HTMLDivElement>(null)
+
+  const REASONING_DEPTHS = [
+    { id: 'off' as const, label: 'Think: Off', desc: 'Show only the final answer' },
+    { id: 'summary' as const, label: 'Think: Brief', desc: 'Condensed reasoning summary' },
+    { id: 'full' as const, label: 'Think: Full', desc: 'Complete reasoning trace' },
+  ]
+  const currentReasoningDepth = REASONING_DEPTHS.find((r) => r.id === reasoningDepth)!
 
   const tree = useMemo(() => buildTree(filePaths), [filePaths])
   const selectedRepo = repos.find((r) => r.full_name === repo)
@@ -285,6 +319,18 @@ export default function AgentPage() {
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
   }, [status, router])
+
+  // Load .enryrules when repo changes
+  useEffect(() => {
+    if (!repo) return
+    fetch(`/api/terminal/enryrules?repo=${encodeURIComponent(repo)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setHasEnryRules(d.exists ?? false)
+        setEnryRulesContent(d.content ?? '')
+      })
+      .catch(() => {})
+  }, [repo])
 
   // Load repos
   useEffect(() => {
@@ -326,6 +372,8 @@ export default function AgentPage() {
       if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) setModelMenuOpen(false)
       if (effortMenuRef.current && !effortMenuRef.current.contains(e.target as Node)) setEffortMenuOpen(false)
       if (skillMenuRef.current && !skillMenuRef.current.contains(e.target as Node)) setSkillMenuOpen(false)
+      if (focusMenuRef.current && !focusMenuRef.current.contains(e.target as Node)) setFocusMenuOpen(false)
+      if (reasoningMenuRef.current && !reasoningMenuRef.current.contains(e.target as Node)) setReasoningMenuOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
@@ -375,6 +423,8 @@ export default function AgentPage() {
           repo, command, session_id: sessionId, model,
           effort,          // FIX #2: send effort to server
           mode,            // FIX #3: send mode to server
+          focus_mode: focusMode,
+          reasoning_depth: reasoningDepth,
           proceed: opts?.proceed ?? false,
           ...(opts?.skillSlugs && opts.skillSlugs.length > 0 ? { skill_slugs: opts.skillSlugs } : {}),
           ...(opts?.skillSlug && !opts?.skillSlugs ? { skill_slug: opts.skillSlug } : {}),
@@ -423,7 +473,7 @@ export default function AgentPage() {
         } else if (data.exit_code !== 0) {
           setLines((l) => [...l, { kind: 'error', text: text || 'command failed' }])
         } else if (data.invocation_id) {
-          setLines((l) => [...l, { kind: 'skill', text: text || '(done)', invocationId: data.invocation_id, skillName: activeSkill?.name ?? activeSkills.map((s) => s.name).join(' + ') }])
+          setLines((l) => [...l, { kind: 'skill', text: text || '(done)', invocationId: data.invocation_id, skillName: activeSkill?.name ?? activeSkills.map((s) => s.name).join(' + '), reasoningTrace: data.reasoning_trace ?? null }])
         } else {
           setLines((l) => [...l, { kind: 'system', text: text || '(done)' }])
         }
@@ -438,7 +488,7 @@ export default function AgentPage() {
         abortRef.current = null
       }
     },
-    [repo, sessionId, model, effort, mode],
+    [repo, sessionId, model, effort, mode, focusMode, reasoningDepth],
   )
 
   const handleSend = useCallback(() => {
@@ -744,6 +794,72 @@ USER REQUEST: ${userText}`
               <p className="px-3 font-mono text-[10px] text-muted-foreground/50 leading-relaxed">Select a repository to browse its files.</p>
             )}
           </div>
+
+          {/* .enryrules */}
+          {hasRepo && (
+            <div className="border-t border-border px-3 py-2">
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <FileText className="h-3 w-3 text-muted-foreground" />
+                <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">.enryrules</span>
+              </div>
+              {hasEnryRules ? (
+                <div>
+                  <button
+                    onClick={() => setEnryRulesEditing(!enryRulesEditing)}
+                    className="flex w-full items-center gap-1 rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/5"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    {enryRulesEditing ? 'Close editor' : 'View / Edit'}
+                  </button>
+                  {enryRulesEditing && (
+                    <div className="mt-2">
+                      <textarea
+                        value={enryRulesContent}
+                        onChange={(e) => setEnryRulesContent(e.target.value)}
+                        rows={6}
+                        spellCheck={false}
+                        className="w-full resize-none rounded border border-border bg-surface-elevated px-2.5 py-2 font-mono text-[10px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none"
+                        placeholder="# .enryrules — repo-specific conventions&#10;# e.g.:&#10;# - always use const, never let&#10;# - Tailwind v4 CSS-first config&#10;# - no default exports"
+                      />
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            setEnryRulesSaving(true)
+                            try {
+                              const res = await fetch('/api/terminal/enryrules', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ repo, content: enryRulesContent }),
+                              })
+                              if (res.ok) { setEnryRulesEditing(false); setHasEnryRules(true) }
+                            } catch { /* ignore */ }
+                            setEnryRulesSaving(false)
+                          }}
+                          disabled={enryRulesSaving}
+                          className="flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/10 disabled:opacity-40"
+                        >
+                          {enryRulesSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => { setEnryRulesEditing(false) }}
+                          className="font-mono text-[10px] text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setEnryRulesEditing(true); setEnryRulesContent('') }}
+                  className="flex w-full items-center gap-1 rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-primary hover:border-primary/30"
+                >
+                  <Pencil className="h-3 w-3" /> Create .enryrules
+                </button>
+              )}
+            </div>
+          )}
         </aside>
 
         {/* Cruise replaces the conversation pane when active */}
@@ -922,6 +1038,7 @@ USER REQUEST: ${userText}`
                           <Swords className="h-3 w-3 text-warning" />
                           <span className="font-mono text-[10px] uppercase tracking-wider text-warning/70">{line.skillName || 'Skill output'}</span>
                         </div>
+                        <ThinkingTrace reasoning={line.reasoningTrace ?? null} depth={reasoningDepth} modelLabel={currentModel?.label} />
                         <div className="whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-foreground/80">{line.text}</div>
                         <SkillFeedbackBar invocationId={line.invocationId} skillName={line.skillName} />
                       </div>
@@ -1021,6 +1138,58 @@ USER REQUEST: ${userText}`
                             <X className="h-3 w-3" /> Clear all ({activeSkillSlugs.length})
                           </button>
                         )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Reasoning Depth selector */}
+                <div ref={reasoningMenuRef} className="relative flex-shrink-0">
+                  <button onClick={() => setReasoningMenuOpen((o) => !o)}
+                    className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                      reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-secondary text-muted-foreground'
+                    }`}>
+                    <Brain className="h-3 w-3" />
+                    {reasoningDepth === 'off' ? 'Think' : currentReasoningDepth.label.replace('Think: ', '')}
+                    <ChevronDown className="h-2.5 w-2.5" />
+                  </button>
+                  <AnimatePresence>
+                    {reasoningMenuOpen && (
+                      <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
+                        className="absolute bottom-full left-0 z-20 mb-1 w-48 rounded-md border border-border bg-surface-elevated shadow-lg">
+                        {REASONING_DEPTHS.map((r) => (
+                          <button key={r.id} onClick={() => { setReasoningDepth(r.id); setReasoningMenuOpen(false); inputRef.current?.focus() }}
+                            className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${reasoningDepth === r.id ? 'text-primary' : 'text-foreground'}`}>
+                            <span className="font-mono text-[10px] font-semibold">{r.label}</span>
+                            <span className="font-sans text-[9px] text-muted-foreground">{r.desc}</span>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Focus Mode selector */}
+                <div ref={focusMenuRef} className="relative flex-shrink-0">
+                  <button onClick={() => setFocusMenuOpen((o) => !o)}
+                    className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                      focusMode !== 'all' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-secondary text-muted-foreground'
+                    }`}>
+                    {currentFocusMode.icon ? <currentFocusMode.icon className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
+                    {currentFocusMode.label}
+                    <ChevronDown className="h-2.5 w-2.5" />
+                  </button>
+                  <AnimatePresence>
+                    {focusMenuOpen && (
+                      <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
+                        className="absolute bottom-full left-0 z-20 mb-1 w-44 rounded-md border border-border bg-surface-elevated shadow-lg">
+                        {FOCUS_MODES.map((f) => (
+                          <button key={f.id} onClick={() => { setFocusMode(f.id); setFocusMenuOpen(false); inputRef.current?.focus() }}
+                            className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${focusMode === f.id ? 'text-primary' : 'text-foreground'}`}>
+                            <span className="font-mono text-[10px] font-semibold">{f.label}</span>
+                            <span className="font-sans text-[9px] text-muted-foreground">{f.desc}</span>
+                          </button>
+                        ))}
                       </motion.div>
                     )}
                   </AnimatePresence>
