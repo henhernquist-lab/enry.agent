@@ -1,4 +1,4 @@
-`-- Enry Cruise: scan-and-fix categories. The pivot from open-ended goal mode to
+-- Enry Cruise: scan-and-fix categories. The pivot from open-ended goal mode to
 -- a set of concrete, toggleable finding categories. Each category is detected
 -- during a scan and either reported or auto-fixed per repo config. Auto-fixes
 -- are deterministic (the repo's own prettier/eslint, or mechanical removals) and

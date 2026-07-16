@@ -67,6 +67,10 @@ export interface CruiseRepo {
   runner_version: number | null
   scanfix_categories: ScanfixConfig
   buttons_autofix_confirmed: boolean
+  // Caps for a scanfix run (per-run overrides live in cruise_goal_runs; these
+  // are the repo defaults). Kept in sync with supabase/migrations/009_cruise_goals.sql.
+  goal_cap_files: number
+  goal_cap_steps: number
   created_at: string
   updated_at: string
 }
@@ -117,4 +121,64 @@ export interface IncomingFinding {
   detail: string
   suggested_fix?: string | null
   category?: CruiseScanfixCategory | null
+}
+
+// ── Scan-and-fix run (the actuator) ──────────────────────────────────────────
+// A goal run works a bounded, deterministic set of category fixes to
+// completion across one or more GitHub Actions dispatches, landing every
+// change on branch_name and opening a single PR at the end. Kept in sync with
+// supabase/migrations/009_cruise_goals.sql. mode is 'scanfix' only — the
+// open-ended natural-language goal input and per-finding LLM fix mode were
+// removed; this type stays a union only because older DB rows may carry
+// 'goal'/'fix' from before that removal.
+export type CruiseGoalRunStatus =
+  | 'queued' | 'planning' | 'running' | 'awaiting_clarification'
+  | 'completed' | 'capped' | 'no_changes' | 'build_failed' | 'failed' | 'cancelled'
+
+export type CruiseGoalStepStatus = 'pending' | 'running' | 'done' | 'failed'
+
+export function isGoalRunActive(status: CruiseGoalRunStatus): boolean {
+  return status === 'queued' || status === 'planning' || status === 'running' || status === 'awaiting_clarification'
+}
+
+export type CruiseGoalMode = 'goal' | 'fix' | 'scanfix'
+export type CruiseGoalTrigger = 'on_demand' | 'scheduled'
+
+export interface CruiseGoalRun {
+  id: string
+  repo_id: string
+  user_id: string
+  goal: string
+  mode: CruiseGoalMode
+  trigger: CruiseGoalTrigger
+  scanfix_categories: ScanfixConfig | null
+  source_scan_id: string | null
+  status: CruiseGoalRunStatus
+  run_id: number | null
+  branch_name: string
+  base_branch: string
+  pr_number: number | null
+  pr_url: string | null
+  cap_files: number
+  cap_steps: number
+  llm_calls_used: number
+  plan: string[] | null
+  clarify_question: string | null
+  clarify_answer: string | null
+  remaining_summary: string | null
+  error: string | null
+  dispatched_at: string
+  heartbeat_at: string | null
+  finished_at: string | null
+}
+
+export interface CruiseGoalStep {
+  id: string
+  goal_run_id: string
+  seq: number
+  description: string
+  status: CruiseGoalStepStatus
+  detail: string | null
+  created_at: string
+  updated_at: string
 }
