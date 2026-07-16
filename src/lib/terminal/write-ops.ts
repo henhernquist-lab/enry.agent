@@ -157,7 +157,18 @@ export async function proposeEdit(
     : 'Review this file and propose your single best, most useful improvement — a real fix or a clear quality improvement, not a cosmetic no-op.')
 
   const generated = await generateFileContent(ctx, filePath, baseContent, effectiveInstruction, isNewFile)
-  if (generated === null) return { output: `${isNewFile ? 'write' : 'edit'}: generation failed`, exitCode: 1 }
+  if ('error' in generated) return { output: `${isNewFile ? 'write' : 'edit'}: generation failed — ${generated.error}`, exitCode: 1 }
+  if (generated.truncated) {
+    // Never propose a cut-off file as a ready-to-apply diff — that's a worse
+    // failure than an explicit error, since it looks successful right up
+    // until the truncated code fails to build. Nothing is saved to
+    // pending_diff, so there's nothing stale for a later `apply` to pick up.
+    const effortLabel = ctx.effort ?? 'none'
+    return {
+      output: `${isNewFile ? 'write' : 'edit'}: generation was cut off (ran out of output budget at "${effortLabel}" effort) before finishing "${filePath}" — no diff proposed. Try a higher effort level (more output budget), or narrow the instruction to a smaller, more specific change.`,
+      exitCode: 1,
+    }
+  }
 
   const diff = generateDiff(filePath, baseContent, generated.content)
   const pending: PendingDiff = {
@@ -194,32 +205,52 @@ async function generateFileContent(
   baseContent: string,
   instruction: string,
   isNewFile: boolean,
-): Promise<{ reasoning: string; content: string } | null> {
+): Promise<{ reasoning: string; content: string; truncated: boolean } | { error: string }> {
   const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
   try {
     const client = nimClientFor(ctx.model)
-    const { text } = await generateText({
+    const { text, finishReason } = await generateText({
       model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
       system: EDIT_SYSTEM_PROMPT.replace('{{PLAN_DEPTH}}', effort.planDepth),
       prompt: `File: ${filePath}\n${isNewFile ? '(new file — no existing content)' : `Current content:\n${baseContent}`}\n\nInstruction: ${instruction}\n\nProduce your plan, then ${CONTENT_SENTINEL}, then the complete new file content.`,
       temperature: effort.temperature,
       maxOutputTokens: effort.maxOutputTokens,
-      timeout: 45_000,
-      maxRetries: 1,
+      // Since the terminal/exec route now dispatches classification and
+      // generation as two separate invocations (see exec/route.ts's
+      // 'target_resolved' hop), this call runs alone in its own maxDuration
+      // budget rather than sharing one with resolveNLEditTarget — safe to use
+      // most of it. maxRetries: 0 for the same reason as nl-edit.ts: a retry
+      // here would silently double worst-case wall-clock past the invocation
+      // ceiling instead of failing cleanly.
+      timeout: 50_000,
+      maxRetries: 0,
     })
+
+    // finishReason 'length' means the model hit maxOutputTokens mid-generation
+    // — for a large file + detailed instruction this is a real, observed
+    // failure mode (confirmed against a real ~43KB file: a 500-word
+    // instruction alone consumed the full 4096-token 'none'-effort budget).
+    // The caller must not silently propose a cut-off file as a complete diff.
+    const truncated = finishReason === 'length'
 
     // Split plan from content on the sentinel. If the model omitted it, treat
     // the whole response as content with no reasoning (degrades gracefully).
     const idx = text.indexOf(CONTENT_SENTINEL)
     if (idx === -1) {
-      return { reasoning: '', content: stripFences(text) }
+      return { reasoning: '', content: stripFences(text), truncated }
     }
     const reasoning = text.slice(0, idx).trim()
     const content = stripFences(text.slice(idx + CONTENT_SENTINEL.length).replace(/^\n/, ''))
-    return { reasoning, content }
+    return { reasoning, content, truncated }
   } catch (err) {
     console.error('[terminal/write-ops] generateFileContent threw:', err)
-    return null
+    // A distinct, real reason instead of a bare "generation failed" — an
+    // AI-SDK-level timeout abort (a legitimately slow generation for a large
+    // file at a high effort level) reads very differently from an actual
+    // upstream error, and the difference is exactly what tells the user
+    // whether to retry, lower effort, or narrow the request.
+    const detail = err instanceof Error ? err.message : String(err)
+    return { error: detail }
   }
 }
 

@@ -103,6 +103,73 @@ export function TerminalChat({ autoFocus = true }: { autoFocus?: boolean }) {
     inputRef.current?.focus()
   }, [])
 
+  // One request/response leg to /api/terminal/exec. On 'target_resolved' —
+  // the server classified the NL request's target file but deliberately
+  // stopped short of generating the diff, so that step gets its own fresh
+  // maxDuration budget instead of sharing one with this classification call
+  // (see exec/route.ts) — this immediately fires the follow-up request with
+  // the resolved target, invisibly to the user (no extra prompt line; from
+  // their side it's still "typed one thing, got one result"). depth guards
+  // against ever chaining more than once.
+  // A function declaration (not useCallback) so its recursive self-call below
+  // is safe — a `const` bound via useCallback can't reference itself inside
+  // its own initializer without a TDZ hazard.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  async function runHop(body: Record<string, unknown>, originalCommand: string, signal: AbortSignal, depth: number): Promise<void> {
+    const res = await fetch('/api/terminal/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    })
+    // A non-2xx with no JSON body (an unhandled server exception, a platform-
+    // level error page) still deserves a real status code in the message
+    // instead of falling through to a parse failure that reads as generic.
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      let parsed: { error?: string } | null = null
+      try { parsed = JSON.parse(detail) } catch { /* not JSON */ }
+      setLines((l) => [...l, { kind: 'error', text: parsed?.error || `Request failed (HTTP ${res.status})` }])
+      return
+    }
+    const data = await res.json()
+    if (data.session_id) setSessionId(data.session_id)
+    setCurrentBranch(data.current_branch ?? null)
+    setHasPendingDiff(!!data.has_pending_diff)
+
+    if (data.action === 'target_resolved' && depth < 1) {
+      await runHop(
+        {
+          ...body, session_id: data.session_id,
+          command: originalCommand, proceed: true,
+          target_file: data.target_file, is_new_file: data.is_new_file, instruction: originalCommand,
+        },
+        originalCommand, signal, depth + 1,
+      )
+      return
+    }
+
+    const text = (data.output ?? data.error ?? '').toString()
+    const action = data.action
+
+    if (action === 'propose_edit' && data.exit_code === 0) {
+      // Parse diff info from the output
+      const fileMatch = text.match(/^([^:]+):/m)
+      const file = fileMatch ? fileMatch[1].trim() : 'unknown'
+      setLines((l) => [...l, { kind: 'proposal', file, diff: text, isNewFile: text.includes('new file') }])
+    } else if (action === 'apply' && data.exit_code === 0) {
+      setLines((l) => [...l, { kind: 'applied', text: text || '✓ Changes applied to working copy' }])
+    } else if (action === 'commit' && data.exit_code === 0) {
+      setLines((l) => [...l, { kind: 'committed', text: text }])
+    } else if (action === 'pr' && data.exit_code === 0) {
+      setLines((l) => [...l, { kind: 'pr', text: text }])
+    } else if (data.exit_code !== 0) {
+      setLines((l) => [...l, { kind: 'error', text: text || 'command failed' }])
+    } else {
+      setLines((l) => [...l, { kind: 'system', text: text || '(done)' }])
+    }
+  }
+
   const exec = useCallback(
     async (command: string) => {
       if (!repo) {
@@ -113,48 +180,28 @@ export function TerminalChat({ autoFocus = true }: { autoFocus?: boolean }) {
       const controller = new AbortController()
       abortRef.current = controller
       try {
-        const res = await fetch('/api/terminal/exec', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo, command, session_id: sessionId, model }),
-          signal: controller.signal,
-        })
-        const data = await res.json()
-        if (data.session_id) setSessionId(data.session_id)
-        setCurrentBranch(data.current_branch ?? null)
-        setHasPendingDiff(!!data.has_pending_diff)
-
-        const text = (data.output ?? data.error ?? '').toString()
-        const action = data.action
-
-        if (action === 'propose_edit' && data.exit_code === 0) {
-          // Parse diff info from the output
-          const fileMatch = text.match(/^([^:]+):/m)
-          const file = fileMatch ? fileMatch[1].trim() : 'unknown'
-          setLines((l) => [...l, { kind: 'proposal', file, diff: text, isNewFile: text.includes('new file') }])
-        } else if (action === 'apply' && data.exit_code === 0) {
-          setLines((l) => [...l, { kind: 'applied', text: text || '✓ Changes applied to working copy' }])
-        } else if (action === 'commit' && data.exit_code === 0) {
-          setLines((l) => [...l, { kind: 'committed', text: text }])
-        } else if (action === 'pr' && data.exit_code === 0) {
-          setLines((l) => [...l, { kind: 'pr', text: text }])
-        } else if (data.exit_code !== 0) {
-          setLines((l) => [...l, { kind: 'error', text: text || 'command failed' }])
-        } else {
-          setLines((l) => [...l, { kind: 'system', text: text || '(done)' }])
-        }
+        await runHop({ repo, command, session_id: sessionId, model, effort }, command, controller.signal, 0)
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
           setLines((l) => [...l, { kind: 'system', text: 'Cancelled' }])
         } else {
-          setLines((l) => [...l, { kind: 'error', text: 'Network error — retry' }])
+          // A raw fetch() rejection here carries no server-provided reason —
+          // that's what makes it a network-level failure rather than an HTTP
+          // error response (those are handled above, with the real status/
+          // body). Log the actual error so it's inspectable in the console
+          // instead of vanishing into a message that claims more than we know.
+          console.error('[terminal] request failed:', e)
+          setLines((l) => [...l, { kind: 'error', text: 'Request failed or timed out — retry' }])
         }
       } finally {
         setRunning(false)
         abortRef.current = null
       }
     },
-    [repo, sessionId, model],
+    // runHop is a plain function (recreated every render, deliberately — see
+    // its own comment), so it can never be a stable dependency; including it
+    // just means exec is recreated every render too, which costs nothing here.
+    [repo, sessionId, model, effort, runHop],
   )
 
   const handleSend = useCallback(() => {

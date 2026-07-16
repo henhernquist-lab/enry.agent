@@ -55,8 +55,13 @@ export async function resolveNLEditTarget(ctx: WriteOpsContext, instruction: str
       prompt: `Repo files:\n${fileList}\n\nRequest: "${instruction}"\n\nDecide now.`,
       temperature: 0.2,
       maxOutputTokens: 400,
-      timeout: 20_000,
-      maxRetries: 1,
+      timeout: 25_000,
+      // maxRetries: 1 would let the AI SDK silently retry a timed-out call,
+      // doubling worst-case wall-clock to 2x this timeout — invisible from
+      // here, but real to the caller's own maxDuration budget. A single
+      // attempt that fails cleanly and surfaces a real error beats a retry
+      // that quietly eats the invocation's remaining time.
+      maxRetries: 0,
     })
 
     const parsed = parseJsonLoose<{ refuse: boolean; reason: string; file: string; is_new_file: boolean }>(text)

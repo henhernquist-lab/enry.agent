@@ -218,24 +218,41 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
     }
   }
 
+  // A resolved target already in hand (manual-mode proceed, or hop 2 of the
+  // auto-mode chain below) skips resolveNLEditTarget entirely — it already
+  // ran once. Re-running it here was dead weight on every proceed/hop-2 call:
+  // a second classification round trip that could only ever confirm what the
+  // client already told us, while eating another slice of this invocation's
+  // wall-clock budget.
+  if (ctx.resolvedFile) {
+    const file = ctx.resolvedFile
+    const isNew = ctx.resolvedIsNew ?? false
+    const instr = ctx.resolvedInstruction ?? command
+    const result = await proposeEdit(ctx, file, instr, isNew)
+    return { result, action: 'propose_edit' }
+  }
+
   // Genuinely unrecognized input -> treat as a natural-language coding
   // request. resolveNLEditTarget enforces the coding-only scope boundary
   // itself (refuses non-code requests) before any file is touched.
   const nl = await resolveNLEditTarget(ctx, command)
   if (!nl.ok) return { result: { output: nl.error, exitCode: 1 } }
 
-  if (ctx.mode === 'manual' && !ctx.proceed) {
+  if (ctx.mode === 'manual') {
     // Manual mode, phase 1: generate a plan, no diff yet.
-    const planResult = await planEdit(ctx, nl.target.file, ctx.resolvedInstruction ?? command, nl.target.isNewFile)
+    const planResult = await planEdit(ctx, nl.target.file, command, nl.target.isNewFile)
     return { result: planResult, action: 'plan', planTarget: nl.target }
   }
 
-  // Auto mode, or manual mode phase 2 (proceed: true): generate the diff.
-  const file = ctx.resolvedFile ?? nl.target.file
-  const isNew = ctx.proceed ? (ctx.resolvedIsNew ?? false) : nl.target.isNewFile
-  const instr = ctx.resolvedInstruction ?? command
-  const result = await proposeEdit(ctx, file, instr, isNew)
-  return { result, action: 'propose_edit' }
+  // Auto mode: do NOT generate the diff in this same invocation. Classifying
+  // the target (up to 20s) and generating a full file rewrite (up to 45s) are
+  // two independent LLM calls; chained in one request they can together
+  // exceed this route's maxDuration (60s — already the ceiling on this
+  // project's Vercel plan, so raising it further is a no-op, same constraint
+  // Cruise hit). Returning here and having the client immediately re-POST
+  // with the resolved target (below) gives stage 2 its own fresh 60s budget
+  // instead of running on whatever's left after stage 1.
+  return { result: { output: '', exitCode: 0 }, action: 'target_resolved', planTarget: nl.target }
 }
 
 function metaAction(kind: string): TerminalCommand['action'] | undefined {
