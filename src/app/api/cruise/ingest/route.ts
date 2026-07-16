@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { supabase } from '@/lib/supabase'
-import { SCANFIX_CATEGORIES, type CruiseSeverity, type CruiseLayer, type IncomingFinding } from '@/lib/cruise/types'
+import { SCANFIX_CATEGORIES, type CruiseSeverity, type CruiseLayer, type IncomingFinding, type CruiseScan, type CruiseFinding, type ScanfixConfig } from '@/lib/cruise/types'
+import { generateScanSummary, renderSummaryText } from '@/lib/cruise/summary'
 
 export const maxDuration = 30
 
@@ -91,6 +92,34 @@ export async function POST(req: Request) {
     patch.finished_at = nowIso
     if (body.layer_status && typeof body.layer_status === 'object') patch.layer_status = body.layer_status
     if (body.error) patch.error = clampStr(body.error, 2000)
+
+    // Generate a human-readable scan summary from the findings.
+    if (status !== 'failed') {
+      try {
+        const { data: scanRow } = await supabase
+          .from('cruise_scans')
+          .select('scanfix_categories')
+          .eq('id', scan.id)
+          .maybeSingle()
+
+        const { data: allFindings } = await supabase
+          .from('cruise_findings')
+          .select('*')
+          .eq('scan_id', scan.id)
+          .order('created_at', { ascending: true })
+
+        const categories: ScanfixConfig = (scanRow as Record<string, unknown> | null)?.scanfix_categories as ScanfixConfig | undefined ?? {} as ScanfixConfig
+        const summary = generateScanSummary(
+          { ...scan, status: status as CruiseScan['status'] } as unknown as CruiseScan,
+          (allFindings ?? []) as unknown as CruiseFinding[],
+          categories,
+        )
+        patch.summary_text = renderSummaryText(summary)
+      } catch (e) {
+        console.error('[cruise/ingest] summary generation failed:', e)
+      }
+    }
+
     await supabase.from('cruise_scans').update(patch).eq('id', scan.id)
     return Response.json({ ok: true })
   }

@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radar, Play, Loader2, ChevronRight, ShieldCheck, ShieldOff, AlertTriangle,
   CheckCircle2, XCircle, Ban, RotateCcw, Clock, FileCode, Check, Lock,
-  Target, GitPullRequest, Sparkles, CalendarClock,
+  Target, GitPullRequest, Sparkles, CalendarClock, FileText,
 } from 'lucide-react'
 import type {
   CruiseRepo, CruiseScan, CruiseFinding, CruiseSeverity,
@@ -360,6 +360,12 @@ export function CruisePanel({ repo }: { repo: string }) {
                   </div>
                 </div>
               )}
+
+              {/* Scan Summary */}
+              <ScanSummaryBlock
+                scan={scans.find((s) => s.id === selectedScan)}
+                findings={findings}
+              />
 
               {/* Findings — grouped by category */}
               <FindingsList
@@ -748,6 +754,39 @@ function FindingsList({ findings, scan, onAct }: {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function ScanSummaryBlock({ scan, findings }: { scan?: CruiseScan; findings: CruiseFinding[] }) {
+  const [expanded, setExpanded] = useState(true)
+  if (!scan || isActive(scan.status)) return null
+
+  const summaryText = (scan as CruiseScan & { summary_text?: string }).summary_text
+  if (!summaryText && findings.length === 0) return null
+
+  // If the server generated a summary, use it. Otherwise render a simple inline one.
+  const text = summaryText
+    || `${findings.filter((f) => f.status === 'open').length} finding${findings.length === 1 ? '' : 's'} found. No summary generated yet.`
+
+  return (
+    <div className="mb-5 rounded-md border border-primary/20 bg-surface-secondary">
+      <button onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2">
+        <ChevronRight className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        <FileText className="h-3.5 w-3.5 text-primary" />
+        <span className="font-mono text-[10px] uppercase tracking-wider text-primary">Scan Summary</span>
+        <span className="ml-auto font-mono text-[9px] text-muted-foreground">
+          {scan.status} · {new Date(scan.finished_at ?? scan.dispatched_at).toLocaleString()}
+        </span>
+      </button>
+      {expanded && (
+        <div className="border-t border-border/60 px-3 py-3">
+          <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/90">
+            {text}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }

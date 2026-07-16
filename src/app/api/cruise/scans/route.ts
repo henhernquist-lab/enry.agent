@@ -25,7 +25,7 @@ export async function GET(req: Request) {
 
   const { data, error } = await supabase
     .from('cruise_scans')
-    .select('id, trigger, status, layers, layer_status, error, dispatched_at, finished_at')
+    .select('id, trigger, status, layers, layer_status, error, dispatched_at, finished_at, summary_text')
     .eq('repo_id', repoRow.id)
     .order('dispatched_at', { ascending: false })
     .limit(25)
