@@ -11,6 +11,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.68",
     "@ai-sdk/react": "^3.0.198",
+    "@composio/core": "^0.13.1",
     "@supabase/supabase-js": "^2.110.0",
     "@tavily/core": "^0.7.6",
     "@types/bcryptjs": "^3.0.0",
