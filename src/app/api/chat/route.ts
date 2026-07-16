@@ -20,6 +20,9 @@ const MODEL_CONFIG = {
   'qwen/qwen3.5-122b-a10b':           () => process.env.QWEN_API_KEY ?? '',
   'z-ai/glm-5.2':                     () => process.env.GLM_API_KEY ?? '',
   'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
+  // Moonshot Kimi K2 Instruct — 6th NIM model. Falls back to NVIDIA_API_KEY
+  // since the same NIM endpoint handles Moonshot-hosted Kimi builds.
+  'moonshotai/kimi-k2-instruct':       () => process.env.MOONSHOT_API_KEY ?? '',
 } as const
 
 type AllowedModel = keyof typeof MODEL_CONFIG

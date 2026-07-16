@@ -12,9 +12,6 @@ export function DriveHeroCard() {
       >
         <Swords className="h-3 w-3" />
         <span className="font-semibold uppercase tracking-wider">Enry Drive</span>
-        <span className="text-muted-foreground/40">
-          {'\u00b7'} 4 models via Enry Engine {'\u00b7'} 18 skills {'\u00b7'} multi-skill {'\u00b7'} Ctrl+K {'\u2192'} Coding Agent
-        </span>
       </Link>
     </div>
   )

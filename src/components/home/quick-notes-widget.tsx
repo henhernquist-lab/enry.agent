@@ -88,9 +88,11 @@ export function QuickNotesWidget({ onSave }: QuickNotesWidgetProps) {
         <button
           onClick={handleSave}
           disabled={saving || !input.trim()}
-          className="flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-40 transition-colors"
+          title="Save note (Ctrl/⌘+Enter)"
+          className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-40 transition-colors"
         >
           {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+          <span>{saving ? 'Saving…' : 'Save note'}</span>
         </button>
       </div>
 

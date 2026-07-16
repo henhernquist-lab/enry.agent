@@ -19,6 +19,9 @@ const MODEL_KEYS: Record<string, () => string> = {
   'qwen/qwen3.5-122b-a10b': () => process.env.QWEN_API_KEY ?? '',
   'z-ai/glm-5.2': () => process.env.GLM_API_KEY ?? '',
   'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
+  // Moonshot Kimi K2 Instruct — 6th NIM model. Same NVIDIA NIM endpoint
+  // (integrate.api.nvidia.com/v1) as the others; only the key changes.
+  'moonshotai/kimi-k2-instruct': () => process.env.MOONSHOT_API_KEY ?? process.env.NVIDIA_API_KEY ?? '',
 }
 
 export function nimClientFor(model: string = DEFAULT_NIM_MODEL) {

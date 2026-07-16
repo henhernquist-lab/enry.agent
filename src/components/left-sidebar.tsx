@@ -118,6 +118,8 @@ export function LeftSidebar({
         )}
       </div>
 
+      {/* All six section buttons share one consistent green-border accent treatment
+          — Enry Drive / Tools / Prompt Library / Reading List / Enry Lab / Download. */}
       <div className="border-t border-border p-4 space-y-2">
         <Link
           href="/agent"
@@ -128,35 +130,35 @@ export function LeftSidebar({
         </Link>
         <Link
           href="/resources"
-          className="flex w-full items-center justify-center gap-2 rounded border border-border bg-surface-elevated px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
           <Wrench className="h-4 w-4" />
           Tools &amp; Resources
         </Link>
         <Link
           href="/prompts"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover:border-primary/60"
+          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
           <BookMarked className="h-4 w-4" />
           Prompt Library
         </Link>
         <Link
           href="/reading-list"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover:border-primary/60"
+          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
           <BookOpen className="h-4 w-4" />
           Reading List
         </Link>
         <Link
           href="/lab"
-          className="flex w-full items-center justify-center gap-2 rounded border border-border bg-surface-elevated px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
           <FlaskConical className="h-4 w-4" />
           Enry Lab
         </Link>
         <button
           onClick={() => setShowComingSoon(true)}
-          className="flex w-full items-center justify-center gap-2 rounded border border-border bg-surface-elevated px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
           <Download className="h-4 w-4" />
           Download Agent

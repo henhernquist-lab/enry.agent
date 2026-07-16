@@ -96,6 +96,8 @@ const MODELS = [
   { id: 'minimax/minimax-m3',            label: 'M3',      company: 'MiniMax', desc: 'Fast and capable. Great for general tasks.' },
   { id: 'qwen/qwen3.5-122b-a10b',        label: '122B',   company: 'Qwen', desc: 'Large reasoning model. Great for analysis.' },
   { id: 'z-ai/glm-5.2',                  label: 'GLM 5.2', company: 'Z.ai', desc: 'Versatile all-rounder. Good at following instructions.' },
+  { id: 'nvidia/nemotron-3-ultra-550b-a55b', label: 'Nemotron 3', company: 'NVIDIA', desc: '550B MoE flagship. Best for high-stakes generation.' },
+  { id: 'moonshotai/kimi-k2-instruct',   label: 'Kimi K2',  company: 'Moonshot', desc: 'Strong instruction-following. Defaults to Medium effort.' },
 ] as const
 
 type ModelId = typeof MODELS[number]['id']
@@ -115,6 +117,9 @@ const CHAT_MODEL_DEFAULTS: Record<string, ChatEffortId> = {
   'z-ai/glm-5.2':               'high',
   'qwen/qwen3.5-122b-a10b':      'low',
   'minimax/minimax-m3':          'medium',
+  // New/unproven models start at Medium until we have real testing data.
+  'nvidia/nemotron-3-ultra-550b-a55b': 'medium',
+  'moonshotai/kimi-k2-instruct':       'medium',
 }
 
 const QUICK_ACTIONS = [
