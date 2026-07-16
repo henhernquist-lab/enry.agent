@@ -178,6 +178,13 @@ export function CenterPanel({
     { id: 'full' as const, label: 'Think: Full', desc: 'Show the complete reasoning trace' },
   ]
   const currentReasoning = REASONING_DEPTHS.find((r) => r.id === reasoningDepth)!
+
+  // onError only receives the Error, not the message list — a plain closure
+  // over `messages` in the useChat config below would be stale (the SDK
+  // invokes these callbacks against its own internal state, not a fresh React
+  // render), so this ref is kept current via the effect after the hook and is
+  // what onError actually reads.
+  const messagesRef = useRef<UIMessage[]>(initialMessages ?? [])
   const { messages, sendMessage, status, error } = useChat({
     transport,
     messages: initialMessages,
@@ -186,9 +193,15 @@ export function CenterPanel({
       onActivity({ type: 'assistant-complete', content: '', at: Date.now() })
     },
     onError: (err) => {
+      // A request that errors (a timeout, a degraded upstream model) never
+      // reaches onFinish, so without this the user's own message — already
+      // visible in the UI — was never saved anywhere. Save whatever exists
+      // right now rather than losing it silently.
+      if (messagesRef.current.length > 0) onSaveMessages(messagesRef.current, model)
       onActivity({ type: 'error', content: err.message, at: Date.now() })
     },
   })
+  useEffect(() => { messagesRef.current = messages }, [messages])
   const [input, setInput] = useState('')
   // ─── Skill mode ───────────────────────────────────────────────
   // activeSkill is the current conversation mode (null = normal chat).
