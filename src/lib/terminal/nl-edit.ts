@@ -110,7 +110,17 @@ export async function classifyNLEditTarget(fileList: string, instruction: string
     return { ok: true, target: { file: parsed.file, isNewFile: !!parsed.is_new_file } }
   } catch (err) {
     console.error('[terminal/nl-edit] resolution threw:', err)
-    const detail = err instanceof Error ? err.message : String(err)
+    // Distinguish a timeout from a genuine routing failure — this is NIM
+    // backend latency on the classify call (25s budget, no retry by design,
+    // see above), not a code fault, and the message should say so instead of
+    // reading like one. Same distinction already made in write-ops.ts and the
+    // skill-response paths.
+    const name = err instanceof Error ? err.name : ''
+    const msg = err instanceof Error ? err.message : String(err)
+    const isTimeout = name === 'TimeoutError' || name === 'AbortError' || /abort|timed?\s?out/i.test(msg)
+    const detail = isTimeout
+      ? "the model was slow to respond and this timed out — that's backend latency, not a bug. Just try again, or switch models if it keeps happening."
+      : msg
     return { ok: false, error: `Request routing failed: ${detail}` }
   }
 }
