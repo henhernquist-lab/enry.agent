@@ -1287,7 +1287,7 @@ USER REQUEST: ${userText}`
                   <AnimatePresence>
                     {skillMenuOpen && (
                       <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
-                        className="absolute bottom-full left-0 z-20 mb-1 w-56 rounded-md border border-border bg-surface-elevated shadow-lg max-h-72 overflow-y-auto">
+                        className="absolute bottom-full left-0 z-20 mb-1 w-56 rounded-md border border-border bg-surface-elevated shadow-lg max-h-[50vh] overflow-y-auto scrollbar-hidden">
                         <button onClick={() => { setActiveSkillSlugs([]); setSkillMenuOpen(false); inputRef.current?.focus() }}
                           className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${activeSkills.length === 0 ? 'text-primary' : 'text-foreground'}`}>
                           <span className="font-mono text-[10px] font-semibold">None (default)</span>
@@ -1427,7 +1427,7 @@ USER REQUEST: ${userText}`
                 <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
                   placeholder={hasRepo ? 'Describe what you want changed\u2026' : 'Select a repository above to begin'}
                   rows={1} spellCheck={false} autoCapitalize="off" autoComplete="off" disabled={running || !hasRepo}
-                  className="flex-1 resize-none rounded border border-border bg-surface-secondary px-3 py-2 font-mono text-[13px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40 min-h-[80px]"
+                  className="flex-1 resize-none rounded border border-muted-foreground/15 bg-surface-secondary px-3 py-2 font-mono text-[13px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40 min-h-[80px]"
                   style={{ maxHeight: '200px' }} />
 
                 <button onClick={handleSend} disabled={!input.trim() || running || !hasRepo}

@@ -39,7 +39,7 @@ import { setAgentBusy } from '@/lib/agent-presence'
 import { SkillBanner } from './skill-banner'
 import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
-import { parseReasoningTrace } from '@/lib/reasoning-trace'
+import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS } from '@/lib/skills/registry'
 import type { SkillDefinition } from '@/lib/skills/types'
 import type { ActivityEvent } from '@/lib/chat-history'
@@ -681,12 +681,15 @@ export function CenterPanel({
                 isStreaming &&
                 index === messages.length - 1 &&
                 message.role === 'assistant'
-              // Parse reasoning trace from completed (non-streaming) assistant messages
+              // Parse reasoning trace — streaming uses a partial-tag aware parser so
+              // the thinking block renders live token-by-token, not just on completion.
               const isAssistant = message.role === 'assistant'
-              const { reasoning: rawTrace, answer: cleanAnswer } = isAssistant && !isCurrentStream
-                ? parseReasoningTrace(text)
-                : { reasoning: null, answer: text }
-              const displayAnswer = isAssistant && !isCurrentStream ? cleanAnswer : text
+              const { reasoning: rawTrace, answer: cleanAnswer, isThinking } = isAssistant
+                ? (isCurrentStream
+                    ? parseStreamingReasoning(text)
+                    : { ...parseReasoningTrace(text), isThinking: false })
+                : { reasoning: null, answer: text, isThinking: false }
+              const displayAnswer = isAssistant ? cleanAnswer : text
               return (
                 <motion.div
                   key={message.id}
@@ -702,7 +705,7 @@ export function CenterPanel({
                       </div>
                     )}
                     {isAssistant && rawTrace && (
-                      <ThinkingTrace reasoning={rawTrace} depth={reasoningDepth} />
+                      <ThinkingTrace reasoning={rawTrace} depth={reasoningDepth} isLive={isCurrentStream && isThinking} />
                     )}
                     <div
                       className={`rounded border px-4 py-3 transition-colors duration-300 ${
