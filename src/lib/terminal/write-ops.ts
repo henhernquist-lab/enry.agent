@@ -5,6 +5,7 @@ import { generateText } from 'ai'
 import { generateDiff, contentHash } from './diff'
 import { confinePath } from './snapshot'
 import { getWorkingFile, upsertWorkingFile, listWorkingFiles, clearWorkingFiles, resolveExecutionDir } from './working-copy'
+import { reasoningExtraBody, parseReasoningTrace } from '../reasoning-trace'
 import type { TerminalSessionPayload, PendingDiff } from '../resources'
 
 // Live Terminal write mode — orchestration. Everything that actually touches
@@ -50,6 +51,11 @@ export interface WriteOpsContext {
   resolvedFile?: string
   resolvedIsNew?: boolean
   resolvedInstruction?: string
+  // A reasoning trace already generated in a PRIOR hop (generateReasoningTrace,
+  // its own call/invocation) — when present, dispatch() skips straight to
+  // proposeEdit instead of running the reasoning pre-step again, and it's
+  // folded into generateFileContent's prompt as context only.
+  resolvedReasoningTrace?: string
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'none' | 'deep'
@@ -156,6 +162,24 @@ function isDefaultBranch(ctx: WriteOpsContext, branch: string): boolean {
   return branch === ctx.defaultBranch || branch === 'main' || branch === 'master' || branch === 'HEAD'
 }
 
+// Shared by proposeEdit and generateReasoningTrace — both need to see the
+// SAME base content (an already-applied-but-uncommitted working-copy version
+// takes priority over pristine GitHub content) before reasoning about or
+// generating a change, so this is one implementation, not two that could
+// silently drift apart.
+async function resolveBaseContent(
+  ctx: WriteOpsContext,
+  filePath: string,
+  isNewFile: boolean,
+): Promise<{ content: string; baseSha: string } | { error: string }> {
+  if (isNewFile) return { content: '', baseSha: 'new-file' }
+  const working = await getWorkingFile(ctx.sessionId, filePath)
+  if (working) return { content: working.content, baseSha: working.base_sha }
+  const { content, sha, error } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, filePath)
+  if (error || content === null) return { error: error ?? 'not found' }
+  return { content, baseSha: sha ?? contentHash(content) }
+}
+
 // ── propose_edit ──────────────────────────────────────────────────────────────
 // Generates a diff. Writes NOTHING — not the repo, not the working-copy
 // table. Only updates pending_diff on the session so `apply` has something
@@ -165,6 +189,7 @@ export async function proposeEdit(
   filePath: string,
   instruction: string,
   isNewFile: boolean,
+  priorReasoning?: string,
 ): Promise<WriteOpsResult> {
   const scopeError = await requireWriteScope(ctx)
   if (scopeError) return { output: scopeError, exitCode: 1 }
@@ -176,18 +201,10 @@ export async function proposeEdit(
   let baseSha = 'new-file'
 
   if (!isNewFile) {
-    // Prefer an already-applied-but-uncommitted version of this file
-    // (stacked edit) over the pristine GitHub content.
-    const working = await getWorkingFile(ctx.sessionId, filePath)
-    if (working) {
-      baseContent = working.content
-      baseSha = working.base_sha
-    } else {
-      const { content, sha, error } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, filePath)
-      if (error || content === null) return { output: `edit: could not read "${filePath}": ${error ?? 'not found'}`, exitCode: 1 }
-      baseContent = content
-      baseSha = sha ?? contentHash(content)
-    }
+    const resolved = await resolveBaseContent(ctx, filePath, false)
+    if ('error' in resolved) return { output: `edit: could not read "${filePath}": ${resolved.error}`, exitCode: 1 }
+    baseContent = resolved.content
+    baseSha = resolved.baseSha
   } else {
     // `write` targeting a file that already exists is a misuse of the
     // command — existing files go through `edit`.
@@ -202,7 +219,7 @@ export async function proposeEdit(
     ? 'Create this file. Infer reasonable content from the file path and repository context.'
     : 'Review this file and propose your single best, most useful improvement — a real fix or a clear quality improvement, not a cosmetic no-op.')
 
-  const generated = await generateFileContent(ctx, filePath, baseContent, effectiveInstruction, isNewFile)
+  const generated = await generateFileContent(ctx, filePath, baseContent, effectiveInstruction, isNewFile, priorReasoning)
   if ('error' in generated) return { output: `${isNewFile ? 'write' : 'edit'}: generation failed — ${generated.error}`, exitCode: 1 }
   if (generated.truncated) {
     // Never propose a cut-off file as a ready-to-apply diff — that's a worse
@@ -290,22 +307,35 @@ export function buildEnryRulesBlock(content: string): string {
   return `\n\nREPOSITORY RULES (.enryrules) — these are non-negotiable conventions for this repo. Follow them exactly:\n${content}`
 }
 
-async function generateFileContent(
+export async function generateFileContent(
   ctx: WriteOpsContext,
   filePath: string,
   baseContent: string,
   instruction: string,
   isNewFile: boolean,
+  priorReasoning?: string,
 ): Promise<{ reasoning: string; content: string; truncated: boolean } | { error: string }> {
   const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
   const rules = await loadEnryRules(ctx)
   const system = BASE_EDIT_SYSTEM_PROMPT.replace('{{PLAN_DEPTH}}', effort.planDepth) + (rules ? buildEnryRulesBlock(rules) : '')
+  // priorReasoning, when present, comes from a SEPARATE generateReasoningTrace
+  // call (its own invocation, its own <think>-enabled generateText call) —
+  // never from this one. It's folded in here as plain prompt CONTEXT, not a
+  // system-prompt change, and this call never sets reasoningExtraBody itself.
+  // That separation is the whole point: BASE_EDIT_SYSTEM_PROMPT's
+  // plan-then-CONTENT_SENTINEL-then-file-content contract stays exactly as
+  // it was, so a <think> block can never land inside the sentinel-split
+  // response and corrupt the diff — the risk flagged when this was first
+  // scoped, and the reason it wasn't wired in directly back then.
+  const reasoningContext = priorReasoning
+    ? `\n\nYou already thought through this change in a prior reasoning pass — treat it as your own analysis, already done:\n${priorReasoning}\n\nNow execute on it.`
+    : ''
   try {
     const client = nimClientFor(ctx.model)
     const { text, finishReason } = await generateText({
       model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
       system,
-      prompt: `File: ${filePath}\n${isNewFile ? '(new file — no existing content)' : `Current content:\n${baseContent}`}\n\nInstruction: ${instruction}\n\nProduce your plan, then ${CONTENT_SENTINEL}, then the complete new file content.`,
+      prompt: `File: ${filePath}\n${isNewFile ? '(new file — no existing content)' : `Current content:\n${baseContent}`}\n\nInstruction: ${instruction}${reasoningContext}\n\nProduce your plan, then ${CONTENT_SENTINEL}, then the complete new file content.`,
       temperature: effort.temperature,
       maxOutputTokens: effort.maxOutputTokens,
       // 40s, NOT 50s — this call does not own the full 60s maxDuration alone.
@@ -351,6 +381,66 @@ async function generateFileContent(
       return { error: `generation timed out before finishing this file — it's too large or the request too broad to complete in one pass. Try a lower effort level, or narrow the change to a smaller, more specific edit.` }
     }
     return { error: msg }
+  }
+}
+
+// ── Reasoning pre-step (Think, for plain code edits) ─────────────────────────
+// A genuinely SEPARATE generateText call from generateFileContent — its own
+// system prompt, its own output contract (pure prose, no CONTENT_SENTINEL, no
+// file content at all), and it's the ONLY one of the two calls that ever sets
+// reasoningExtraBody (enable_thinking). The two never share a call, so a
+// <think> block this produces can never land inside generateFileContent's
+// sentinel-split output — the corruption risk that was the reason this wasn't
+// wired in the first time. Only the resulting TEXT crosses over, folded into
+// generateFileContent's prompt as inert context (see reasoningContext above).
+const REASONING_SYSTEM_PROMPT = `You are enry's coding agent, thinking through a change BEFORE writing any code.
+
+Given a file's current content and an instruction, reason through it out loud: what actually needs to change and why, what the cleanest complete approach looks like, what could go wrong, and any edge cases or repo conventions that matter here. This is preparation for a second pass that will write the actual diff — your job here is ONLY to think, not to write code or propose file content.
+
+Keep it focused and concrete — real reasoning about this specific file and instruction, not generic commentary. A few short paragraphs, not an essay.`
+
+export async function generateReasoningTrace(
+  ctx: WriteOpsContext,
+  filePath: string,
+  instruction: string,
+  isNewFile: boolean,
+): Promise<{ trace: string } | { error: string }> {
+  const resolved = await resolveBaseContent(ctx, filePath, isNewFile)
+  if ('error' in resolved) return { error: `could not read "${filePath}": ${resolved.error}` }
+
+  const rules = await loadEnryRules(ctx)
+  const system = REASONING_SYSTEM_PROMPT + (rules ? buildEnryRulesBlock(rules) : '')
+
+  try {
+    const client = nimClientFor(ctx.model)
+    const { text } = await generateText({
+      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
+      system,
+      prompt: `File: ${filePath}\n${isNewFile ? '(new file — no existing content)' : `Current content:\n${resolved.content}`}\n\nInstruction: ${instruction}\n\nThink through this now.`,
+      temperature: 0.4,
+      maxOutputTokens: 1500,
+      // Same scale as the classify hop (nl-edit.ts) — this is bounded prose,
+      // not a full file rewrite, so it doesn't need generateFileContent's 40s.
+      // This call runs on the generation hop (isGenerationHop already skips
+      // ensureSnapshot for it), so its own overhead ahead of this is just
+      // requireWriteScope + resolveBaseContent, both GitHub API calls that
+      // now carry their own 10s timeout — comfortable margin under 60s even
+      // worst-case, and the client's own follow-up generation hop is a fresh
+      // invocation with its own untouched 40s budget.
+      timeout: 25_000,
+      maxRetries: 0,
+      ...(reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}),
+    })
+    const { answer } = parseReasoningTrace(text)
+    const trimmed = answer.trim()
+    if (!trimmed) return { error: 'model returned an empty reasoning trace' }
+    return { trace: trimmed }
+  } catch (err) {
+    console.error('[terminal/write-ops] generateReasoningTrace threw:', err)
+    const name = err instanceof Error ? err.name : ''
+    const msg = err instanceof Error ? err.message : String(err)
+    const isTimeout = name === 'TimeoutError' || name === 'AbortError' || /abort|timed?\s?out/i.test(msg)
+    return { error: isTimeout ? 'reasoning pass timed out — proceeding straight to the diff without it.' : msg }
   }
 }
 

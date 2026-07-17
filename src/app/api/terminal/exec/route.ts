@@ -7,7 +7,7 @@ import { ensureSnapshot } from '@/lib/terminal/snapshot'
 import { runCommand } from '@/lib/terminal/exec'
 import { runGit } from '@/lib/terminal/git-api'
 import { resolveExecutionDir } from '@/lib/terminal/working-copy'
-import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, loadEnryRules, buildEnryRulesBlock, casUpdateSessionPayload, type WriteOpsContext } from '@/lib/terminal/write-ops'
+import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, generateReasoningTrace, loadEnryRules, buildEnryRulesBlock, casUpdateSessionPayload, type WriteOpsContext } from '@/lib/terminal/write-ops'
 import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
 import { getSkill, SKILLS, buildMultiSkillPrompt } from '@/lib/skills/registry'
@@ -74,6 +74,7 @@ export async function POST(req: Request) {
   const resolvedFile = typeof body.target_file === 'string' ? body.target_file : undefined
   const resolvedIsNew = body.is_new_file === true
   const resolvedInstruction = typeof body.instruction === 'string' ? body.instruction : undefined
+  const resolvedReasoningTrace = typeof body.reasoning_trace === 'string' ? body.reasoning_trace : undefined
   const skillSlug = typeof body.skill_slug === 'string' ? body.skill_slug : undefined
   const skillSlugs: string[] | undefined = Array.isArray(body.skill_slugs) ? body.skill_slugs.filter((s: unknown) => typeof s === 'string') : undefined
 
@@ -127,6 +128,7 @@ export async function POST(req: Request) {
       resolvedFile,
       resolvedIsNew,
       resolvedInstruction,
+      resolvedReasoningTrace,
     }
   } else {
     const snap = await ensureSnapshot(githubToken, owner, name)
@@ -153,6 +155,7 @@ export async function POST(req: Request) {
       resolvedFile,
       resolvedIsNew,
       resolvedInstruction,
+      resolvedReasoningTrace,
     }
   }
 
@@ -254,7 +257,27 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
     const file = ctx.resolvedFile
     const isNew = ctx.resolvedIsNew ?? false
     const instr = ctx.resolvedInstruction ?? command
-    const result = await proposeEdit(ctx, file, instr, isNew)
+
+    // Think, for a plain code edit (no skill active — those already get their
+    // own reasoning via runSkillResponse). Runs as a genuinely separate call
+    // in its OWN hop, before generation, not inline in this one: this branch
+    // still owns the same 60s budget as the diff-generation call would, and
+    // chaining two ~25-40s LLM calls in one invocation is exactly the
+    // over-budget failure class fixed elsewhere tonight. A trace already in
+    // hand (ctx.resolvedReasoningTrace set) means the client is back for the
+    // real generation hop, so this only fires once per chain.
+    if (reasoningDepth && reasoningDepth !== 'off' && !ctx.resolvedReasoningTrace) {
+      const traceResult = await generateReasoningTrace(ctx, file, instr, isNew)
+      if ('error' in traceResult) {
+        // A failed reasoning pass shouldn't block the edit itself — fall
+        // through to generation without a trace instead of hard-failing.
+        const result = await proposeEdit(ctx, file, instr, isNew)
+        return { result, action: 'propose_edit' }
+      }
+      return { result: { output: '', exitCode: 0, reasoning: traceResult.trace }, action: 'reasoning_ready' }
+    }
+
+    const result = await proposeEdit(ctx, file, instr, isNew, ctx.resolvedReasoningTrace)
     return { result, action: 'propose_edit' }
   }
 

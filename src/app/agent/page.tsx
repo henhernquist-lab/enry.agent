@@ -37,6 +37,12 @@ type ChatLine =
   | { kind: 'filePreview'; path: string; content: string }
   | { kind: 'question'; questionText: string; options: string[] }
   | { kind: 'skill'; text: string; invocationId?: string; skillName?: string; reasoningTrace?: string | null }
+  // A plain-edit reasoning pass (Think, on a code edit — no skill active).
+  // `pending` is true while the follow-up generation hop is still in flight
+  // (the trace itself is already fully generated and final by the time this
+  // line exists — only the diff that comes after is still pending). `deep`
+  // gets the distinct effort='deep' treatment.
+  | { kind: 'reasoning'; id: string; text: string; targetFile: string; pending: boolean; deep: boolean }
 
 type Mode = 'auto' | 'manual'
 
@@ -453,7 +459,7 @@ export default function AgentPage() {
   // file's handlers that reference it; harmless, nothing depends on exec's
   // identity being stable.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  async function exec(command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; skillSlug?: string; skillSlugs?: string[]; _chainDepth?: number }) {
+  async function exec(command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; skillSlug?: string; skillSlugs?: string[]; reasoningTrace?: string; reasoningLineId?: string; _chainDepth?: number }) {
       if (!repo) {
         setLines((l) => [...l, { kind: 'system', text: 'select a repository first' }])
         return
@@ -476,6 +482,7 @@ export default function AgentPage() {
         if (opts?.targetFile) body.target_file = opts.targetFile
         if (opts?.isNewFile !== undefined) body.is_new_file = opts.isNewFile
         if (opts?.instruction) body.instruction = opts.instruction
+        if (opts?.reasoningTrace) body.reasoning_trace = opts.reasoningTrace
 
         const res = await fetch('/api/terminal/exec', {
           method: 'POST',
@@ -500,12 +507,40 @@ export default function AgentPage() {
         // full-file generation get separate maxDuration budgets instead of
         // stacking two blocking LLM calls in one invocation. Chain the
         // follow-up request invisibly \u2014 same pattern as terminal-chat.tsx.
-        if (data.action === 'target_resolved' && (opts?._chainDepth ?? 0) < 1) {
+        // Cap of 2 (not 1): with Think on, the full chain is classify ->
+        // reasoning -> generate, three hops. Without Think it's still just
+        // two (target_resolved -> propose_edit) since the server only ever
+        // returns reasoning_ready when reasoningDepth !== 'off'.
+        if (data.action === 'target_resolved' && (opts?._chainDepth ?? 0) < 2) {
           await exec(command, {
             proceed: true,
             targetFile: data.target_file,
             isNewFile: data.is_new_file,
             instruction: opts?.instruction ?? command,
+            _chainDepth: (opts?._chainDepth ?? 0) + 1,
+          })
+          return
+        }
+
+        // Think, on a plain edit: the reasoning pass is done (own hop, own
+        // budget) and its trace is final \u2014 show it now, before the diff
+        // exists, then chain straight to the real generation hop with the
+        // trace attached as prompt context (see write-ops.ts's
+        // generateFileContent: unchanged call, no enable_thinking, the trace
+        // only ever arrives as inert text).
+        if (data.action === 'reasoning_ready' && (opts?._chainDepth ?? 0) < 2) {
+          const trace = ((data.reasoning as string | undefined) ?? '').trim()
+          const lineId = `reasoning-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          if (trace) {
+            setLines((l) => [...l, { kind: 'reasoning', id: lineId, text: trace, targetFile: opts?.targetFile ?? 'unknown', pending: true, deep: isDeep }])
+          }
+          await exec(command, {
+            proceed: true,
+            targetFile: opts?.targetFile,
+            isNewFile: opts?.isNewFile,
+            instruction: opts?.instruction ?? command,
+            reasoningTrace: trace || undefined,
+            reasoningLineId: trace ? lineId : undefined,
             _chainDepth: (opts?._chainDepth ?? 0) + 1,
           })
           return
@@ -548,7 +583,14 @@ export default function AgentPage() {
           // explicitly), or planContext as a fallback for other paths.
           const file = opts?.targetFile ?? planContext?.targetFile ?? 'unknown'
           const isNewFile = opts?.isNewFile ?? planContext?.isNewFile ?? false
-          setLines((l) => [...l, { kind: 'proposal', file, diff: text, isNewFile }])
+          setLines((l) => {
+            // Resolve the reasoning line this diff followed (if Think was on)
+            // from pending to settled, rather than appending a duplicate.
+            const withResolvedReasoning = opts?.reasoningLineId
+              ? l.map((line) => line.kind === 'reasoning' && line.id === opts.reasoningLineId ? { ...line, pending: false } : line)
+              : l
+            return [...withResolvedReasoning, { kind: 'proposal', file, diff: text, isNewFile }]
+          })
           setPlanContext(null)
         } else if (action === 'apply' && data.exit_code === 0) {
           setLines((l) => [...l, { kind: 'applied', text: text || 'Changes applied to working copy' }])
@@ -1017,6 +1059,45 @@ USER REQUEST: ${userText}`
                   )
                 }
 
+                if (line.kind === 'reasoning') {
+                  // Deep effort gets a distinct, more prominent treatment —
+                  // auto-expanded regardless of the Think depth setting (deep
+                  // effort implies wanting to see it), a bolder header in the
+                  // same language as DeepReasoningIndicator above, and a
+                  // pulsing state while the diff that follows is still being
+                  // generated. Not the true `<think>` reasoning form.
+                  if (line.deep) {
+                    return (
+                      <motion.div key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="mb-4">
+                        <div className="overflow-hidden rounded-md border border-primary/25 bg-primary/[0.03]">
+                          <div className="flex items-center gap-1.5 border-b border-primary/15 px-3 py-1.5">
+                            {line.pending
+                              ? <Loader2 className="h-3 w-3 animate-spin text-primary/60" />
+                              : <Check className="h-3 w-3 text-primary/60" />}
+                            <span className="font-mono text-[10px] uppercase tracking-wider text-primary/70">Extended reasoning</span>
+                            <span className="font-mono text-[9px] text-muted-foreground/50">· {line.targetFile}</span>
+                            {line.pending && <span className="ml-auto font-mono text-[9px] text-muted-foreground/50">generating diff…</span>}
+                          </div>
+                          <div className="px-3 py-2.5">
+                            <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/70">{line.text}</pre>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )
+                  }
+                  return (
+                    <motion.div key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="mb-4">
+                      <ThinkingTrace reasoning={line.text} depth={reasoningDepth === 'off' ? 'summary' : reasoningDepth} modelLabel={currentModel?.label} />
+                      {line.pending && (
+                        <div className="-mt-3 flex items-center gap-1.5 pl-1">
+                          <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground/40" />
+                          <span className="font-mono text-[9px] text-muted-foreground/40">generating diff…</span>
+                        </div>
+                      )}
+                    </motion.div>
+                  )
+                }
+
                 if (line.kind === 'filePreview') {
                   return (
                     <div key={i} className="mb-4">
@@ -1144,8 +1225,13 @@ USER REQUEST: ${userText}`
                 return null
               })}
 
-              {/* Deep effort visual — multi-step checklist */}
-              {isDeep && <DeepReasoningIndicator running={running} />}
+              {/* Deep effort visual — multi-step checklist. Only when Think is
+                  off: when it's on, the real 'reasoning' line above already
+                  shows genuine progress (a live trace, then settling once the
+                  diff lands) — showing this fake cycling checklist alongside
+                  a real trace would be redundant, two different "something is
+                  happening" widgets competing for attention. */}
+              {isDeep && reasoningDepth === 'off' && <DeepReasoningIndicator running={running} />}
 
               {/* Normal running indicator */}
               <AnimatePresence>
@@ -1239,26 +1325,17 @@ USER REQUEST: ${userText}`
                   </AnimatePresence>
                 </div>
 
-                {/* Reasoning Depth selector — proposeEdit/planEdit (plain code
-                    edits, no skill active) have no <think>-trace concept at
-                    all: they already unconditionally surface the model's plan
-                    via a completely different mechanism (WriteOpsResult.reasoning,
-                    a plan-before-sentinel text convention), and wiring
-                    reasoningExtraBody's enable_thinking into that same call
-                    risks a <think> block landing inside the CONTENT_SENTINEL-
-                    split response and corrupting the diff parse. Skill
-                    invocations are the only path that actually reads
-                    reasoningDepth (exec/route.ts's dispatch() only forwards it
-                    into runSkillResponse/runMultiSkillResponse) — so the
-                    control is honestly disabled rather than staying
-                    interactive-but-inert when no skill is active. */}
+                {/* Reasoning Depth selector — now genuinely wired for plain
+                    code edits too, not just skills. proposeEdit's diff output
+                    is generated by an UNCHANGED call (still no enable_thinking,
+                    still the same CONTENT_SENTINEL contract); when Think is on,
+                    a separate reasoning pass runs first, in its own hop, and
+                    only its <think>-stripped TEXT is folded into the diff
+                    call's prompt as context — see generateReasoningTrace /
+                    dispatch()'s resolvedFile branch in exec/route.ts. */}
                 <div ref={reasoningMenuRef} className="relative flex-shrink-0">
                   <button onClick={() => setReasoningMenuOpen((o) => !o)}
-                    disabled={activeSkills.length === 0}
-                    title={activeSkills.length === 0 ? 'Think only affects skill invocations — pick a skill first' : undefined}
-                    className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground ${
-                      activeSkills.length > 0 ? 'hover:border-primary/30 hover:text-foreground' : ''
-                    } ${
+                    className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
                       reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-secondary text-muted-foreground'
                     }`}>
                     <Brain className="h-3 w-3" />
@@ -1266,7 +1343,7 @@ USER REQUEST: ${userText}`
                     <ChevronDown className="h-2.5 w-2.5" />
                   </button>
                   <AnimatePresence>
-                    {reasoningMenuOpen && activeSkills.length > 0 && (
+                    {reasoningMenuOpen && (
                       <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
                         className="absolute bottom-full left-0 z-20 mb-1 w-48 rounded-md border border-border bg-surface-elevated shadow-lg">
                         {REASONING_DEPTHS.map((r) => (
