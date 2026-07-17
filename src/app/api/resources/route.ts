@@ -30,6 +30,7 @@ const VALID_TYPES = new Set<ResourceType>([
   'root_cause',
   'terminal_session',
   'ghost_conversation',
+  'memory',
 ])
 
 function userId(session: { user?: { id?: string } } | null): string | null {
@@ -61,7 +62,7 @@ export async function GET(req: Request) {
     .eq('user_id', uid)
     .eq('type', type)
     .order('created_at', { ascending: false })
-    .limit(source === 'daily_auto' ? 500 : type === 'prompt' ? 100 : 50)
+    .limit(source === 'daily_auto' ? 500 : type === 'prompt' || type === 'memory' ? 500 : 50)
 
   if (source) query = query.eq('source', source)
 

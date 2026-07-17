@@ -1,7 +1,7 @@
 import type { ResourceSource } from './resource-source'
 import { emitResourceSaved } from './resource-events'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret' | 'memory'
 
 export interface Resource<T = unknown> {
   id: string
@@ -134,6 +134,16 @@ export interface CheckinPayload {
 export interface NotePayload {
   content: string
   title?: string
+}
+
+// Memory entries are plain-text facts/notes Enry has stored about Henry.
+// `imported: true` marks entries pasted in from another AI (ChatGPT custom
+// instructions, Claude memory export, …) via the "Import Memory" flow so the
+// UI can badge them separately from memories Enry itself captured.
+export interface MemoryPayload {
+  content: string
+  imported?: boolean
+  origin?: string
 }
 
 export interface BellSchedulePayload {
@@ -428,6 +438,10 @@ export function resourceSummary(resource: Resource): string {
     case 'github_action': {
       const ga = p as unknown as GitHubActionPayload
       return `${ga.action} · ${ga.repo}`
+    }
+    case 'memory': {
+      const mp = p as unknown as MemoryPayload
+      return mp.imported ? `imported${mp.origin ? ' · ' + mp.origin : ''}` : 'captured'
     }
     default:
       return ''

@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
@@ -8,7 +7,7 @@ import { AutomationsSection } from './automations-section'
 import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
 import Link from 'next/link'
-import { MessageSquarePlus, MessageSquare, Trash2, Download, X, Wrench, BookMarked, BookOpen, Swords, FlaskConical } from 'lucide-react'
+import { MessageSquarePlus, MessageSquare, Trash2, Wrench, BookMarked, BookOpen, Swords, FlaskConical, Brain } from 'lucide-react'
 
 interface LeftSidebarProps {
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
@@ -41,8 +40,6 @@ export function LeftSidebar({
   onDeleteConversation,
   onAutomationsChange,
 }: LeftSidebarProps) {
-  const [showComingSoon, setShowComingSoon] = useState(false)
-
   return (
     <aside className="flex h-full w-[280px] flex-col border-r border-border bg-surface-secondary">
       <div className="border-b border-border p-4">
@@ -119,7 +116,7 @@ export function LeftSidebar({
       </div>
 
       {/* All six section buttons share one consistent green-border accent treatment
-          — Enry Drive / Tools / Prompt Library / Reading List / Enry Lab / Download. */}
+          — Enry Drive / Tools / Prompt Library / Reading List / Enry Lab / Memory. */}
       <div className="border-t border-border p-4 space-y-2">
         <Link
           href="/agent"
@@ -156,46 +153,14 @@ export function LeftSidebar({
           <FlaskConical className="h-4 w-4" />
           Enry Lab
         </Link>
-        <button
-          onClick={() => setShowComingSoon(true)}
+        <Link
+          href="/memory"
           className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
-          <Download className="h-4 w-4" />
-          Download Agent
-        </button>
+          <Brain className="h-4 w-4" />
+          Manage Memory
+        </Link>
       </div>
-
-      <AnimatePresence>
-        {showComingSoon && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-            onClick={() => setShowComingSoon(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-80 rounded border border-border bg-surface-secondary p-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => setShowComingSoon(false)}
-                className="absolute right-3 top-3 rounded p-1 text-muted-foreground hover:bg-surface-elevated"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              <Download className="mb-3 h-6 w-6 text-primary" />
-              <h3 className="mb-1 text-sm font-semibold text-foreground">Coming Soon</h3>
-              <p className="text-xs text-muted-foreground">
-                A downloadable, standalone version of enry.agent isn&apos;t ready yet. For now, use it here in the browser.
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </aside>
   )
 }
