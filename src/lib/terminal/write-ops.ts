@@ -86,14 +86,60 @@ async function loadSessionPayload(sessionId: string, userId: string): Promise<Te
   return data.payload as TerminalSessionPayload
 }
 
+const CAS_MAX_RETRIES = 5
+
+// Optimistic-concurrency read-modify-write on a session's payload row.
+// Previously this function AND exec/route.ts's appendCommand each did their
+// own independent load -> spread -> full-object update of the SAME row with
+// no version check — a lost-update race: two overlapping requests on one
+// session (double-clicking Send, or Apply landing while a slow Edit/skill
+// call is still in flight) could have the second write's stale snapshot
+// silently clobber the first write's changes. `mutate` receives the LATEST
+// payload on every attempt (never a snapshot captured before the retry loop
+// started), so a retry after a detected conflict always merges onto current
+// state instead of re-applying a stale patch. Requires migration
+// 018_resources_version.sql (adds `resources.version`).
+export async function casUpdateSessionPayload(
+  sessionId: string,
+  userId: string,
+  mutate: (current: TerminalSessionPayload) => Partial<TerminalSessionPayload>,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < CAS_MAX_RETRIES; attempt++) {
+    const { data, error } = await supabase
+      .from('resources')
+      .select('payload, version')
+      .eq('id', sessionId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (error) {
+      console.error('[terminal/write-ops] casUpdateSessionPayload read failed (is migration 018_resources_version.sql applied?):', error)
+      return false
+    }
+    if (!data) return false
+    const current = data.payload as TerminalSessionPayload
+    const version = (data as { version?: number }).version ?? 1
+    const patch = mutate(current)
+
+    const { data: updated, error: updateError } = await supabase
+      .from('resources')
+      .update({ payload: { ...current, ...patch }, version: version + 1, updated_at: new Date().toISOString() })
+      .eq('id', sessionId)
+      .eq('user_id', userId)
+      .eq('version', version) // compare-and-swap: only succeeds if nobody else wrote first
+      .select('id')
+    if (updateError) {
+      console.error('[terminal/write-ops] casUpdateSessionPayload failed:', updateError)
+      return false
+    }
+    if (updated && updated.length > 0) return true
+    // 0 rows matched -> version moved under us; retry with a fresh read.
+  }
+  console.error('[terminal/write-ops] casUpdateSessionPayload: exhausted retries without resolving a conflict', { sessionId })
+  return false
+}
+
 async function saveSessionPayload(sessionId: string, userId: string, patch: Partial<TerminalSessionPayload>): Promise<void> {
-  const current = await loadSessionPayload(sessionId, userId)
-  if (!current) return
-  await supabase
-    .from('resources')
-    .update({ payload: { ...current, ...patch }, updated_at: new Date().toISOString() })
-    .eq('id', sessionId)
-    .eq('user_id', userId)
+  await casUpdateSessionPayload(sessionId, userId, () => patch)
 }
 
 // ── Write-scope gate ──────────────────────────────────────────────────────────

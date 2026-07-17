@@ -7,7 +7,7 @@ import { ensureSnapshot } from '@/lib/terminal/snapshot'
 import { runCommand } from '@/lib/terminal/exec'
 import { runGit } from '@/lib/terminal/git-api'
 import { resolveExecutionDir } from '@/lib/terminal/working-copy'
-import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, loadEnryRules, buildEnryRulesBlock, type WriteOpsContext } from '@/lib/terminal/write-ops'
+import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, loadEnryRules, buildEnryRulesBlock, casUpdateSessionPayload, type WriteOpsContext } from '@/lib/terminal/write-ops'
 import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
 import { getSkill, SKILLS, buildMultiSkillPrompt } from '@/lib/skills/registry'
@@ -601,24 +601,16 @@ async function runMultiSkillResponse(
 
 async function appendCommand(uid: string, sessionId: string, entry: TerminalCommand): Promise<void> {
   try {
-    const { data } = await supabase
-      .from('resources')
-      .select('payload')
-      .eq('id', sessionId)
-      .eq('user_id', uid)
-      .maybeSingle()
-    if (!data) return
-    const payload = data.payload as TerminalSessionPayload
-    const updated: TerminalSessionPayload = {
-      ...payload,
+    // Was its own independent load -> spread -> full-object update of the
+    // same row write-ops.ts's saveSessionPayload also writes — two racing
+    // requests could each read stale `commands`/`pending_diff`/etc. and clobber
+    // each other's changes. Shares the compare-and-swap helper instead: the
+    // mutate callback recomputes `commands` from whatever payload is CURRENT
+    // on each retry attempt, not a snapshot taken before this function ran.
+    await casUpdateSessionPayload(sessionId, uid, (payload) => ({
       commands: [...(payload.commands ?? []), entry].slice(-200),
       session_end: entry.timestamp,
-    }
-    await supabase
-      .from('resources')
-      .update({ payload: updated, updated_at: new Date().toISOString() })
-      .eq('id', sessionId)
-      .eq('user_id', uid)
+    }))
   } catch (e) {
     console.error('[terminal] append failed:', e)
   }

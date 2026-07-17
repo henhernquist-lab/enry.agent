@@ -1,0 +1,16 @@
+-- Optimistic-concurrency support for the `resources` table's payload column.
+-- write-ops.ts's saveSessionPayload and exec/route.ts's appendCommand each
+-- independently did load -> spread -> full-object update of the SAME
+-- terminal_session row with no version check — a classic lost-update race:
+-- two overlapping requests on one session (double-clicking Send, or Apply
+-- landing while a slow Edit/skill call is still in flight) could have the
+-- second write's stale snapshot silently clobber the first write's
+-- pending_diff/current_branch/commands changes. This column backs a
+-- compare-and-swap write (see write-ops.ts's casUpdateSessionPayload):
+-- `update ... where id = ? and version = <version just read>`, retrying
+-- with a fresh read when 0 rows match instead of blindly overwriting.
+--
+-- Additive, defaulted, non-breaking for every other `resources` consumer
+-- (memory, GitHub-action audit rows, skill invocations, etc.) that never
+-- touches this column.
+ALTER TABLE resources ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
