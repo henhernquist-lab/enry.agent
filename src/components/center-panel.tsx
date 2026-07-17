@@ -136,12 +136,6 @@ const SUGGESTION_CARDS = [
   { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages', description: 'Read and draft email responses', comingSoon: true as const },
 ]
 
-const TOOL_BADGES = [
-  { label: 'Web Search', glyph: '/', available: true },
-  { label: 'Code', glyph: '<>', available: true },
-  { label: 'Memory', glyph: 'M', available: true },
-]
-
 // Module-level compaction state — written by the transport's custom fetch,
 // read by the component's useEffect after each response settles.
 let _pendingCompaction: { compacted: boolean; summary: string | null } | null = null
@@ -891,6 +885,10 @@ export function CenterPanel({
             className="hidden"
           />
           <div className="relative flex-1">
+            {/* Resting height is deliberately ~2x the 48px (h-12) control buttons
+                beside it, so the input reads as the primary element of this row
+                rather than one more control in a strip of them. The form is
+                items-end, so those buttons stay bottom-aligned against it. */}
             <textarea
               ref={textareaRef}
               value={input}
@@ -905,10 +903,10 @@ export function CenterPanel({
                       : `${activeSkill.name} — respond, or /exit to leave`
                     : 'Enter a command or ask anything, or /skill to run a mode…'
               }
-              rows={1}
+              rows={3}
               disabled={isStreaming}
               className="w-full resize-none rounded border border-border bg-surface-elevated px-4 py-3 pr-12 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-50"
-              style={{ minHeight: '48px', maxHeight: '200px' }}
+              style={{ minHeight: '96px', maxHeight: '320px' }}
             />
             <button
               type="button"
@@ -1069,43 +1067,9 @@ export function CenterPanel({
           </button>
         </form>
 
-        {/* Tool Badges + Footer */}
+        {/* Footer */}
         <div className="mx-auto max-w-3xl px-4 pb-3">
-          <div className="flex items-center justify-between">
-            {/* Tool Badges */}
-            <div className="flex items-center gap-2">
-              {TOOL_BADGES.map((tool) => (
-                <motion.div
-                  key={tool.label}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className={`flex items-center gap-1 border px-2.5 py-1 text-[10px] font-medium ${
-                    tool.available
-                      ? 'border-primary/30 text-primary'
-                      : 'border-border bg-surface-elevated text-muted-foreground'
-                  }`}
-                >
-                  {tool.available ? (
-                    <motion.div
-                      className="h-1.5 w-1.5 rounded-full bg-primary"
-                      animate={{
-                        boxShadow: [
-                          '0 0 0px rgba(0,255,102,0.5)',
-                          '0 0 6px rgba(0,255,102,0.8)',
-                          '0 0 0px rgba(0,255,102,0.5)',
-                        ],
-                      }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                    />
-                  ) : (
-                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
-                  )}
-                  <span className="font-mono text-[10px]">{tool.glyph}</span>
-                  {tool.label}
-                </motion.div>
-              ))}
-            </div>
-
+          <div className="flex items-center justify-end">
             {/* Keyboard hints */}
             <div className="flex items-center gap-2">
               <p className="text-xs text-muted-foreground">
