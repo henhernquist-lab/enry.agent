@@ -301,7 +301,19 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
   // request. resolveNLEditTarget enforces the coding-only scope boundary
   // itself (refuses non-code requests) before any file is touched.
   const nl = await resolveNLEditTarget(ctx, command)
-  if (!nl.ok) return { result: { output: nl.error, exitCode: 1 } }
+  if (!nl.ok) {
+    // Ambiguous-but-plausible requests (can't tell which file) get the same
+    // [CLARIFY]/exit_code:0 wire format the skill-invocation path already
+    // uses — see agent/page.tsx's clarifyMatch parser — instead of the
+    // exitCode:1 hard-refuse path, which that parser deliberately excludes.
+    if (nl.clarify) {
+      const optionsText = nl.clarify.options.length > 0
+        ? nl.clarify.options.map((o, i) => `${String.fromCharCode(65 + i)}) ${o}`).join(', ')
+        : 'A) point me to the file, B) describe it more specifically'
+      return { result: { output: `[CLARIFY] ${nl.clarify.question} Options: ${optionsText}`, exitCode: 0 } }
+    }
+    return { result: { output: nl.error, exitCode: 1 } }
+  }
 
   if (ctx.mode === 'manual') {
     // Manual mode, phase 1: generate a plan, no diff yet.

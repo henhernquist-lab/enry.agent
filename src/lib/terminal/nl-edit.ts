@@ -18,39 +18,59 @@ export interface NLTarget {
   isNewFile: boolean
 }
 
-export type NLResolveResult = { ok: true; target: NLTarget } | { ok: false; error: string }
+export type NLResolveResult =
+  | { ok: true; target: NLTarget }
+  | { ok: false; error: string; clarify?: { question: string; options: string[] } }
 
 const SCOPE_SYSTEM_PROMPT = `You route natural-language requests typed into enry.agent's Live Terminal — a
 CODING-ONLY interface. Your only job: given a request and the repo's file
 list, decide whether this is a legitimate single-file code change request,
 and if so, which ONE file it targets.
 
-Refuse (refuse: true) anything that isn't a concrete code/file change:
-questions, conversation, requests about non-coding topics (notes, races,
-life stuff — those belong in the regular chat, not here), requests to
-change more than one file's worth of intent, or anything too vague to name
-a single target file for.
+Three possible decisions:
 
-If it's legitimate, name exactly one file:
+"resolve" — the request clearly maps to one file. Name it:
 - If the file exists in the provided list, is_new_file: false, file: its
   exact path from the list.
 - If it doesn't exist and the request is clearly "create X", is_new_file:
   true, file: a sensible new path consistent with the repo's structure.
 
+"clarify" — the request IS a plausible code/UI change (describes a bug,
+a visual element, a behavior to fix) but you cannot confidently pick the
+single target file from the repo's file list — e.g. it references "the
+screenshot" or named UI elements/labels that could plausibly live in more
+than one component, or the repo has multiple files that could reasonably
+match. Do NOT refuse these — ask instead. Give one short, sharp question
+and 2-4 concrete options (e.g. named candidate files, or "something else —
+describe it").
+
+"refuse" — the request is NOT a code change at all: questions, conversation,
+requests about non-coding topics (notes, races, life stuff — those belong
+in the regular chat, not here), or requests spanning more than one file's
+worth of intent. Being unable to name a file is NOT by itself grounds for
+refuse — that's "clarify". Only refuse things that were never a single-file
+code change request in the first place.
+
 Output JSON only:
-{ "refuse": boolean, "reason": string, "file": string, "is_new_file": boolean }
-reason: one sentence either way — why refused, or why this file.`
+{ "decision": "resolve" | "clarify" | "refuse", "reason": string, "file": string, "is_new_file": boolean, "question": string, "options": string[] }
+reason: one sentence — why resolved to this file, why clarifying, or why refused.
+question/options: only populated when decision is "clarify".`
 
 export async function resolveNLEditTarget(ctx: WriteOpsContext, instruction: string): Promise<NLResolveResult> {
   const { tree, error: treeError } = await getRepoTree(ctx.accessToken, ctx.owner, ctx.repo, ctx.defaultBranch)
   if (treeError) return { ok: false, error: `Could not read repo file list: ${treeError}` }
 
   const fileList = tree.map((f) => f.path).slice(0, 500).join('\n')
+  return classifyNLEditTarget(fileList, instruction, ctx.model)
+}
 
+// Split out from resolveNLEditTarget so the classification step (the actual
+// LLM decision logic) is testable without a live GitHub token / repo tree.
+export async function classifyNLEditTarget(fileList: string, instruction: string, model?: string): Promise<NLResolveResult> {
   try {
-    const client = nimClientFor(ctx.model)
+    const client = nimClientFor(model)
     const { text } = await generateText({
-      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
+      model: client.chat(model ?? DEFAULT_NIM_MODEL),
       system: SCOPE_SYSTEM_PROMPT,
       prompt: `Repo files:\n${fileList}\n\nRequest: "${instruction}"\n\nDecide now.`,
       temperature: 0.2,
@@ -64,9 +84,24 @@ export async function resolveNLEditTarget(ctx: WriteOpsContext, instruction: str
       maxRetries: 0,
     })
 
-    const parsed = parseJsonLoose<{ refuse: boolean; reason: string; file: string; is_new_file: boolean }>(text)
+    const parsed = parseJsonLoose<{
+      decision: 'resolve' | 'clarify' | 'refuse'
+      reason: string
+      file: string
+      is_new_file: boolean
+      question: string
+      options: string[]
+    }>(text)
     if (!parsed) return { ok: false, error: 'Could not parse the request. Try being more specific about which file and what change.' }
-    if (parsed.refuse) return { ok: false, error: `Not a code change I can make here: ${parsed.reason}` }
+
+    if (parsed.decision === 'refuse') return { ok: false, error: `Not a code change I can make here: ${parsed.reason}` }
+
+    if (parsed.decision === 'clarify') {
+      const question = typeof parsed.question === 'string' && parsed.question.trim() ? parsed.question.trim() : 'Which file is this on?'
+      const options = Array.isArray(parsed.options) ? parsed.options.filter((o) => typeof o === 'string' && o.trim()) : []
+      return { ok: false, error: parsed.reason || question, clarify: { question, options } }
+    }
+
     if (!parsed.file || typeof parsed.file !== 'string') return { ok: false, error: 'Could not identify a target file.' }
 
     const safe = !parsed.file.startsWith('/') && !parsed.file.includes('..')
