@@ -56,6 +56,15 @@ export async function resolveAuthConfigId(toolkit: ComposioToolkit): Promise<str
   return created.id
 }
 
+// Verifies an auth config exists and is reachable with the current API key.
+// Throws a descriptive error if the auth config is missing, inaccessible, or
+// belongs to a different Composio project than the API key.
+export async function verifyAuthConfig(authConfigId: string): Promise<{ id: string; toolkitSlug: string; status: string }> {
+  const c = client()
+  const config = await c.authConfigs.get(authConfigId)
+  return { id: config.id, toolkitSlug: config.toolkit.slug, status: config.status }
+}
+
 // Creates a Composio Connect Link for `userId` (our profiles.id) to authorize
 // `toolkit`. Returns the redirect URL to send the browser to, plus Composio's
 // connected_account_id (the reference to poll/store — never a credential).

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Settings, ArrowLeft, Wrench, Mail, Calendar, Loader2, CheckCircle2, AlertTriangle, Link2Off } from 'lucide-react'
+import { Settings, ArrowLeft, Mail, Calendar, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle } from 'lucide-react'
 import Link from 'next/link'
 
 type ComposioToolkit = 'gmail' | 'googlecalendar'
@@ -19,6 +19,39 @@ interface ComposioConnection {
 const TOOLKIT_META: Record<ComposioToolkit, { label: string; desc: string; icon: typeof Mail }> = {
   gmail: { label: 'Gmail', desc: 'Read-only: search and read email through chat.', icon: Mail },
   googlecalendar: { label: 'Google Calendar', desc: 'Read-only: list and look up events through chat.', icon: Calendar },
+}
+
+// Placeholder card for a settings section that's ready for wiring.
+function SettingsSectionCard({
+  icon: Icon,
+  title,
+  description,
+  delay = 0,
+}: {
+  icon: typeof User
+  title: string
+  description: string
+  delay?: number
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay }}
+      className="flex items-center gap-3 rounded-lg border border-border bg-surface-secondary p-4"
+    >
+      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-border bg-background">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[12px] font-medium text-foreground">{title}</p>
+        <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{description}</p>
+      </div>
+      <span className="flex-shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50">
+        Soon
+      </span>
+    </motion.div>
+  )
 }
 
 // Connectors: connect/disconnect cards for Composio-backed tools (Gmail,
@@ -57,14 +90,37 @@ function ConnectorsSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const [lastDiagnostic, setLastDiagnostic] = useState<Record<string, unknown> | null>(null)
+  const [diagnosing, setDiagnosing] = useState(false)
+
+  const runDiagnostic = async (toolkit: ComposioToolkit) => {
+    setDiagnosing(true); setBanner(null); setLastDiagnostic(null)
+    try {
+      const res = await fetch('/api/composio/diagnose', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolkit }),
+      })
+      const data = await res.json()
+      setLastDiagnostic(data.report ?? data)
+    } catch (e) {
+      setLastDiagnostic({ error: String(e) })
+    } finally {
+      setDiagnosing(false)
+    }
+  }
+
   const connect = async (toolkit: ComposioToolkit) => {
-    setBusy(toolkit); setBanner(null)
+    setBusy(toolkit); setBanner(null); setLastDiagnostic(null)
     try {
       const res = await fetch('/api/composio/connect', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolkit }),
       })
       const data = await res.json()
-      if (!res.ok) { setBanner({ ok: false, text: data.error ?? 'Could not start connection' }); setBusy(null); return }
+      if (!res.ok) {
+        setBanner({ ok: false, text: data.error ?? 'Could not start connection' })
+        if (data.diagnostic) setLastDiagnostic(data.diagnostic)
+        setBusy(null)
+        return
+      }
       window.location.assign(data.redirect_url)
     } catch {
       setBanner({ ok: false, text: 'Could not start connection' }); setBusy(null)
@@ -99,6 +155,15 @@ function ConnectorsSection() {
         </div>
       )}
 
+      {lastDiagnostic && (
+        <div className="mb-3 rounded border border-destructive/40 bg-destructive/5 p-2">
+          <p className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-destructive">Diagnostic</p>
+          <pre className="max-h-40 overflow-auto font-mono text-[9px] leading-relaxed text-destructive/90 whitespace-pre-wrap break-all">
+            {JSON.stringify(lastDiagnostic, null, 2)}
+          </pre>
+        </div>
+      )}
+
       <div className="space-y-2">
         {(Object.keys(TOOLKIT_META) as ComposioToolkit[]).map((tk) => {
           const meta = TOOLKIT_META[tk]
@@ -127,17 +192,23 @@ function ConnectorsSection() {
                 </div>
                 <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{meta.desc}</p>
               </div>
-              {status === 'connected' ? (
-                <button onClick={() => disconnect(tk)} disabled={isBusy}
-                  className="flex flex-shrink-0 items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40">
-                  {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2Off className="h-3.5 w-3.5" />} Disconnect
+              <div className="flex flex-shrink-0 items-center gap-2">
+                <button onClick={() => runDiagnostic(tk)} disabled={diagnosing || isBusy || loading}
+                  className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+                  {diagnosing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Diagnose
                 </button>
-              ) : (
-                <button onClick={() => connect(tk)} disabled={isBusy || loading}
-                  className="flex flex-shrink-0 items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
-                  {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Connect
-                </button>
-              )}
+                {status === 'connected' ? (
+                  <button onClick={() => disconnect(tk)} disabled={isBusy}
+                    className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40">
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2Off className="h-3.5 w-3.5" />} Disconnect
+                  </button>
+                ) : (
+                  <button onClick={() => connect(tk)} disabled={isBusy || loading}
+                    className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
+                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Connect
+                  </button>
+                )}
+              </div>
             </div>
           )
         })}
@@ -187,18 +258,33 @@ export default function SettingsPage() {
           </div>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="rounded-lg border border-border bg-surface-secondary p-8 text-center"
-        >
-          <Wrench className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
-          <p className="text-sm font-medium text-foreground">Settings are being rebuilt</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Account management and theme preferences will live here. For now, use the sidebar to navigate.
-          </p>
-        </motion.div>
+        {/* Placeholder sections — ready for wiring */}
+        <div className="space-y-5">
+          <SettingsSectionCard
+            icon={User}
+            title="Account"
+            description="Profile details, email, and password management."
+            delay={0.1}
+          />
+          <SettingsSectionCard
+            icon={Sliders}
+            title="Preferences"
+            description="Theme, notifications, default behaviors, and keyboard shortcuts."
+            delay={0.15}
+          />
+          <SettingsSectionCard
+            icon={Cpu}
+            title="AI & Model Settings"
+            description="Default model, effort level, focus mode, and reasoning trace depth."
+            delay={0.2}
+          />
+          <SettingsSectionCard
+            icon={Puzzle}
+            title="Integrations"
+            description="Composio connectors (Gmail, Google Calendar) and future API integrations."
+            delay={0.25}
+          />
+        </div>
 
         <Suspense fallback={null}>
           <ConnectorsSection />

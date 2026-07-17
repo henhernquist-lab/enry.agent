@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
-import { createConnectionLink, type ComposioToolkit } from '@/lib/composio'
+import { createConnectionLink, type ComposioToolkit, resolveAuthConfigId, verifyAuthConfig } from '@/lib/composio'
 
 export const maxDuration = 30
 
@@ -28,7 +28,13 @@ export async function POST(req: Request) {
 
   try {
     const callbackUrl = `${callbackBase.replace(/\/+$/, '')}/api/composio/callback?toolkit=${toolkit}`
-    const { connectedAccountId, redirectUrl, authConfigId } = await createConnectionLink(toolkit, uid, callbackUrl)
+    const authConfigId = await resolveAuthConfigId(toolkit)
+    // Pre-flight: confirm the auth config exists and is reachable with this API
+    // key before asking Composio to create a connected-account link. This turns
+    // the SDK's generic "Failed to create connected account link" into a clear
+    // "auth config not found / not accessible" message when the ID is wrong.
+    await verifyAuthConfig(authConfigId)
+    const { connectedAccountId, redirectUrl } = await createConnectionLink(toolkit, uid, callbackUrl)
 
     await supabase.from('composio_connections').upsert(
       {
@@ -45,6 +51,33 @@ export async function POST(req: Request) {
 
     return Response.json({ redirect_url: redirectUrl })
   } catch (e) {
-    return Response.json({ error: `Could not start connection: ${String((e as Error)?.message ?? e)}` }, { status: 502 })
+    // Capture the full Composio error chain so we can diagnose SDK/API issues.
+    const err = e as Error & { cause?: unknown; statusCode?: number; code?: string; response?: unknown }
+    const cause = err.cause as Error & { status?: number; statusCode?: number; response?: unknown; body?: unknown; message?: string } | undefined
+    const diagnostic = {
+      message: err.message,
+      name: err.name,
+      code: err.code,
+      statusCode: err.statusCode ?? cause?.status ?? cause?.statusCode,
+      causeMessage: cause?.message,
+      causeBody: cause?.body,
+      causeResponse: cause?.response,
+      authConfigIdTried: process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID && toolkit === 'gmail'
+        ? process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID
+        : process.env.COMPOSIO_GOOGLECALENDAR_AUTH_CONFIG_ID && toolkit === 'googlecalendar'
+          ? process.env.COMPOSIO_GOOGLECALENDAR_AUTH_CONFIG_ID
+          : undefined,
+      userId: uid,
+      toolkit,
+    }
+    // eslint-disable-next-line no-console
+    console.error('[composio/connect] failed to create link', diagnostic)
+    return Response.json(
+      {
+        error: `Could not start connection: ${String(err.message ?? e)}`,
+        diagnostic,
+      },
+      { status: 502 },
+    )
   }
 }
