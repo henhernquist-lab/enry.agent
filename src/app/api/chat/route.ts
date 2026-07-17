@@ -12,6 +12,7 @@ import { getSkill, getSkills, buildMultiSkillPrompt } from '@/lib/skills/registr
 import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
+import { buildComposioTools } from '@/lib/composio-tools'
 import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
@@ -508,6 +509,13 @@ export async function POST(req: Request) {
       },
     })
   }
+
+  // Attach Composio-backed Gmail + Calendar tools (read-only). buildComposioTools
+  // returns {} when the user is unauthenticated, when focus mode disallows it
+  // (web_only, repo_only), or when the user has no connected_account_id for a
+  // given toolkit - so the model never sees a tool it can't actually call.
+  const composioTools = await buildComposioTools(uid, focusMode)
+  Object.assign(allTools, composioTools)
 
   const result = streamText({
     model: client.chat(selectedModel),

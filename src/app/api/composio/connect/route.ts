@@ -28,13 +28,14 @@ export async function POST(req: Request) {
 
   try {
     const callbackUrl = `${callbackBase.replace(/\/+$/, '')}/api/composio/callback?toolkit=${toolkit}`
-    const { connectedAccountId, redirectUrl } = await createConnectionLink(toolkit, uid, callbackUrl)
+    const { connectedAccountId, redirectUrl, authConfigId } = await createConnectionLink(toolkit, uid, callbackUrl)
 
     await supabase.from('composio_connections').upsert(
       {
         user_id: uid,
         toolkit,
         status: 'pending',
+        composio_auth_config_id: authConfigId,
         composio_connected_account_id: connectedAccountId,
         error: null,
         updated_at: new Date().toISOString(),
