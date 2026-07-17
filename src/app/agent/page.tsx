@@ -526,9 +526,29 @@ export default function AgentPage() {
             .map((o: string) => o.trim())
           setLines((l) => [...l, { kind: 'question', questionText, options }])
         } else if (action === 'plan') {
-          const fileMatch = text.match(/^([^:]+):/m)
-          const file = fileMatch ? fileMatch[1].trim() : 'unknown'
-          setLines((l) => [...l, { kind: 'proposal', file, diff: text, isNewFile: text.includes('new file') }])
+          // Manual mode phase 1: a text plan, no diff yet (write-ops.ts's
+          // planEdit — the actual plan text is in `reasoning`, NOT `text`,
+          // which is just the literal string "Plan for <file>"). dispatch()
+          // only includes target_file/is_new_file on the response when
+          // planTarget is set, which it is here. Populate planContext so the
+          // Propose Diff button (handleProceed) has something to act on —
+          // previously never set to a real value anywhere, so that button was
+          // permanently disabled.
+          const targetFile = (data.target_file as string | undefined) ?? 'unknown'
+          const isNewFile = !!data.is_new_file
+          setLines((l) => [...l, { kind: 'plan', text: reasoning ?? text, targetFile, isNewFile }])
+          setPlanContext({ targetFile, isNewFile, instruction: opts?.instruction ?? command })
+        } else if (action === 'propose_edit' && data.exit_code === 0) {
+          // The actual diff — from auto-mode's hop-2 generation, or manual
+          // mode's Propose Diff click (handleProceed). Neither dispatch()
+          // branch that returns this action sets planTarget, so target_file/
+          // is_new_file aren't on the response; the file is instead already
+          // known from this exact call's own opts (both callers — the
+          // auto-chain above and handleProceed — pass targetFile/isNewFile
+          // explicitly), or planContext as a fallback for other paths.
+          const file = opts?.targetFile ?? planContext?.targetFile ?? 'unknown'
+          const isNewFile = opts?.isNewFile ?? planContext?.isNewFile ?? false
+          setLines((l) => [...l, { kind: 'proposal', file, diff: text, isNewFile }])
           setPlanContext(null)
         } else if (action === 'apply' && data.exit_code === 0) {
           setLines((l) => [...l, { kind: 'applied', text: text || 'Changes applied to working copy' }])
@@ -1219,10 +1239,26 @@ USER REQUEST: ${userText}`
                   </AnimatePresence>
                 </div>
 
-                {/* Reasoning Depth selector */}
+                {/* Reasoning Depth selector — proposeEdit/planEdit (plain code
+                    edits, no skill active) have no <think>-trace concept at
+                    all: they already unconditionally surface the model's plan
+                    via a completely different mechanism (WriteOpsResult.reasoning,
+                    a plan-before-sentinel text convention), and wiring
+                    reasoningExtraBody's enable_thinking into that same call
+                    risks a <think> block landing inside the CONTENT_SENTINEL-
+                    split response and corrupting the diff parse. Skill
+                    invocations are the only path that actually reads
+                    reasoningDepth (exec/route.ts's dispatch() only forwards it
+                    into runSkillResponse/runMultiSkillResponse) — so the
+                    control is honestly disabled rather than staying
+                    interactive-but-inert when no skill is active. */}
                 <div ref={reasoningMenuRef} className="relative flex-shrink-0">
                   <button onClick={() => setReasoningMenuOpen((o) => !o)}
-                    className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                    disabled={activeSkills.length === 0}
+                    title={activeSkills.length === 0 ? 'Think only affects skill invocations — pick a skill first' : undefined}
+                    className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground ${
+                      activeSkills.length > 0 ? 'hover:border-primary/30 hover:text-foreground' : ''
+                    } ${
                       reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-secondary text-muted-foreground'
                     }`}>
                     <Brain className="h-3 w-3" />
@@ -1230,7 +1266,7 @@ USER REQUEST: ${userText}`
                     <ChevronDown className="h-2.5 w-2.5" />
                   </button>
                   <AnimatePresence>
-                    {reasoningMenuOpen && (
+                    {reasoningMenuOpen && activeSkills.length > 0 && (
                       <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
                         className="absolute bottom-full left-0 z-20 mb-1 w-48 rounded-md border border-border bg-surface-elevated shadow-lg">
                         {REASONING_DEPTHS.map((r) => (
