@@ -1,15 +1,37 @@
 const BASE = 'https://api.github.com'
 
+// Every call in this file is a small JSON API request (metadata reads, blob/
+// tree/commit/ref writes) — none of them legitimately need more than this to
+// complete. Without a ceiling, a slow/degraded GitHub response burns time
+// invisibly before any of the AI SDK timeouts downstream even start their
+// clock, silently eating the margin those numbers assume they have.
+const GH_FETCH_TIMEOUT_MS = 10_000
+
 async function ghFetch(token: string, path: string, options: RequestInit = {}) {
-  return fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...((options.headers ?? {}) as Record<string, string>),
-    },
-  })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), GH_FETCH_TIMEOUT_MS)
+  try {
+    return await fetch(`${BASE}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...((options.headers ?? {}) as Record<string, string>),
+      },
+    })
+  } catch (e) {
+    // Attribute the failure to our own timeout when it was the cause, rather
+    // than letting a raw DOMException/AbortError string bubble up to the
+    // caller's catch block unexplained.
+    if (controller.signal.aborted) {
+      throw new Error(`GitHub API request timed out after ${GH_FETCH_TIMEOUT_MS / 1000}s: ${path}`)
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export interface Repo {
@@ -165,8 +187,23 @@ export async function branchExists(
   repo: string,
   branch: string,
 ): Promise<boolean> {
-  const res = await ghFetch(accessToken, `/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}`)
-  return res.ok
+  // Unlike every other function in this file, this one had no try/catch at
+  // all before the timeout above existed — a plain network failure would
+  // already have thrown uncaught into createOrSwitchBranch, which also
+  // doesn't wrap this call, all the way up through an unhandled route
+  // rejection (no top-level try/catch in exec/route.ts's POST). A timeout is
+  // now a deterministic, much more likely way to hit that same gap, so it's
+  // closed here instead of left to surface as a raw 500. Failing to "doesn't
+  // exist" on a timeout is safe, not silent: if the branch actually does
+  // exist, the subsequent create POST 422s with a real, still-caught error
+  // instead of silently corrupting anything.
+  try {
+    const res = await ghFetch(accessToken, `/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}`)
+    return res.ok
+  } catch (e) {
+    console.error('[github] branchExists threw:', e)
+    return false
+  }
 }
 
 async function getRefSha(

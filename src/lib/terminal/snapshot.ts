@@ -33,6 +33,15 @@ export interface SnapshotError {
 
 const GH = 'https://api.github.com'
 
+// Small metadata calls (repo info, ref resolution) vs. the tarball download —
+// the latter is an actual file transfer that can legitimately take longer on
+// a large repo, so it gets more room. Neither had any ceiling before: a
+// slow/degraded GitHub response burned time invisibly ahead of the tuned
+// 25s/40s AI SDK timeouts downstream, eating the margin those numbers assume
+// they have.
+const GH_METADATA_TIMEOUT_MS = 10_000
+const GH_TARBALL_TIMEOUT_MS = 20_000
+
 function ghHeaders(token: string): Record<string, string> {
   return {
     Authorization: `Bearer ${token}`,
@@ -41,20 +50,42 @@ function ghHeaders(token: string): Record<string, string> {
   }
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (e) {
+    if (controller.signal.aborted) {
+      throw new Error(`GitHub request timed out after ${timeoutMs / 1000}s: ${label}`)
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Resolve the repo's default branch + current head SHA so the snapshot dir is
 // content-addressed (re-clone only when the repo actually moved).
 async function resolveHead(token: string, owner: string, repo: string): Promise<{ sha: string; branch: string } | { error: string; status: number }> {
-  const infoRes = await fetch(`${GH}/repos/${owner}/${repo}`, { headers: ghHeaders(token) })
-  if (!infoRes.ok) return { error: `Repo not accessible (GitHub ${infoRes.status})`, status: infoRes.status }
-  const info = await infoRes.json()
-  const branch = info.default_branch as string
+  try {
+    const infoRes = await fetchWithTimeout(`${GH}/repos/${owner}/${repo}`, { headers: ghHeaders(token) }, GH_METADATA_TIMEOUT_MS, 'repo info')
+    if (!infoRes.ok) return { error: `Repo not accessible (GitHub ${infoRes.status})`, status: infoRes.status }
+    const info = await infoRes.json()
+    const branch = info.default_branch as string
 
-  const refRes = await fetch(`${GH}/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}`, {
-    headers: { ...ghHeaders(token), Accept: 'application/vnd.github.sha' },
-  })
-  if (!refRes.ok) return { error: `Could not resolve head (GitHub ${refRes.status})`, status: refRes.status }
-  const sha = (await refRes.text()).trim()
-  return { sha, branch }
+    const refRes = await fetchWithTimeout(
+      `${GH}/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}`,
+      { headers: { ...ghHeaders(token), Accept: 'application/vnd.github.sha' } },
+      GH_METADATA_TIMEOUT_MS,
+      'head ref',
+    )
+    if (!refRes.ok) return { error: `Could not resolve head (GitHub ${refRes.status})`, status: refRes.status }
+    const sha = (await refRes.text()).trim()
+    return { sha, branch }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e), status: 0 }
+  }
 }
 
 export async function ensureSnapshot(
@@ -75,10 +106,27 @@ export async function ensureSnapshot(
     // not cached — extract below
   }
 
-  const tarRes = await fetch(`${GH}/repos/${owner}/${repo}/tarball/${head.sha}`, { headers: ghHeaders(token) })
-  if (!tarRes.ok) return { ok: false, error: `Tarball download failed (GitHub ${tarRes.status})`, status: tarRes.status }
-
-  const gz = Buffer.from(await tarRes.arrayBuffer())
+  let gz: Buffer
+  {
+    // Timeout window covers the FULL download (headers + body), not just the
+    // connection — a large tarball can stream slowly even after headers come
+    // back promptly, and a timer cleared right after fetch() resolves would
+    // miss exactly that case.
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), GH_TARBALL_TIMEOUT_MS)
+    try {
+      const tarRes = await fetch(`${GH}/repos/${owner}/${repo}/tarball/${head.sha}`, { headers: ghHeaders(token), signal: controller.signal })
+      if (!tarRes.ok) return { ok: false, error: `Tarball download failed (GitHub ${tarRes.status})`, status: tarRes.status }
+      gz = Buffer.from(await tarRes.arrayBuffer())
+    } catch (e) {
+      if (controller.signal.aborted) {
+        return { ok: false, error: `Tarball download timed out after ${GH_TARBALL_TIMEOUT_MS / 1000}s.` }
+      }
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
   let tar: Buffer
   try {
     tar = gunzipSync(gz)
