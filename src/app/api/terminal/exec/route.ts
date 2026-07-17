@@ -7,7 +7,7 @@ import { ensureSnapshot } from '@/lib/terminal/snapshot'
 import { runCommand } from '@/lib/terminal/exec'
 import { runGit } from '@/lib/terminal/git-api'
 import { resolveExecutionDir } from '@/lib/terminal/working-copy'
-import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, type WriteOpsContext } from '@/lib/terminal/write-ops'
+import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, loadEnryRules, buildEnryRulesBlock, type WriteOpsContext } from '@/lib/terminal/write-ops'
 import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
 import { getSkill, SKILLS, buildMultiSkillPrompt } from '@/lib/skills/registry'
@@ -15,7 +15,6 @@ import { getSkillWithOverride } from '@/lib/skills/loader'
 import { generateText } from 'ai'
 import { nimClientFor, DEFAULT_NIM_MODEL } from '@/lib/nim'
 import { insertSkillInvocation, updateSkillInvocationOutput } from '@/lib/lab/db'
-import { getFileContent } from '@/lib/github'
 import { parseReasoningTrace, renderReasoningTrace, reasoningExtraBody, type ReasoningDepth } from '@/lib/reasoning-trace'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
 
@@ -160,12 +159,10 @@ export async function POST(req: Request) {
   const { result, action, planTarget, invocationId, reasoningTrace } = await dispatch(command, writeCtx, headSha, mode, proceed ?? false, skillSlug, skillSlugs, reasoningDepth)
 
   // Check for .enryrules and include its existence in the response so the
-  // client can show/hide the editor UI.
-  let hasEnryRules = false
-  try {
-    const { content } = await getFileContent(githubToken, owner, name, '.enryrules')
-    hasEnryRules = content !== null
-  } catch { /* ignore */ }
+  // client can show/hide the editor UI. Shares write-ops.ts's cached
+  // loadEnryRules — same call the skill/edit paths below already make for
+  // this repo, instead of a second uncached, uncorrelated fetch.
+  const hasEnryRules = (await loadEnryRules(writeCtx)) !== null
 
   const entry: TerminalCommand = {
     cmd: command,
@@ -453,12 +450,10 @@ async function runSkillResponse(
     console.error('[terminal/skill-response] failed to log invocation:', err)
   }
 
-  // Load .enryrules for this repo so skill invocations follow repo-specific conventions.
-  let enryrulesContent = ''
-  try {
-    const { content } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, '.enryrules')
-    if (content) enryrulesContent = `\n\nREPOSITORY RULES (.enryrules) — follow these conventions:\n${content}`
-  } catch { /* ignore */ }
+  // Load .enryrules for this repo so skill invocations follow repo-specific
+  // conventions — shares write-ops.ts's single cached implementation.
+  const rules = await loadEnryRules(ctx)
+  const enryrulesContent = rules ? buildEnryRulesBlock(rules) : ''
 
   try {
     const client = nimClientFor(ctx.model)
@@ -468,8 +463,16 @@ async function runSkillResponse(
       prompt: `Repository: ${ctx.owner}/${ctx.repo}\n\nUser request: ${userRequest}\n\nProvide your analysis now.`,
       temperature: 0.7,
       maxOutputTokens: 3000,
-      timeout: 60_000,
-      maxRetries: 1,
+      // 40s, not 60s — this call does not own the full 60s maxDuration alone.
+      // The same invocation already ran ensureSnapshot + a getFileContent for
+      // .enryrules before reaching here, and still owes appendCommand +
+      // readWriteState after it returns. At 60s (equal to the platform
+      // ceiling) plus that overhead, Vercel kills the function before this
+      // AbortController can ever fire — the exact same failure mode fixed on
+      // generateFileContent (write-ops.ts) earlier; mirrored here.
+      // maxRetries: 0 so a retry can't silently double wall-clock past 60s.
+      timeout: 40_000,
+      maxRetries: 0,
       ...(reasoningDepth !== 'off' ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
     })
 
@@ -481,7 +484,15 @@ async function runSkillResponse(
     return { output: answer, exitCode: 0, invocationId: invocationId ?? undefined, reasoningTrace: trace }
   } catch (err) {
     console.error('[terminal/skill-response] generation threw:', err)
-    const detail = err instanceof Error ? err.message : String(err)
+    // Distinguish a timeout abort from a genuine upstream error, same as
+    // generateFileContent — a timeout calls for "narrow the request or turn
+    // Think off", not a raw "Aborted"/TimeoutError string.
+    const name = err instanceof Error ? err.name : ''
+    const msg = err instanceof Error ? err.message : String(err)
+    const isTimeout = name === 'TimeoutError' || name === 'AbortError' || /abort|timed?\s?out/i.test(msg)
+    const detail = isTimeout
+      ? 'generation timed out before finishing this analysis — try a narrower request, or turn Think off if it\'s on (reasoning tokens eat into the same budget).'
+      : msg
     return { output: `Skill analysis failed: ${detail}`, exitCode: 1, invocationId: invocationId ?? undefined }
   }
 }
@@ -544,12 +555,10 @@ async function runMultiSkillResponse(
     console.error('[terminal/multi-skill-response] failed to log invocation:', err)
   }
 
-  // Load .enryrules for this repo so multi-skill invocations follow repo conventions.
-  let enryrulesContent = ''
-  try {
-    const { content } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, '.enryrules')
-    if (content) enryrulesContent = `\n\nREPOSITORY RULES (.enryrules) — follow these conventions:\n${content}`
-  } catch { /* ignore */ }
+  // Load .enryrules for this repo so multi-skill invocations follow repo
+  // conventions — shares write-ops.ts's single cached implementation.
+  const multiSkillRules = await loadEnryRules(ctx)
+  const enryrulesContent = multiSkillRules ? buildEnryRulesBlock(multiSkillRules) : ''
 
   try {
     const client = nimClientFor(ctx.model)
@@ -559,8 +568,17 @@ async function runMultiSkillResponse(
       prompt: `Repository: ${ctx.owner}/${ctx.repo}\n\nUser request: ${userRequest}\n\nProvide your multi-lens analysis now.`,
       temperature: 0.7,
       maxOutputTokens: 4000,
-      timeout: 90_000,
-      maxRetries: 1,
+      // Was 90s — LONGER than the platform's hard 60s maxDuration (route.ts's
+      // own `export const maxDuration = 60`), which is not a soft target, it's
+      // a kill switch. A call configured to run past it can never surface its
+      // own clean timeout error: Vercel kills the function first, and the
+      // user gets a raw 504 instead of the message in the catch block below.
+      // 40s matches the same margin already proven on generateFileContent and
+      // runSkillResponse, accounting for this call's own ensureSnapshot +
+      // .enryrules overhead before it and appendCommand/readWriteState after.
+      // maxRetries: 0 so a retry can't silently double wall-clock past 60s.
+      timeout: 40_000,
+      maxRetries: 0,
       ...(reasoningDepth !== 'off' ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
     })
 
@@ -571,7 +589,12 @@ async function runMultiSkillResponse(
     return { output: answer, exitCode: 0, invocationId: invocationId ?? undefined, reasoningTrace: trace }
   } catch (err) {
     console.error('[terminal/multi-skill-response] generation threw:', err)
-    const detail = err instanceof Error ? err.message : String(err)
+    const name = err instanceof Error ? err.name : ''
+    const msg = err instanceof Error ? err.message : String(err)
+    const isTimeout = name === 'TimeoutError' || name === 'AbortError' || /abort|timed?\s?out/i.test(msg)
+    const detail = isTimeout
+      ? 'generation timed out before finishing this multi-lens analysis — try fewer skills at once, a narrower request, or turn Think off if it\'s on.'
+      : msg
     return { output: `Multi-skill analysis failed: ${detail}`, exitCode: 1, invocationId: invocationId ?? undefined }
   }
 }

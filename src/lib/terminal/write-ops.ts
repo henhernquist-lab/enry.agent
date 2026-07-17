@@ -208,25 +208,39 @@ If the instruction is not actually about changing this file's content, put a one
 let enryrulesCache: { repo: string; content: string; ts: number } | null = null
 const ENRYRULES_CACHE_TTL = 300_000 // 5 min in-memory cache per serverless instance
 
-async function loadEnryRules(ctx: WriteOpsContext): Promise<string | null> {
+// The single implementation of the .enryrules fetch — every prompt-building
+// path (propose/plan edits, skill and multi-skill responses, the sidebar's
+// hasEnryRules flag) calls this instead of its own inline getFileContent, so
+// there's one cache and one place that logs a real failure instead of four
+// call sites each silently treating a transient GitHub error as "no rules."
+export async function loadEnryRules(ctx: WriteOpsContext): Promise<string | null> {
   const key = `${ctx.owner}/${ctx.repo}`
   if (enryrulesCache && enryrulesCache.repo === key && Date.now() - enryrulesCache.ts < ENRYRULES_CACHE_TTL) {
     return enryrulesCache.content || null
   }
   try {
     const { content, error } = await getFileContent(ctx.accessToken, ctx.owner, ctx.repo, '.enryrules')
+    // A 404 genuinely means "no .enryrules file" — cache that as empty, same
+    // as before. Any OTHER error (rate limit, 5xx, network) is not the same
+    // fact and must not be cached as "no rules" for the next 5 minutes — log
+    // it and return null uncached so the next call gets a fresh attempt.
+    if (error && !error.includes('404')) {
+      console.error('[terminal/write-ops] loadEnryRules fetch failed (not caching as absent):', error)
+      return null
+    }
     if (error || !content) {
       enryrulesCache = { repo: key, content: '', ts: Date.now() }
       return null
     }
     enryrulesCache = { repo: key, content, ts: Date.now() }
     return content
-  } catch {
+  } catch (err) {
+    console.error('[terminal/write-ops] loadEnryRules threw:', err)
     return null
   }
 }
 
-function buildEnryRulesBlock(content: string): string {
+export function buildEnryRulesBlock(content: string): string {
   return `\n\nREPOSITORY RULES (.enryrules) — these are non-negotiable conventions for this repo. Follow them exactly:\n${content}`
 }
 

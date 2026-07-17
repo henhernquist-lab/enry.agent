@@ -13,12 +13,13 @@ interface RepoOption {
 type CommandAction = 'propose_edit' | 'apply' | 'branch' | 'commit' | 'pr'
 
 interface Line {
-  kind: 'command' | 'output' | 'system'
+  kind: 'command' | 'output' | 'system' | 'question'
   repo?: string
   branch?: string | null
   text: string
   exitCode?: number
   action?: CommandAction
+  options?: string[]
 }
 
 const ALLOWED_HINT = 'ls · cat · head · tail · grep · find · wc · tree · git log/status/diff/show/branch'
@@ -88,34 +89,81 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
     inputRef.current?.focus()
   }, [])
 
-  const run = useCallback(
-    async (command: string) => {
+  // A plain function declaration, not useCallback — the auto-mode NL-edit chain
+  // below calls run() recursively for its hop-2 re-POST, which would be a TDZ
+  // hazard against a `const` bound via useCallback (same fix already applied to
+  // agent/page.tsx's exec()). Recreated every render; harmless, nothing depends
+  // on run's identity being stable.
+  async function run(
+    command: string,
+    opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; chainDepth?: number },
+  ) {
       const trimmed = command.trim()
       if (!trimmed) return
       if (!repo) {
         setLines((l) => [...l, { kind: 'system', text: '⚠ select a repo first' }])
         return
       }
-      history.current.push(trimmed)
-      historyIdx.current = history.current.length
-      setLines((l) => [...l, { kind: 'command', repo, branch: currentBranch, text: trimmed }])
-      setInput('')
+      const isChainHop = (opts?.chainDepth ?? 0) > 0
+      if (!isChainHop) {
+        history.current.push(trimmed)
+        historyIdx.current = history.current.length
+        setLines((l) => [...l, { kind: 'command', repo, branch: currentBranch, text: trimmed }])
+        setInput('')
+      }
       setRunning(true)
 
       const controller = new AbortController()
       abortRef.current = controller
       try {
+        const body: Record<string, unknown> = { repo, command: trimmed, session_id: sessionId, proceed: opts?.proceed ?? false }
+        if (opts?.targetFile) body.target_file = opts.targetFile
+        if (opts?.isNewFile !== undefined) body.is_new_file = opts.isNewFile
+        if (opts?.instruction) body.instruction = opts.instruction
+
         const res = await fetch('/api/terminal/exec', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo, command: trimmed, session_id: sessionId }),
+          body: JSON.stringify(body),
           signal: controller.signal,
         })
         const data = await res.json()
         if (data.session_id) setSessionId(data.session_id)
         setCurrentBranch(data.current_branch ?? null)
         setHasPendingDiff(!!data.has_pending_diff)
+
+        // Auto-mode NL edits classify the target and stop there (see
+        // /api/terminal/exec's dispatch()) so classification and full-file
+        // generation get separate maxDuration budgets. Chain the follow-up
+        // request invisibly — same pattern as agent/page.tsx's exec(). Capped
+        // at one hop so a server bug can't loop this forever.
+        if (data.action === 'target_resolved' && (opts?.chainDepth ?? 0) < 1) {
+          await run(command, {
+            proceed: true,
+            targetFile: data.target_file,
+            isNewFile: data.is_new_file,
+            instruction: opts?.instruction ?? command,
+            chainDepth: (opts?.chainDepth ?? 0) + 1,
+          })
+          return
+        }
+
         const text = (data.output ?? data.error ?? '').toString()
+
+        // Ambiguous NL-edit requests come back as a [CLARIFY]/exit_code:0
+        // marker (see nl-edit.ts's classify step) instead of a hard refusal —
+        // render it as a question with clickable options instead of plain text.
+        const clarifyMatch = text.match(/\[CLARIFY\]\s*([\s\S]*?)Options:\s*([\s\S]*)$/i)
+        if (clarifyMatch && data.exit_code === 0 && !data.action) {
+          const questionText = clarifyMatch[1].trim()
+          const options = clarifyMatch[2].trim()
+            .split(/(?:^|\s*,\s*)[A-Z]\)\s*/)
+            .filter(Boolean)
+            .map((o: string) => o.trim())
+          setLines((l) => [...l, { kind: 'question', text: questionText, options }])
+          return
+        }
+
         setLines((l) => [...l, { kind: 'output', text: text || '(no output)', exitCode: data.exit_code ?? 0, action: data.action }])
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
@@ -127,9 +175,7 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
         setRunning(false)
         abortRef.current = null
       }
-    },
-    [repo, sessionId, currentBranch],
-  )
+  }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     // Ctrl+C — cancel running command or clear the current input line.
@@ -239,6 +285,24 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
             return (
               <div key={i} className="whitespace-pre-wrap break-words text-muted-foreground">
                 {line.text}
+              </div>
+            )
+          }
+          if (line.kind === 'question') {
+            return (
+              <div key={i} className="mb-2">
+                <div className="whitespace-pre-wrap break-words text-accent">{line.text}</div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {(line.options ?? []).map((opt, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => { setInput(opt); inputRef.current?.focus() }}
+                      className="rounded border border-accent/30 bg-accent/5 px-2 py-0.5 text-[11px] text-accent transition-colors hover:bg-accent/10"
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
               </div>
             )
           }
