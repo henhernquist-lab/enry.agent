@@ -283,13 +283,17 @@ export interface LearnSessionPayload {
   // surfaces a due claim, cleared once the answer event is recorded. Lives
   // in the session row (not just client state) so a page refresh doesn't
   // lose which claim is "live," same reasoning as PendingDiff above.
-  pending_probe?: { claim_id: string; content: string; topic: string; asked_at: string } | null
+  // is_enemy carried through from surfaceNextDue so a future Freebuff feature
+  // can tell an enemy claim apart once surfaced, without another schema/session
+  // change. Optional — absent on sessions created before migration 020.
+  pending_probe?: { claim_id: string; content: string; topic: string; asked_at: string; is_enemy?: boolean } | null
   // Open tabs — persisted across refreshes so the tab bar survives a reload.
   // Chat is always open; every other tab is opt-in via the "+" menu.
-  // Stored as a list of tab keys, chat excluded (it's always first).
+  // Stored as a list of tab ids; chat excluded (it's always first).
   open_tabs?: string[]
   // Casino balance — persisted per session for fast access (also derivable
-  // from claim_events but this avoids re-scanning on every tab load).
+  // from claim_events via src/lib/learn/casino.ts#getBalance but this avoids
+  // re-scanning on every tab load).
   casino_balance?: number
 }
 

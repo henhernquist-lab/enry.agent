@@ -1,14 +1,54 @@
-// Confidence Casino — wagering on probe answers.
-// Every probe answer can include a confidence rating (1-5). The user stakes
-// points on their answer, and the system pays out or collects based on
-// correctness × confidence. All bets are logged as claim_events (no separate
-// table needed — the ledger is in the event log).
-//
-// Balance is computed from wager_placed/wager_resolved events. A cached
-// balance is also stored in the LearnSessionPayload so the tab can render
-// instantly without a full event scan.
-
 import { supabase } from '../supabase'
+
+// ── Confidence Casino ─────────────────────────────────────────────────────
+// Combined surface: tonight's session shipped the wager logic (event-log
+// audit trail in claim_events: wager_placed / wager_resolved with payload
+// containing confidence, amount, payout). Claude Code's Freebuff shipped the
+// persistent counter (user_learn_state.casino_balance cross-session running
+// total). They coexist on the same DB: every wager_placed deducts from
+// user_learn_state.casino_balance, every wager_resolved adds the payout, and
+// claim_events stays the authoritative audit log. The CasinoTab component
+// calls into this surface; no other entry point exists.
+//
+// Concurrency note: adjustCasinoBalance is read-modify-write (origin's
+// implementation), fine for one-bet-at-a-time Casino UX. High-frequency
+// future use should push the delta into a Postgres function — flagged in
+// the comments on adjustCasinoBalance below.
+
+// ── Persistent running balance (origin/main: user_learn_state.casino_balance)
+
+export async function getCasinoBalance(userId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('user_learn_state')
+    .select('casino_balance')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('[learn/casino] balance read failed:', error)
+    return 0
+  }
+  return Number(data?.casino_balance ?? 0)
+}
+
+// NOTE: read-modify-write here is not concurrency-safe on its own — flagged for
+// future Postgres-function migration. Fine for one-bet-at-a-time UX.
+async function adjustCasinoBalance(userId: string, delta: number): Promise<number | null> {
+  const current = await getCasinoBalance(userId)
+  const next = current + delta
+  const { error } = await supabase
+    .from('user_learn_state')
+    .upsert(
+      { user_id: userId, casino_balance: next, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    )
+  if (error) {
+    console.error('[learn/casino] balance write failed:', error)
+    return null
+  }
+  return next
+}
+
+// ── Event-log wager logic (tonight's session) ───────────────────────────
 
 export interface WagerPlacedPayload {
   confidence: number        // 1-5, user's stated confidence
@@ -25,17 +65,22 @@ export interface WagerResolvedPayload {
 }
 
 // ── Place a wager ────────────────────────────────────────────────────────
-// Called BEFORE the answer is graded — records the user's stated confidence
+// Called BEFORE the answer is graded. Records the user's stated confidence
 // and the amount they're staking. Confidence 1-5 maps linearly to wager size
-// relative to a base stake (10 points per confidence level).
+// (10 points per confidence level, 10-50 range). ALSO deducts the stake from
+// user_learn_state.casino_balance so the counter stays in sync with the log.
 export async function placeWager(
   claimId: string,
-  confidence: number,  // 1-5
+  confidence: number,
   userId: string,
 ): Promise<{ id: string; amount: number } | { error: string }> {
   const clamped = Math.max(1, Math.min(5, Math.round(confidence)))
-  const amount = clamped * 10 // 10-50 points
+  const amount = clamped * 10
 
+  // Synchronized write: insert event FIRST (audit log = source of truth),
+  // then deduct from running balance. If the balance write fails, we still
+  // have a valid event row — the next getBalance-from-events() reconciliation
+  // could resync. We don't roll back the event; easier to resync balance.
   const { data, error } = await supabase
     .from('claim_events')
     .insert({
@@ -47,6 +92,9 @@ export async function placeWager(
     .single()
 
   if (error) return { error: error.message }
+
+  // Best-effort counter sync — never let it kill the wager itself.
+  await adjustCasinoBalance(userId, -amount)
   return { id: data.id, amount }
 }
 
@@ -57,11 +105,12 @@ export async function placeWager(
 // - Wrong + high confidence (4-5): big loss (-amount × 1.5) — overconfidence penalty
 // - Wrong + low confidence (1-2): small loss (-amount × 0.5) — "knew I wasn't sure"
 // - Medium confidence (3): even payout or even loss
+// ALSO credits/debits the payout on user_learn_state.casino_balance.
 export async function resolveWager(
   claimId: string,
   wasCorrect: boolean,
+  userId: string,
 ): Promise<{ payout: number; confidence: number } | { error: string }> {
-  // Find the most recent wager_placed event for this claim
   const { data: placed, error: readErr } = await supabase
     .from('claim_events')
     .select('payload, created_at')
@@ -83,11 +132,11 @@ export async function resolveWager(
   if (wasCorrect) {
     if (confidence >= 4) payout = Math.round(amount * 1.5)
     else if (confidence <= 2) payout = Math.round(amount * 3.0)
-    else payout = Math.round(amount * 1.0) // confidence 3: even
+    else payout = Math.round(amount * 1.0)
   } else {
     if (confidence >= 4) payout = -Math.round(amount * 1.5)
     else if (confidence <= 2) payout = -Math.round(amount * 0.5)
-    else payout = -Math.round(amount * 1.0) // confidence 3: even loss
+    else payout = -Math.round(amount * 1.0)
   }
 
   const { error: writeErr } = await supabase
@@ -99,13 +148,18 @@ export async function resolveWager(
     })
 
   if (writeErr) return { error: writeErr.message }
+
+  // Best-effort counter sync — payout is signed (±), so credit-on-correct and
+  // debit-on-loss happen inside the same adjustedCasinoBalance call.
+  await adjustCasinoBalance(userId, payout)
   return { payout, confidence }
 }
 
-// ── Compute balance from event log ────────────────────────────────────────
-// Scans all wager_resolved events for a user's claims and sums payouts.
-// Returns the running total. For the tab's instant render, the session
-// payload caches this — call this for authoritative recalculation.
+// ── Compute balance from event log (authoritative reconciliation) ────────
+// Scans all wager_resolved events for the user's claims and sums payouts.
+// Authoritative — used to verify user_learn_state.casino_balance after a
+// rollback. The CasinoTab uses the cached counter on user_learn_state for
+// instant render; this is for full reconciliation.
 export async function getBalance(userId: string): Promise<number> {
   const { data, error } = await supabase
     .from('claim_events')
@@ -115,9 +169,6 @@ export async function getBalance(userId: string): Promise<number> {
 
   if (error || !data) return 0
 
-  // Filter to only this user's claims (claim_events has claim_id FK to claims
-  // which has user_id — we can't join in the query above easily, so filter
-  // client-side for now; at this data volume it's fine).
   const claimIds = [...new Set(data.map((d) => d.claim_id))]
   if (claimIds.length === 0) return 0
 
@@ -139,7 +190,7 @@ export async function getBalance(userId: string): Promise<number> {
 }
 
 // ── Recent bets ──────────────────────────────────────────────────────────
-// Returns the last N resolved wagers for display in the tab.
+// Returns the last N resolved wagers for display in the CasinoTab.
 export async function getRecentBets(userId: string, limit = 20) {
   const { data: claims, error: claimErr } = await supabase
     .from('claims')
@@ -162,7 +213,6 @@ export async function getRecentBets(userId: string, limit = 20) {
 
   if (error || !events) return []
 
-  // Pair placed/resolved events
   const bets: {
     claim_id: string
     content: string

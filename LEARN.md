@@ -2,10 +2,15 @@
 
 This document is for the next agent building a feature on top of Learn's
 base (Knowledge Diff, Ambient Mode, Confidence Calibration, Explain-Back
-grading, Prerequisite Excavation, Contradiction Alarm, The Map). It is not a
+grading, Prerequisite Excavation, Contradiction Alarm, and the three Freebuff
+features — Enemy Claims, Confidence Casino, Receipts). It is not a
 user-facing changelog. If you're about to build one of those, read this
 whole file before touching the schema or `learn-ops.ts` — the base was
 deliberately shaped so you shouldn't need to change either.
+
+**The Map and Fog of War are built** (see their section below) — they're no
+longer future work. The Freebuff features have their schema + integration
+seams in place (migration 020) but no logic yet; that's what you're here for.
 
 ## What Learn is, in one paragraph
 
@@ -73,6 +78,23 @@ When you add a new event type, add a row to this table in your own PR — a
 feature agent reading this file next should be able to see the full registry
 in one place, not have to grep the codebase for every `event_type` string
 literal.
+
+**Reserved payload field names (Confidence Casino).** `claim_events.payload`
+is jsonb precisely so features add fields without a migration. Casino's
+stake/payout ride here, not in new columns. To keep them consistent across
+whatever event types Casino writes (e.g. a `bet_placed` and a `bet_settled`),
+these field names are reserved — use them, don't reinvent:
+
+| payload field | type | meaning |
+|---|---|---|
+| `stake_amount` | number | units the user wagered on their answer |
+| `payout` | number | units returned (0 on a loss; > stake on a win) |
+
+The durable running balance those deltas sum to is NOT an event — it lives in
+`user_learn_state.casino_balance` (migration 020), read/written via
+`src/lib/learn/casino.ts` (`getCasinoBalance` / `adjustCasinoBalance`). The
+base never touches it; those helpers exist only so Casino has a ready home.
+See that file's note on concurrency before building a high-frequency bet loop.
 
 ## What the base deliberately does not do
 
@@ -180,6 +202,97 @@ main `SKILLS` array, so look these up via `LEARN_SKILLS.find(...)` instead.
 - **NIM client**: `src/lib/nim.ts`'s `nimClientFor`/`DEFAULT_NIM_MODEL`/
   `parseJsonLoose` — same pattern every other LLM call in this codebase
   uses.
+
+## The Map (and Fog of War)
+
+The Map tab is a first-class canvas of every non-retired claim, peer to Chat
+in interaction weight. Data flow:
+
+- `GET /api/learn/map` → `getMapData(userId)` in `src/lib/learn/map.ts`. Loads
+  the user's claims, computes each node's live `strength` via `strength.ts`
+  (never the stored column), and builds a **nearest-neighbor link set** from
+  embedding cosine similarity (top-`NEIGHBORS_PER_NODE` per node above
+  `MIN_SIMILARITY`). We deliberately do NOT ship 1024-dim vectors to the
+  browser — the server does the similarity math and sends only `{ source,
+  target, similarity }` links; the client runs a `d3-force` layout over those
+  links to get the visual clustering. Node position is therefore emergent, not
+  persisted — there is no stable (x, y) or "region id" anywhere.
+- `GET /api/learn/claim?claim_id=` → one claim + its recent `claim_events`,
+  fetched lazily on node click (the overview never carries event history).
+- `ClaimMap` (`src/components/learn/claim-map.tsx`) renders to a `<canvas>`
+  with hand-rolled pan/zoom/hit-testing. `d3-force` is the only new dependency
+  and is used purely for layout math, no rendering.
+
+**Fog of War** is a rendering mode on the same canvas, toggled from the Map.
+It reads per-claim freshness — `last_touched_at`, the max of `created_at`,
+`last_probed_at`, and the newest `claim_events` row — from the `claim_activity`
+**view** (migration 020). It's a view, not a table, because activity is fully
+derivable from columns that already exist; there's no region state to keep in
+sync (and no stable region to attach it to, per the layout note above). Fresh
+nodes clear a soft hole in the fog scaled by recency; cold regions
+(`> FOG_COLD_DAYS` untouched) stay fogged. The clear radius is recomputed every
+frame against `Date.now()`, so as a session sits open, holes shrink and fog
+closes back in — that's the "decaying back into fog" animation, no re-fetch.
+
+Both the Map and Fog degrade gracefully **before migration 020 is run**:
+`getMapData` retries its claims select without `is_enemy` if that column is
+missing, and falls back from the `claim_activity` view to
+`GREATEST(created_at, last_probed_at)` (ignoring non-probe events until the
+view exists). `MapData.fog_source` reports which path ran.
+
+## The Freebuff integration surface (schema + seams, not features)
+
+Migration `020_learn_freebuff_surface.sql` and the code shipped with it add
+everything the three Freebuff features need and NOTHING they own. None of the
+three are implemented here.
+
+- **Enemy Claims.** `claims.is_enemy boolean` + `claims.enemy_caught_at
+  timestamptz`. `surfaceNextDue` already selects any `status='active'` claim
+  regardless of the flag, so enemy claims are *already* in probe rotation with
+  zero logic change — the base just carries `is_enemy` through into the probe
+  response `data` and the session's `pending_probe` so the feature can render/
+  score a surfaced enemy differently. To build it: read `is_enemy` off the
+  probe response, and when the user correctly rejects one, set
+  `enemy_caught_at` (and write your own `enemy_caught` event). No further
+  schema change needed.
+- **Confidence Casino.** Stake/payout are `claim_events.payload` fields (see
+  the reserved-field table above); the running balance is
+  `user_learn_state.casino_balance` via `src/lib/learn/casino.ts`. Neither is
+  touched by the base.
+- **Receipts.** `src/lib/learn/receipts-hook.ts` exposes a registrable hook.
+  Main chat's send path (`src/app/api/chat/route.ts`) invokes
+  `getReceiptsHook()` **fire-and-forget** (not awaited) on every outgoing user
+  message, passing `{ userId, googleId, message }`. The default hook is a
+  no-op that resolves `null` — zero reads, zero latency. To build Receipts:
+  write your contradiction detector as a `ReceiptsHook`, call
+  `registerReceiptsHook(...)` once from a side-effect import chat already pulls
+  in, and never touch chat's runtime otherwise. The seam is observe-only today
+  (its result is logged, not fed back into the stream); surfacing a result
+  into the chat response is a larger change and its own proposal. This is the
+  sensitive one — the detector runs against every message the user sends, so
+  it must stay cheap and must never block the response.
+
+## Tab-registration contract
+
+Everything in Learn that isn't the Chat console is a **tab**, and every tab
+registers in ONE place: `LEARN_TABS` in
+`src/components/learn/tab-registry.tsx`. To add a feature tab (Confidence
+Casino, Enemy Claims dashboard, Receipts log, ...), append one `LearnTabDef`:
+
+```ts
+{ id: 'casino', label: 'Casino', icon: Coins, render: () => <ConfidenceCasino /> }
+```
+
+That's the whole ceremony. The Learn page reads this array to build the tab
+bar, the "+" menu (which lists any registered tab not currently open), and the
+active tab's content — it hard-codes no tab id. `defaultOpen: true` makes a tab
+visible on load without the "+" (Map uses it); omit it and the tab opens on
+demand and is closeable. **Chat is intentionally not in the registry**: it's
+the pinned home tab that owns the shared input box, session id, and
+pending-probe state, so it can't be closed or opened from "+". Every feature
+(except the inline LLM skills in the Chat tab) must be a registry entry — that
+rule is what keeps "each feature is its own openable tab" true as Freebuff
+lands.
 
 ## Known gaps, left for you on purpose
 

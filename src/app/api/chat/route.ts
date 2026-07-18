@@ -13,39 +13,28 @@ import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOver
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { buildComposioTools } from '@/lib/composio-tools'
-import { checkContradictions, logContradiction } from '@/lib/learn/receipts'
-import {
-  MODEL_LIST,
-  getModelMeta,
-  getChatModel,
-  isModelConfigured,
-  defaultModelForScope,
-  type ModelScope,
-} from '@/lib/nim'
+import { getReceiptsHook } from '@/lib/learn/receipts-hook'
+// Side-effect import: registers enryReceiptsDetector as the active
+// ReceiptsHook at module-load time, before this route's first
+// getReceiptsHook() call below. Order matters — must precede any code
+// that could call getReceiptsHook.
+import '@/lib/learn/receipts-detector'
 import type { GitHubActionPayload } from '@/lib/resources'
 
-// The chat route serves all three surfaces (homepage, enry lite, plus the
-// Drive live-chat sidebar). The MODEL_LIST registry in src/lib/nim.ts is the
-// single source of truth — every surface filters by scope when rendering
-// the picker, so by the time a request lands here, the model id is already
-// one of the registered entries. We still validate on the server because
-// nothing stops a malicious client from hand-crafting a request body.
-type AllowedModel = string
-const ALLOWED_MODELS: string[] = MODEL_LIST.map((m) => m.id)
-const DEFAULT_MODEL = defaultModelForScope('chat')
+const MODEL_CONFIG = {
+  'deepseek-ai/deepseek-v4-pro':      () => process.env.DEEPSEEK_API_KEY ?? '',
+  'minimax/minimax-m3':                () => process.env.MINIMAX_API_KEY ?? '',
+  'qwen/qwen3.5-122b-a10b':           () => process.env.QWEN_API_KEY ?? '',
+  'z-ai/glm-5.2':                     () => process.env.GLM_API_KEY ?? '',
+  'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
+  // Moonshot Kimi K2 Instruct — 6th NIM model. Falls back to NVIDIA_API_KEY
+  // since the same NIM endpoint handles Moonshot-hosted Kimi builds.
+  'moonshotai/kimi-k2-instruct':       () => process.env.MOONSHOT_API_KEY ?? '',
+} as const
 
-// Resolve the requested model against the active surface. Drive-only models
-// (e.g. moonshotai/kimi-k2.7-code) are rejected unless surface === 'drive'.
-// Falls back to the scope's default if the id is unknown or mismatched.
-function resolveModelForSurface(requested: unknown, surface: ModelScope): string {
-  const id = typeof requested === 'string' ? requested : ''
-  const meta = getModelMeta(id)
-  if (meta && meta.scopes.includes(surface)) return id
-  if (id && meta && !meta.scopes.includes(surface)) {
-    console.warn(`[chat/route] model ${id} not allowed for surface=${surface}; falling back to default`)
-  }
-  return defaultModelForScope(surface)
-}
+type AllowedModel = keyof typeof MODEL_CONFIG
+const ALLOWED_MODELS = Object.keys(MODEL_CONFIG) as AllowedModel[]
+const DEFAULT_MODEL: AllowedModel = 'deepseek-ai/deepseek-v4-pro'
 
 export const maxDuration = 60
 
@@ -265,17 +254,12 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 export async function POST(req: Request) {
   const body = await req.json()
   const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn } = body
+  const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
+  const apiKey = MODEL_CONFIG[selectedModel]()
 
-  // Surface — one of 'chat' | 'drive' | 'lite'. Defaults to 'chat' so
-  // homepage and enry lite both reject drive-only models (e.g. Kimi K2.7 Code)
-  // if a hand-crafted request bypasses the picker. Drive's live-chat sidebar
-  // passes surface='drive'.
-  const surface: ModelScope = ['chat', 'drive', 'lite'].includes(body.surface) ? body.surface : 'chat'
-  const selectedModel: AllowedModel = resolveModelForSurface(model, surface)
-
-  if (!isModelConfigured(selectedModel)) {
+  if (!apiKey) {
     return new Response(
-      JSON.stringify({ error: `No provider API key configured for ${selectedModel}` }),
+      JSON.stringify({ error: `No API key configured for ${selectedModel}` }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
     )
   }
@@ -293,34 +277,30 @@ export async function POST(req: Request) {
 
   const modelMessages = await convertToModelMessages(messages)
 
-  // ── Receipts hook: check for contradictions against stored claims ────
-  // All logic lives in lib/learn/receipts.ts — this call is the extension point.
-  // If contradictions are found, they're injected as context and logged.
-  let contradictionContext = ''
-  if (uid) {
-    const lastUserMsg = [...modelMessages].reverse().find((m) => m.role === 'user')
-    if (lastUserMsg && typeof lastUserMsg.content === 'string') {
-      const contradictions = await checkContradictions(lastUserMsg.content, uid)
-      if (contradictions && contradictions.length > 0) {
-        contradictionContext = `\n\n⚠ RECEIPT: The following claims contradict what the user just said (high semantic similarity to the user's message, but potentially opposite meaning). The user may have changed their mind or forgotten a prior belief. If you think this is a genuine contradiction, surface it as an inline interrupt and ask which claim is correct. Otherwise, just be aware of the tension.\n${contradictions.map((c, i) => `${i + 1}. [${c.claim_id.slice(0, 8)}…] ${c.claim_content}`).join('\n')}\n${contradictions.length > 1 ? '' : '\nReply directly but acknowledge this receipt. '}  `
-        // Log contradictions asynchronously (don't block the response)
-        for (const c of contradictions) {
-          logContradiction(c.claim_id, c.message_snippet, c.similarity).catch((err) => {
-            console.error('[chat/route] failed to log contradiction:', err)
-          })
-        }
-      }
-    }
-  }
-
   // Apply context compaction (extracts decisions, files, unresolved Qs)
   const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
   const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
 
-  // Single factory dispatch — picks the right provider baseURL + auth for
-  // whichever model won the scope gate above. NIM, Gemini (OpenAI-compat),
-  // GitHub Models (Azure inference), and OpenRouter all flow through this.
-  const chatModel = getChatModel(selectedModel)
+  // Receipts (Enry Learn extension point): let a registered detector check the
+  // outgoing user message against the user's claims for contradiction. No-op
+  // by default (see src/lib/learn/receipts-hook.ts) — Freebuff registers the
+  // real detector. Deliberately NOT awaited: fire-and-forget so chat latency is
+  // never affected, now or once a real hook is registered.
+  if (uid && googleId) {
+    const outgoingUserText = String(finalMessages.findLast((m) => m.role === 'user')?.content ?? '')
+    if (outgoingUserText) {
+      getReceiptsHook()({ userId: uid, googleId, message: outgoingUserText })
+        .then((candidates) => {
+          if (candidates?.length) console.log('[receipts] contradiction candidates:', candidates.length)
+        })
+        .catch((err) => console.error('[receipts] hook threw:', err))
+    }
+  }
+
+  const client = createOpenAI({
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+    apiKey,
+  })
 
   const focusDirective = focusMode !== 'all'
     ? `\n\nFOCUS MODE: ${focusMode.replace(/_/g, ' ').toUpperCase()} — you are restricted to only the tools available in this mode. Do not attempt to use tools outside this scope.`
@@ -380,8 +360,8 @@ export async function POST(req: Request) {
     }
 
     const skillResult = streamText({
-      model: chatModel,
-      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${contradictionContext}`,
+      model: client.chat(selectedModel),
+      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}`,
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
         providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
@@ -560,7 +540,7 @@ export async function POST(req: Request) {
   Object.assign(allTools, composioTools)
 
   const result = streamText({
-    model: chatModel,
+    model: client.chat(selectedModel),
     system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.
 
 You exist to move Henry's work forward: shipping features on the enry.agent codebase itself, answering technical questions with real research, running tool-calling loops on his behalf, and remembering context across sessions so he never has to re-explain his stack.
@@ -663,7 +643,7 @@ GITHUB WRITE SAFETY RAILS — these are non-negotiable, enforced server-side:
 5. If Henry says no or asks for changes, do not execute. Adjust and re-preview.
 
 Bound strictly to the above. If a task needs a tool not on this list, state that instead of improvising.
-${focusDirective}${contradictionContext}
+${focusDirective}
 ${userProfile ? `\n${userProfile}` : ''}`,
     messages: finalMessages as any,
     stopWhen: stepCountIs(7),

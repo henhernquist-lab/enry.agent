@@ -178,17 +178,36 @@ export async function probeNext(ctx: LearnOpsContext, answer: string): Promise<L
   return surfaceNextDue(ctx)
 }
 
+// Enemy Claims (Freebuff): surfaceNextDue already picks any status='active'
+// claim regardless of is_enemy, so enemy claims are ALREADY in probe rotation
+// with no logic change — this just carries the flag through to the response so
+// the eventual feature can render/score a surfaced enemy differently. Selected
+// defensively (is_enemy is migration 020) so probe keeps working before 020.
+async function selectDueClaim(userId: string, nowIso: string) {
+  const run = (cols: string) =>
+    supabase
+      .from('claims')
+      .select(cols)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .or(`next_probe_at.is.null,next_probe_at.lte.${nowIso}`)
+      .order('next_probe_at', { ascending: true, nullsFirst: true })
+      .limit(1)
+      .maybeSingle()
+
+  const withEnemy = await run('id, content, topic, is_enemy')
+  if (!withEnemy.error) {
+    const d = withEnemy.data as unknown as { id: string; content: string; topic: string; is_enemy: boolean | null } | null
+    return { data: d ? { ...d, is_enemy: d.is_enemy ?? false } : null, error: null }
+  }
+  const fallback = await run('id, content, topic')
+  const d = fallback.data as unknown as { id: string; content: string; topic: string } | null
+  return { data: d ? { ...d, is_enemy: false } : null, error: fallback.error }
+}
+
 async function surfaceNextDue(ctx: LearnOpsContext): Promise<LearnOpsResult> {
   const nowIso = new Date().toISOString()
-  const { data: due, error } = await supabase
-    .from('claims')
-    .select('id, content, topic')
-    .eq('user_id', ctx.userId)
-    .eq('status', 'active')
-    .or(`next_probe_at.is.null,next_probe_at.lte.${nowIso}`)
-    .order('next_probe_at', { ascending: true, nullsFirst: true })
-    .limit(1)
-    .maybeSingle()
+  const { data: due, error } = await selectDueClaim(ctx.userId, nowIso)
 
   if (error) {
     console.error('[learn-ops] probe due-claim query failed:', error)
@@ -207,14 +226,14 @@ async function surfaceNextDue(ctx: LearnOpsContext): Promise<LearnOpsResult> {
   if (eventError) console.error('[learn-ops] probe_asked event insert failed (probe still surfaced):', eventError)
 
   const persisted = await casUpdateSessionPayload<LearnSessionPayload>(ctx.sessionId, ctx.userId, () => ({
-    pending_probe: { claim_id: due.id, content: due.content, topic: due.topic, asked_at: askedAt },
+    pending_probe: { claim_id: due.id, content: due.content, topic: due.topic, asked_at: askedAt, is_enemy: due.is_enemy },
   }))
   if (!persisted) console.error('[learn-ops] failed to persist pending_probe for session', ctx.sessionId)
 
   return {
     output: `Explain in your own words: ${due.content}`,
     exitCode: 0,
-    data: { claim_id: due.id, content: due.content, topic: due.topic },
+    data: { claim_id: due.id, content: due.content, topic: due.topic, is_enemy: due.is_enemy },
   }
 }
 
