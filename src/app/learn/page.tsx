@@ -5,7 +5,23 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
-import { ArrowLeft, Brain, Loader2, Send, Sparkles } from 'lucide-react'
+import {
+  ArrowLeft,
+  Archive,
+  Brain,
+  BookOpen,
+  GitCompare,
+  GraduationCap,
+  Layers,
+  Library,
+  Loader2,
+  Map as MapIcon,
+  MessageSquare,
+  Search,
+  Send,
+  ShieldAlert,
+  type LucideIcon,
+} from 'lucide-react'
 import { LEARN_SKILLS } from '@/lib/skills/registry'
 
 // Enry Learn — base scaffolding. Mirrors app/agent/page.tsx's structure
@@ -17,22 +33,156 @@ import { LEARN_SKILLS } from '@/lib/skills/registry'
 
 type Line =
   | { kind: 'prompt'; text: string }
-  | { kind: 'output'; text: string }
+  | { kind: 'output'; text: string; verb: string }
   | { kind: 'probe'; text: string; claimId: string }
   | { kind: 'error'; text: string }
   | { kind: 'system'; text: string }
 
 const STUB_VERBS = ['gap', 'defend', 'teach', 'retire'] as const
 
+type TabKey = 'chat' | 'map' | 'diff' | 'sources'
+
+const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
+  { key: 'chat', label: 'Chat', icon: MessageSquare },
+  { key: 'map', label: 'Map', icon: MapIcon },
+  { key: 'diff', label: 'Diff', icon: GitCompare },
+  { key: 'sources', label: 'Sources', icon: Library },
+]
+
+// Every verb gets its own accent so a message's left border tells you what
+// produced it at a glance — the button that triggered it and the line it
+// wrote share a color. `cyan` pulls from the chart-2 token (the one new
+// accent beyond what the rest of the app already uses); everything else is
+// existing theme tokens.
+type ColorKey = 'primary' | 'accent' | 'warning' | 'destructive' | 'cyan' | 'muted'
+
+const COLOR: Record<ColorKey, {
+  border: string
+  borderLeft: string
+  activeBorder: string
+  text: string
+  hoverText: string
+  bg: string
+  activeBg: string
+  glow: string
+}> = {
+  primary: {
+    border: 'border-primary/50',
+    borderLeft: 'border-l-primary/50',
+    activeBorder: 'border-primary',
+    text: 'text-primary',
+    hoverText: 'hover:text-primary',
+    bg: 'bg-primary/5',
+    activeBg: 'bg-primary/20',
+    glow: 'shadow-[0_0_12px_-2px_rgba(58,158,96,0.55)]',
+  },
+  accent: {
+    border: 'border-accent/50',
+    borderLeft: 'border-l-accent/50',
+    activeBorder: 'border-accent',
+    text: 'text-accent',
+    hoverText: 'hover:text-accent',
+    bg: 'bg-accent/5',
+    activeBg: 'bg-accent/20',
+    glow: 'shadow-[0_0_12px_-2px_rgba(59,130,196,0.55)]',
+  },
+  warning: {
+    border: 'border-warning/50',
+    borderLeft: 'border-l-warning/50',
+    activeBorder: 'border-warning',
+    text: 'text-warning',
+    hoverText: 'hover:text-warning',
+    bg: 'bg-warning/5',
+    activeBg: 'bg-warning/20',
+    glow: 'shadow-[0_0_12px_-2px_rgba(255,184,0,0.55)]',
+  },
+  destructive: {
+    border: 'border-destructive/50',
+    borderLeft: 'border-l-destructive/50',
+    activeBorder: 'border-destructive',
+    text: 'text-destructive',
+    hoverText: 'hover:text-destructive',
+    bg: 'bg-destructive/5',
+    activeBg: 'bg-destructive/20',
+    glow: 'shadow-[0_0_12px_-2px_rgba(255,77,77,0.55)]',
+  },
+  cyan: {
+    border: 'border-chart-2/50',
+    borderLeft: 'border-l-chart-2/50',
+    activeBorder: 'border-chart-2',
+    text: 'text-chart-2',
+    hoverText: 'hover:text-chart-2',
+    bg: 'bg-chart-2/5',
+    activeBg: 'bg-chart-2/20',
+    glow: 'shadow-[0_0_12px_-2px_rgba(0,200,255,0.55)]',
+  },
+  muted: {
+    border: 'border-muted-foreground/30',
+    borderLeft: 'border-l-muted-foreground/30',
+    activeBorder: 'border-muted-foreground/60',
+    text: 'text-muted-foreground',
+    hoverText: 'hover:text-foreground',
+    bg: 'bg-muted-foreground/5',
+    activeBg: 'bg-muted-foreground/15',
+    glow: 'shadow-[0_0_10px_-3px_rgba(156,163,175,0.35)]',
+  },
+}
+
+const VERB_META: Record<string, { label: string; icon: LucideIcon; color: ColorKey }> = {
+  learn: { label: 'Learn', icon: BookOpen, color: 'primary' },
+  probe: { label: 'Probe', icon: Brain, color: 'accent' },
+  gap: { label: 'Gap', icon: Search, color: 'warning' },
+  defend: { label: 'Defend', icon: ShieldAlert, color: 'destructive' },
+  teach: { label: 'Teach', icon: GraduationCap, color: 'cyan' },
+  retire: { label: 'Retire', icon: Archive, color: 'muted' },
+}
+
+const VERB_BUTTONS: (typeof STUB_VERBS[number] | 'probe')[] = ['probe', 'gap', 'defend', 'teach', 'retire']
+
+// Which future verb each moved technique will plug into (per LEARN.md: teach
+// hosts Feynman-style explaining, defend hosts push-back/questioning). Both
+// verbs are still stubs today, so clicking a card can't run the technique yet
+// — it populates the input with a real, honest invocation of that stub verb
+// instead of pretending to do something the base doesn't support.
+const SKILL_META: Record<string, { color: ColorKey; verb: 'teach' | 'defend' }> = {
+  feynman: { color: 'cyan', verb: 'teach' },
+  'fifth-grader': { color: 'accent', verb: 'teach' },
+  'socratic-mode': { color: 'warning', verb: 'defend' },
+  'eli-expert': { color: 'primary', verb: 'defend' },
+}
+
+const COMING_SOON: Record<Exclude<TabKey, 'chat'>, { icon: LucideIcon; description: string }> = {
+  map: { icon: MapIcon, description: 'A visual graph of your claims and how they connect to each other. Not built yet.' },
+  diff: { icon: GitCompare, description: 'What changed in your understanding over time. Not built yet.' },
+  sources: { icon: Library, description: 'Where your claims came from, gathered in one place. Not built yet.' },
+}
+
+function ComingSoonPanel({ tab }: { tab: Exclude<TabKey, 'chat'> }) {
+  const { icon: Icon, description } = COMING_SOON[tab]
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <div className="flex max-w-xs flex-col items-center gap-3 text-center">
+        <div className="rounded-full border border-border bg-surface-secondary p-4">
+          <Icon className="h-6 w-6 text-muted-foreground/40" />
+        </div>
+        <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground/50">Coming soon</p>
+        <p className="font-sans text-[12px] leading-relaxed text-muted-foreground/40">{description}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function LearnPage() {
   const { status } = useSession()
   const router = useRouter()
 
+  const [activeTab, setActiveTab] = useState<TabKey>('chat')
   const [lines, setLines] = useState<Line[]>([
     { kind: 'system', text: 'enry learn — every belief starts as a claim. learn "<topic>" to begin, or probe to check in on what\'s due.' },
   ])
   const [input, setInput] = useState('')
   const [running, setRunning] = useState(false)
+  const [activeVerb, setActiveVerb] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [pendingProbe, setPendingProbe] = useState<{ claim_id: string; content: string; topic: string } | null>(null)
 
@@ -49,6 +199,7 @@ export default function LearnPage() {
 
   const exec = useCallback(async (verb: string, verbInput: string, promptText?: string) => {
     setRunning(true)
+    setActiveVerb(verb)
     if (promptText) setLines((l) => [...l, { kind: 'prompt', text: promptText }])
     try {
       const res = await fetch('/api/learn/exec', {
@@ -73,12 +224,13 @@ export default function LearnPage() {
       } else if (verb === 'probe' && data.data?.claim_id && !data.pending_probe_answered) {
         setLines((l) => [...l, { kind: 'probe', text, claimId: data.data.claim_id }])
       } else {
-        setLines((l) => [...l, { kind: 'output', text }])
+        setLines((l) => [...l, { kind: 'output', text, verb }])
       }
     } catch {
       setLines((l) => [...l, { kind: 'error', text: 'network error — retry' }])
     } finally {
       setRunning(false)
+      setActiveVerb(null)
     }
   }, [sessionId])
 
@@ -113,6 +265,22 @@ export default function LearnPage() {
     exec('learn', text, text)
   }
 
+  // Clicking a technique card populates the input with a real invocation of
+  // the stub verb it belongs to (teach/defend) and focuses the box, ready to
+  // send — the honest version of "wire it up" given those verbs are stubs.
+  const invokeTechnique = (slug: string) => {
+    const meta = SKILL_META[slug] ?? { verb: 'teach' as const }
+    const text = `${meta.verb} ${slug} `
+    setInput(text)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(text.length, text.length)
+      }
+    })
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -135,12 +303,35 @@ export default function LearnPage() {
         <Link href="/" className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Home
         </Link>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">Learn</span>
+        <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">
+          <GraduationCap className="h-3 w-3 text-primary/70" /> Learn
+        </span>
         {pendingProbe && (
           <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-warning">Awaiting answer</span>
         )}
       </header>
 
+      <div className="flex flex-shrink-0 items-center gap-1 border-b border-border bg-background px-3">
+        {TABS.map((t) => {
+          const active = activeTab === t.key
+          const Icon = t.icon
+          return (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 font-mono text-[11px] uppercase tracking-wider transition-colors ${
+                active ? 'border-primary text-primary' : 'border-transparent text-muted-foreground/50 hover:text-muted-foreground'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" /> {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {activeTab !== 'chat' ? (
+        <ComingSoonPanel tab={activeTab} />
+      ) : (
       <div className="flex min-h-0 flex-1">
         {/* Conversation */}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -148,7 +339,11 @@ export default function LearnPage() {
             <div className="mx-auto max-w-[720px] px-8 py-6">
               {lines.map((line, i) => {
                 if (line.kind === 'system') {
-                  return <div key={i} className="mb-3"><p className="font-mono text-[11px] leading-relaxed text-muted-foreground/60">{line.text}</p></div>
+                  return (
+                    <div key={i} className="mb-3 border-l-2 border-muted-foreground/20 pl-3">
+                      <p className="font-mono text-[11px] leading-relaxed text-muted-foreground/60">{line.text}</p>
+                    </div>
+                  )
                 }
                 if (line.kind === 'prompt') {
                   return (
@@ -161,10 +356,11 @@ export default function LearnPage() {
                   )
                 }
                 if (line.kind === 'probe') {
+                  const color = COLOR[VERB_META.probe.color]
                   return (
                     <motion.div key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="mb-5">
-                      <div className="border-l-2 border-accent/50 pl-4">
-                        <div className="mb-1 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-accent/70">
+                      <div className={`border-l-2 ${color.border} ${color.bg} rounded-r py-2 pl-4 pr-3`}>
+                        <div className={`mb-1 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider ${color.text}`}>
                           <Brain className="h-3 w-3" /> Probe
                         </div>
                         <p className="font-sans text-[14px] leading-relaxed text-foreground">{line.text}</p>
@@ -182,9 +378,15 @@ export default function LearnPage() {
                     </div>
                   )
                 }
+                const meta = VERB_META[line.verb] ?? VERB_META.learn
+                const color = COLOR[meta.color]
+                const Icon = meta.icon
                 return (
                   <div key={i} className="mb-4">
-                    <div className="border-l-2 border-primary/20 pl-4">
+                    <div className={`border-l-2 ${color.border} pl-4`}>
+                      <div className={`mb-1 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider ${color.text}`}>
+                        <Icon className="h-3 w-3" /> {meta.label}
+                      </div>
                       <p className="whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-foreground/80">{line.text}</p>
                     </div>
                   </div>
@@ -205,16 +407,26 @@ export default function LearnPage() {
           <div className="flex-shrink-0 border-t border-border bg-background px-4 py-3">
             <div className="mx-auto max-w-[820px] space-y-2">
               <div className="flex flex-wrap items-center gap-1.5">
-                <button onClick={() => exec('probe', '', 'probe')} disabled={running}
-                  className="flex items-center gap-1 rounded border border-border bg-surface-secondary px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-40">
-                  <Brain className="h-3 w-3" /> Probe
-                </button>
-                {STUB_VERBS.map((v) => (
-                  <button key={v} onClick={() => exec(v, '', v)} disabled={running}
-                    className="flex items-center gap-1 rounded border border-border bg-surface-secondary px-2.5 py-1.5 font-mono text-[10px] capitalize text-muted-foreground/60 transition-colors hover:border-border hover:text-muted-foreground disabled:opacity-40">
-                    {v}
-                  </button>
-                ))}
+                {VERB_BUTTONS.map((v) => {
+                  const meta = VERB_META[v]
+                  const color = COLOR[meta.color]
+                  const Icon = meta.icon
+                  const isActive = running && activeVerb === v
+                  return (
+                    <button
+                      key={v}
+                      onClick={() => exec(v, '', v)}
+                      disabled={running}
+                      className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] capitalize transition-all disabled:opacity-40 ${
+                        isActive
+                          ? `${color.activeBorder} ${color.activeBg} ${color.text} ${color.glow}`
+                          : `border-border bg-surface-secondary text-muted-foreground/70 hover:border-border ${color.hoverText}`
+                      }`}
+                    >
+                      <Icon className="h-3 w-3" /> {meta.label}
+                    </button>
+                  )
+                })}
               </div>
               <div className="flex items-end gap-2">
                 <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
@@ -236,29 +448,39 @@ export default function LearnPage() {
         </div>
 
         {/* Techniques sidebar — the four learning skills moved out of main
-            chat. Not wired to anything yet: teach/defend are stubs, so these
-            are browsable, not actionable, until a feature agent builds the
-            verb that uses them. */}
+            chat. Each card is colored and clickable: it drops a real
+            invocation of the stub verb (teach/defend) it belongs to into the
+            input, ready to send. */}
         <aside className="hidden w-[240px] flex-shrink-0 flex-col border-l border-border bg-[#0a0b0d] lg:flex">
           <div className="border-b border-border p-3">
             <div className="flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3 text-muted-foreground" />
+              <Layers className="h-3 w-3 text-muted-foreground" />
               <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Techniques</span>
             </div>
             <p className="mt-1 font-mono text-[9px] leading-relaxed text-muted-foreground/50">
-              Moved here from main chat. Wired into teach/defend once those verbs are built.
+              Click one to load its invocation into the input.
             </p>
           </div>
           <div className="flex-1 overflow-y-auto py-2">
-            {LEARN_SKILLS.map((s) => (
-              <div key={s.slug} className="border-b border-border/40 px-3 py-2.5">
-                <div className="font-mono text-[11px] font-semibold text-foreground">{s.name}</div>
-                <div className="mt-0.5 font-sans text-[10px] leading-relaxed text-muted-foreground">{s.description}</div>
-              </div>
-            ))}
+            {LEARN_SKILLS.map((s) => {
+              const meta = SKILL_META[s.slug] ?? { color: 'muted' as ColorKey, verb: 'teach' as const }
+              const color = COLOR[meta.color]
+              return (
+                <button
+                  key={s.slug}
+                  type="button"
+                  onClick={() => invokeTechnique(s.slug)}
+                  className={`block w-full border-b border-b-border/40 border-l-2 ${color.borderLeft} px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated/40`}
+                >
+                  <div className={`font-mono text-[11px] font-semibold ${color.text}`}>{s.name}</div>
+                  <div className="mt-0.5 font-sans text-[10px] leading-relaxed text-muted-foreground">{s.description}</div>
+                </button>
+              )
+            })}
           </div>
         </aside>
       </div>
+      )}
     </div>
   )
 }
