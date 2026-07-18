@@ -48,7 +48,7 @@ export async function POST(req: Request) {
         return Response.json(result)
       }
       case 'resolve': {
-        const result = await resolveWager(body.claim_id, body.was_correct)
+        const result = await resolveWager(body.claim_id, body.was_correct, uid)
         return Response.json(result)
       }
       default:
