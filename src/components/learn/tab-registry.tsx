@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { GitCompare, Library, Map as MapIcon } from 'lucide-react'
 import { ClaimMap } from './claim-map'
+import { SourcesPanel } from './sources-panel'
 
 // ── Learn tab-registration contract ────────────────────────────────────────
 // THE single point for making a Learn feature openable as its own tab. To add
@@ -44,7 +45,7 @@ function ComingSoon({ icon: Icon, description }: { icon: LucideIcon; description
 export const LEARN_TABS: LearnTabDef[] = [
   { id: 'map', label: 'Map', icon: MapIcon, defaultOpen: true, render: () => <ClaimMap /> },
   { id: 'diff', label: 'Diff', icon: GitCompare, render: () => <ComingSoon icon={GitCompare} description="What changed in your understanding over time. Not built yet." /> },
-  { id: 'sources', label: 'Sources', icon: Library, render: () => <ComingSoon icon={Library} description="Where your claims came from, gathered in one place. Not built yet." /> },
+  { id: 'sources', label: 'Sources', icon: Library, render: () => <SourcesPanel /> },
 ]
 
 export function getLearnTab(id: string): LearnTabDef | undefined {
