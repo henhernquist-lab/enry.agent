@@ -151,11 +151,6 @@ export function LeftSidebar({
           className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
           <Brain className="h-4 w-4" />
-        <Link
-          href="/resources/memory"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <Brain className="h-4 w-4" />
           Memory
         </Link>
         <Link
