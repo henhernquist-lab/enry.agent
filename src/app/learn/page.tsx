@@ -10,19 +10,19 @@ import {
   Archive,
   Brain,
   BookOpen,
-  GitCompare,
   GraduationCap,
   Layers,
-  Library,
   Loader2,
-  Map as MapIcon,
   MessageSquare,
+  Plus,
   Search,
   Send,
   ShieldAlert,
+  X,
   type LucideIcon,
 } from 'lucide-react'
 import { LEARN_SKILLS } from '@/lib/skills/registry'
+import { LEARN_TABS, getLearnTab } from '@/components/learn/tab-registry'
 
 // Enry Learn — base scaffolding. Mirrors app/agent/page.tsx's structure
 // (client page, one exec endpoint, a scrollback of typed verbs) sized down
@@ -40,14 +40,10 @@ type Line =
 
 const STUB_VERBS = ['gap', 'defend', 'teach', 'retire'] as const
 
-type TabKey = 'chat' | 'map' | 'diff' | 'sources'
-
-const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
-  { key: 'chat', label: 'Chat', icon: MessageSquare },
-  { key: 'map', label: 'Map', icon: MapIcon },
-  { key: 'diff', label: 'Diff', icon: GitCompare },
-  { key: 'sources', label: 'Sources', icon: Library },
-]
+// Chat is the fixed home tab (hosts input + session state); every other tab
+// comes from LEARN_TABS (src/components/learn/tab-registry.tsx). 'chat' is a
+// reserved id the registry never uses.
+const CHAT_TAB = 'chat'
 
 // Every verb gets its own accent so a message's left border tells you what
 // produced it at a glance — the button that triggered it and the line it
@@ -151,32 +147,16 @@ const SKILL_META: Record<string, { color: ColorKey; verb: 'teach' | 'defend' }> 
   'eli-expert': { color: 'primary', verb: 'defend' },
 }
 
-const COMING_SOON: Record<Exclude<TabKey, 'chat'>, { icon: LucideIcon; description: string }> = {
-  map: { icon: MapIcon, description: 'A visual graph of your claims and how they connect to each other. Not built yet.' },
-  diff: { icon: GitCompare, description: 'What changed in your understanding over time. Not built yet.' },
-  sources: { icon: Library, description: 'Where your claims came from, gathered in one place. Not built yet.' },
-}
-
-function ComingSoonPanel({ tab }: { tab: Exclude<TabKey, 'chat'> }) {
-  const { icon: Icon, description } = COMING_SOON[tab]
-  return (
-    <div className="flex flex-1 items-center justify-center">
-      <div className="flex max-w-xs flex-col items-center gap-3 text-center">
-        <div className="rounded-full border border-border bg-surface-secondary p-4">
-          <Icon className="h-6 w-6 text-muted-foreground/40" />
-        </div>
-        <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground/50">Coming soon</p>
-        <p className="font-sans text-[12px] leading-relaxed text-muted-foreground/40">{description}</p>
-      </div>
-    </div>
-  )
-}
-
 export default function LearnPage() {
   const { status } = useSession()
   const router = useRouter()
 
-  const [activeTab, setActiveTab] = useState<TabKey>('chat')
+  const [activeTab, setActiveTab] = useState<string>(CHAT_TAB)
+  // Feature tabs currently open in the bar (registry ids, excludes Chat).
+  // Seeded with the registry's defaultOpen tabs; the rest open via the "+".
+  const [openTabs, setOpenTabs] = useState<string[]>(() => LEARN_TABS.filter((t) => t.defaultOpen).map((t) => t.id))
+  const [tabMenuOpen, setTabMenuOpen] = useState(false)
+  const tabMenuRef = useRef<HTMLDivElement>(null)
   const [lines, setLines] = useState<Line[]>([
     { kind: 'system', text: 'enry learn — every belief starts as a claim. learn "<topic>" to begin, or probe to check in on what\'s due.' },
   ])
@@ -196,6 +176,30 @@ export default function LearnPage() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [lines])
+
+  // Click-outside close for the "+" tab menu (mousedown, scoped to its ref —
+  // same dropdown discipline used elsewhere in the app).
+  useEffect(() => {
+    if (!tabMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (tabMenuRef.current && !tabMenuRef.current.contains(e.target as Node)) setTabMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [tabMenuOpen])
+
+  const openTab = (id: string) => {
+    setOpenTabs((prev) => (prev.includes(id) ? prev : [...prev, id]))
+    setActiveTab(id)
+    setTabMenuOpen(false)
+  }
+
+  const closeTab = (id: string) => {
+    setOpenTabs((prev) => prev.filter((t) => t !== id))
+    setActiveTab((cur) => (cur === id ? CHAT_TAB : cur))
+  }
+
+  const closableTabs = LEARN_TABS.filter((t) => !openTabs.includes(t.id))
 
   const exec = useCallback(async (verb: string, verbInput: string, promptText?: string) => {
     setRunning(true)
@@ -312,25 +316,75 @@ export default function LearnPage() {
       </header>
 
       <div className="flex flex-shrink-0 items-center gap-1 border-b border-border bg-background px-3">
-        {TABS.map((t) => {
-          const active = activeTab === t.key
-          const Icon = t.icon
+        {/* Chat — the pinned home tab, always present, never closeable. */}
+        <button
+          onClick={() => setActiveTab(CHAT_TAB)}
+          className={`flex items-center gap-1.5 border-b-2 px-3 py-2 font-mono text-[11px] uppercase tracking-wider transition-colors ${
+            activeTab === CHAT_TAB ? 'border-primary text-primary' : 'border-transparent text-muted-foreground/50 hover:text-muted-foreground'
+          }`}
+        >
+          <MessageSquare className="h-3.5 w-3.5" /> Chat
+        </button>
+
+        {/* Open feature tabs (from LEARN_TABS), each closeable. */}
+        {openTabs.map((id) => {
+          const tab = getLearnTab(id)
+          if (!tab) return null
+          const active = activeTab === id
+          const Icon = tab.icon
           return (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 font-mono text-[11px] uppercase tracking-wider transition-colors ${
+            <div
+              key={id}
+              className={`group flex items-center border-b-2 transition-colors ${
                 active ? 'border-primary text-primary' : 'border-transparent text-muted-foreground/50 hover:text-muted-foreground'
               }`}
             >
-              <Icon className="h-3.5 w-3.5" /> {t.label}
-            </button>
+              <button onClick={() => setActiveTab(id)} className="flex items-center gap-1.5 py-2 pl-3 pr-1 font-mono text-[11px] uppercase tracking-wider">
+                <Icon className="h-3.5 w-3.5" /> {tab.label}
+              </button>
+              <button
+                onClick={() => closeTab(id)}
+                className="mr-1 rounded p-0.5 text-muted-foreground/40 opacity-0 transition-opacity hover:bg-surface-elevated hover:text-foreground group-hover:opacity-100"
+                title={`Close ${tab.label}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
           )
         })}
+
+        {/* "+" — open any registered feature tab not already open. */}
+        {closableTabs.length > 0 && (
+          <div ref={tabMenuRef} className="relative">
+            <button
+              onClick={() => setTabMenuOpen((o) => !o)}
+              className="flex items-center gap-1 rounded px-2 py-2 font-mono text-[11px] text-muted-foreground/40 transition-colors hover:text-foreground"
+              title="Open a tab"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+            {tabMenuOpen && (
+              <div className="absolute left-0 top-full z-20 mt-1 w-44 overflow-hidden rounded border border-border bg-surface-elevated shadow-lg">
+                {closableTabs.map((tab) => {
+                  const Icon = tab.icon
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => openTab(tab.id)}
+                      className="flex w-full items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground"
+                    >
+                      <Icon className="h-3.5 w-3.5" /> {tab.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {activeTab !== 'chat' ? (
-        <ComingSoonPanel tab={activeTab} />
+      {activeTab !== CHAT_TAB ? (
+        getLearnTab(activeTab)?.render() ?? null
       ) : (
       <div className="flex min-h-0 flex-1">
         {/* Conversation */}

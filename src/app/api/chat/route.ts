@@ -13,6 +13,7 @@ import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOver
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { buildComposioTools } from '@/lib/composio-tools'
+import { getReceiptsHook } from '@/lib/learn/receipts-hook'
 import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
@@ -274,6 +275,22 @@ export async function POST(req: Request) {
   // Apply context compaction (extracts decisions, files, unresolved Qs)
   const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
   const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
+
+  // Receipts (Enry Learn extension point): let a registered detector check the
+  // outgoing user message against the user's claims for contradiction. No-op
+  // by default (see src/lib/learn/receipts-hook.ts) — Freebuff registers the
+  // real detector. Deliberately NOT awaited: fire-and-forget so chat latency is
+  // never affected, now or once a real hook is registered.
+  if (uid && googleId) {
+    const outgoingUserText = String(finalMessages.findLast((m) => m.role === 'user')?.content ?? '')
+    if (outgoingUserText) {
+      getReceiptsHook()({ userId: uid, googleId, message: outgoingUserText })
+        .then((candidates) => {
+          if (candidates?.length) console.log('[receipts] contradiction candidates:', candidates.length)
+        })
+        .catch((err) => console.error('[receipts] hook threw:', err))
+    }
+  }
 
   const client = createOpenAI({
     baseURL: 'https://integrate.api.nvidia.com/v1',

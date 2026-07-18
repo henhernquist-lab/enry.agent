@@ -283,7 +283,10 @@ export interface LearnSessionPayload {
   // surfaces a due claim, cleared once the answer event is recorded. Lives
   // in the session row (not just client state) so a page refresh doesn't
   // lose which claim is "live," same reasoning as PendingDiff above.
-  pending_probe?: { claim_id: string; content: string; topic: string; asked_at: string } | null
+  // is_enemy carried through from surfaceNextDue so a future Freebuff feature
+  // can tell an enemy claim apart once surfaced, without another schema/session
+  // change. Optional — absent on sessions created before migration 020.
+  pending_probe?: { claim_id: string; content: string; topic: string; asked_at: string; is_enemy?: boolean } | null
 }
 
 export type GitHubActionType = 'create_file' | 'update_file' | 'create_branch' | 'create_pr' | 'create_repo'
