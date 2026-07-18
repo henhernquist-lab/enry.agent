@@ -17,15 +17,17 @@ function getTextContent(message: UIMessage): string {
     .join('')
 }
 
-const MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro', desc: 'Best for complex tasks' },
-  { id: 'minimax/minimax-m3', label: 'MiniMax M3', desc: 'Fast and capable' },
-  { id: 'qwen/qwen3.5-122b-a10b', label: 'Qwen 3.5', desc: 'Great for analysis' },
-  { id: 'z-ai/glm-5.2', label: 'GLM 5.2', desc: 'Versatile all-rounder' },
-]
+// Lite-specific model list — reads the shared registry in src/lib/nim.ts
+// (MODEL_LIST), filters to 'lite' scope, then narrows to just GPT-4o per
+// the lite product direction (minimal phone-sized surface). Anyone adding
+// another lite-scoped model must update this filter explicitly — the
+// registry alone does NOT control what lite shows.
+const LITE_MODELS = listModels('lite').filter((m) => m.id === 'gpt-4o')
+const LITE_MODEL_LABEL = LITE_MODELS[0]?.label ?? 'GPT-4o'
+const LITE_MODEL_DESC = LITE_MODELS[0]?.description ?? 'Versatile multimodal standard.'
 
 export default function MobileChatPage() {
-  const [model, setModel] = useState('deepseek-ai/deepseek-v4-pro')
+  const [model, setModel] = useState(LITE_MODELS[0]?.id ?? 'gpt-4o')
   const [input, setInput] = useState('')
   const [modelSheetOpen, setModelSheetOpen] = useState(false)
   const [historySheetOpen, setHistorySheetOpen] = useState(false)
@@ -66,7 +68,10 @@ export default function MobileChatPage() {
     }
   }
 
-  const currentModel = MODELS.find((m) => m.id === model)
+  const currentModel =
+    LITE_MODELS.find((m) => m.id === model) ??
+    LITE_MODELS[0] ??
+    { id: model, label: LITE_MODEL_LABEL, description: LITE_MODEL_DESC }
 
   // Voice input — Web Speech API, small lift
   const [voiceListening, setVoiceListening] = useState(false)
@@ -158,9 +163,7 @@ export default function MobileChatPage() {
                           : 'bg-surface-secondary text-foreground border border-border'
                       }`}
                     >
-                      <div className={`whitespace-pre-wrap text-sm leading-relaxed ${
-                        isStreamingMsg ? '' : ''
-                      }`}>
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
                         {isStreamingMsg ? (
                           <TypingText text={text} isStreaming />
                         ) : (
@@ -235,10 +238,13 @@ export default function MobileChatPage() {
         </div>
       </div>
 
-      {/* Model picker bottom sheet */}
+      {/* Model picker bottom sheet — only GPT-4o per lite's minimal-surface
+          product direction. The filter intentionally hardcodes just one id
+          instead of "all lite-scoped models" so adding more entries to
+          MODEL_LIST under scope: 'lite' does NOT silently expand lite. */}
       <BottomSheet open={modelSheetOpen} onClose={() => setModelSheetOpen(false)} title="Model" height="40dvh">
         <div className="divide-y divide-border/40">
-          {MODELS.map((m) => (
+          {LITE_MODELS.map((m) => (
             <button
               key={m.id}
               onClick={() => { setModel(m.id); setModelSheetOpen(false) }}
@@ -248,9 +254,16 @@ export default function MobileChatPage() {
               style={{ minHeight: 44 }}
             >
               <span className="font-mono text-xs font-semibold">{m.label}</span>
-              <span className="font-sans text-[11px] text-muted-foreground">{m.desc}</span>
+              <span className="font-sans text-[11px] text-muted-foreground">{m.description}</span>
             </button>
           ))}
+          {LITE_MODELS.length === 0 && (
+            <div className="px-4 py-6 text-center">
+              <p className="font-mono text-xs text-muted-foreground">
+                GPT-4o not currently available — check GITHUB_MODELS_TOKEN.
+              </p>
+            </div>
+          )}
         </div>
       </BottomSheet>
 
@@ -262,7 +275,7 @@ export default function MobileChatPage() {
           </p>
           {/* Simple thread list — shows last few chats from this session */}
           <div className="mt-4 space-y-1">
-            {messages.filter((m) => m.role === 'user').slice(-10).reverse().map((msg, i) => (
+            {messages.filter((m) => m.role === 'user').slice(-10).reverse().map((msg) => (
               <div key={msg.id} className="rounded border border-border px-3 py-2 font-mono text-[11px] text-muted-foreground">
                 {getTextContent(msg).slice(0, 80)}{getTextContent(msg).length > 80 ? '…' : ''}
               </div>
