@@ -21,6 +21,7 @@ import {
   ScanSearch,
   Hourglass,
   SmilePlus,
+  Brain,
   StickyNote,
   Bell,
   MessageSquarePlus,
@@ -47,6 +48,7 @@ const MAIN_ROUTES: NavItem[] = [
   { label: 'Saved Items', path: '/resources/saved', icon: Archive },
   { label: 'Prompt Library', path: '/prompts', icon: BookMarked, keywords: 'prompts' },
   { label: 'Reading List', path: '/reading-list', icon: BookOpen },
+  { label: 'Memory', path: '/resources/memory', icon: Brain, keywords: 'memory memories preferences context' },
   { label: 'Enry Lab', path: '/lab', icon: FlaskConical, keywords: 'lab experiments skills revisions' },
   { label: 'Settings', path: '/settings', icon: Settings },
 ]

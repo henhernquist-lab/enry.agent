@@ -23,12 +23,29 @@ function client(): Composio {
 }
 
 // Finds this app's existing Composio-managed auth config for a toolkit, or
-// creates one. Auth configs are app-level (one per toolkit, not per user) —
-// reused across every user's connection to that toolkit. Created unrestricted
-// (no toolAccessConfig) here: Phase 1 exposes no tools to any model, so there's
-// nothing to over-scope yet. Phase 2 locks this down to a verified read-only
-// tool list via authConfigs.update() before any tool reaches the model.
-export async function getOrCreateAuthConfig(toolkit: ComposioToolkit): Promise<string> {
+// creates one. Preferred path (v1): read a pre-existing auth_config_id the
+// project owner created in the Composio dashboard from env vars — this honors
+// the exact OAuth app config they set up (specific scopes, branding, etc.)
+// instead of auto-creating a new Composio-managed config that re-prompts for
+// every possible scope. Fallback to list+create only if the env var is unset.
+const AUTH_CONFIG_ENV: Record<ComposioToolkit, string | undefined> = {
+  gmail: process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID,
+  googlecalendar: process.env.COMPOSIO_GOOGLECALENDAR_AUTH_CONFIG_ID,
+}
+
+// Synchronous resolver: env-var wins, no SDK call. Used by the hot connect path
+// (we don't want to pay a list roundtrip when the dashboard config is known).
+function getEnvAuthConfigId(toolkit: ComposioToolkit): string | null {
+  const id = AUTH_CONFIG_ENV[toolkit]
+  return id && id.trim().length > 0 ? id.trim() : null
+}
+
+export async function resolveAuthConfigId(toolkit: ComposioToolkit): Promise<string> {
+  const fromEnv = getEnvAuthConfigId(toolkit)
+  if (fromEnv) return fromEnv
+  // Fallback: discover or create a Composio-managed config. Reused across every
+  // user's connection to that toolkit. Created unrestricted here: Phase 1
+  // exposes no tools to any model, so there's nothing to over-scope yet.
   const c = client()
   const existing = await c.authConfigs.list({ toolkit, isComposioManaged: true })
   if (existing.items.length > 0) return existing.items[0].id
@@ -39,6 +56,15 @@ export async function getOrCreateAuthConfig(toolkit: ComposioToolkit): Promise<s
   return created.id
 }
 
+// Verifies an auth config exists and is reachable with the current API key.
+// Throws a descriptive error if the auth config is missing, inaccessible, or
+// belongs to a different Composio project than the API key.
+export async function verifyAuthConfig(authConfigId: string): Promise<{ id: string; toolkitSlug: string; status: string }> {
+  const c = client()
+  const config = await c.authConfigs.get(authConfigId)
+  return { id: config.id, toolkitSlug: config.toolkit.slug, status: config.status }
+}
+
 // Creates a Composio Connect Link for `userId` (our profiles.id) to authorize
 // `toolkit`. Returns the redirect URL to send the browser to, plus Composio's
 // connected_account_id (the reference to poll/store — never a credential).
@@ -46,12 +72,41 @@ export async function createConnectionLink(
   toolkit: ComposioToolkit,
   userId: string,
   callbackUrl: string,
-): Promise<{ connectedAccountId: string; redirectUrl: string }> {
+): Promise<{ connectedAccountId: string; redirectUrl: string; authConfigId: string }> {
   const c = client()
-  const authConfigId = await getOrCreateAuthConfig(toolkit)
+  const authConfigId = await resolveAuthConfigId(toolkit)
   const req = await c.connectedAccounts.link(userId, authConfigId, { callbackUrl })
   if (!req.redirectUrl) throw new Error('Composio did not return a redirect URL')
-  return { connectedAccountId: req.id, redirectUrl: req.redirectUrl }
+  return { connectedAccountId: req.id, redirectUrl: req.redirectUrl, authConfigId }
+}
+
+// Executes one Composio tool action for a connected account. Returns the raw
+// data the tool produces (Gmail message list, calendar event list, etc.).
+// Used by the chat/route.ts buildComposioTools wrappers to surface real Gmail
+// + Calendar actions to Enry Engine as AI-SDK tools. Never surfaces Google's
+// raw data to logs — returns it directly to the LLM tool result.
+//
+// Composio's SDK signature (verified against @composio/core@0.13.1's actual
+// Tools.ts): c.tools.execute(slug, body, options?) where body is
+// {userId, arguments, version?, dangerouslySkipVersionCheck?, sessionId?}. The
+// connected_account_id is resolved internally from the (userId, authConfigId)
+// pair registered during c.connectedAccounts.link() — we don't pass it.
+export async function executeTool(
+  userId: string,
+  slug: string,
+  body: Record<string, unknown>,
+): Promise<{ data: unknown; error: string | null }> {
+  try {
+    const c = client()
+    const result = await c.tools.execute(slug, {
+      userId,
+      arguments: body,
+      dangerouslySkipVersionCheck: true,
+    })
+    return { data: (result as { data?: unknown })?.data ?? result, error: null }
+  } catch (e) {
+    return { data: null, error: String((e as Error)?.message ?? e) }
+  }
 }
 
 export async function getConnectionStatus(connectedAccountId: string): Promise<{

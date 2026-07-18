@@ -1250,8 +1250,10 @@ USER REQUEST: ${userText}`
           {/* Command bar — two-row layout: compact toolbar above, dominant textarea below */}
           <div className="flex-shrink-0 border-t border-border bg-background px-4 py-3">
             <div className="mx-auto max-w-[820px] space-y-2">
-              {/* Row 1: controls toolbar — wraps on narrow viewports */}
+              {/* Row 1: controls toolbar — model primary, toggles secondary */}
               <div className="flex flex-wrap items-center gap-1.5">
+                {/* Left group: model + skill */}
+                <div className="flex items-center gap-1.5">
                 {/* Model picker — Enry Engine routing */}
                 <div ref={modelMenuRef} className="relative flex-shrink-0">
                   <button onClick={() => setModelMenuOpen((o) => !o)}
@@ -1287,7 +1289,7 @@ USER REQUEST: ${userText}`
                   <AnimatePresence>
                     {skillMenuOpen && (
                       <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.12 }}
-                        className="absolute bottom-full left-0 z-20 mb-1 w-56 rounded-md border border-border bg-surface-elevated shadow-lg max-h-72 overflow-y-auto">
+                        className="absolute bottom-full left-0 z-20 mb-1 w-56 rounded-md border border-border bg-surface-elevated shadow-lg max-h-[50vh] overflow-y-auto scrollbar-hidden">
                         <button onClick={() => { setActiveSkillSlugs([]); setSkillMenuOpen(false); inputRef.current?.focus() }}
                           className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${activeSkills.length === 0 ? 'text-primary' : 'text-foreground'}`}>
                           <span className="font-mono text-[10px] font-semibold">None (default)</span>
@@ -1324,6 +1326,13 @@ USER REQUEST: ${userText}`
                     )}
                   </AnimatePresence>
                 </div>
+              </div>
+
+              <div className="flex-1 min-w-[12px]" />
+
+              {/* Right group: toggles */}
+              <div className="flex items-center gap-1.5">
+
 
                 {/* Reasoning Depth selector — now genuinely wired for plain
                     code edits too, not just skills. proposeEdit's diff output
@@ -1421,13 +1430,15 @@ USER REQUEST: ${userText}`
                   {mode === 'manual' ? 'Manual' : 'Auto'}
                 </button>
               </div>
+            </div>
+
 
               {/* Row 2: textarea + send button — textarea is the dominant element */}
               <div className="flex items-end gap-2">
                 <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
                   placeholder={hasRepo ? 'Describe what you want changed\u2026' : 'Select a repository above to begin'}
                   rows={1} spellCheck={false} autoCapitalize="off" autoComplete="off" disabled={running || !hasRepo}
-                  className="flex-1 resize-none rounded border border-border bg-surface-secondary px-3 py-2 font-mono text-[13px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40 min-h-[80px]"
+                  className="flex-1 resize-none rounded border border-muted-foreground/15 bg-surface-secondary px-3 py-2 font-mono text-[13px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40 min-h-[80px]"
                   style={{ maxHeight: '200px' }} />
 
                 <button onClick={handleSend} disabled={!input.trim() || running || !hasRepo}

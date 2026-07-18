@@ -14,6 +14,34 @@ export interface ReasoningTrace {
   answer: string
 }
 
+/** Streaming-aware trace — used during live generation to detect partial <think> blocks. */
+export interface StreamingReasoningTrace {
+  reasoning: string | null
+  answer: string
+  isThinking: boolean
+}
+
+/**
+ * Parses model output during STREAMING — handles incomplete <think> tags.
+ * Uses indexOf instead of regex so partial/unclosed tags are detected correctly.
+ */
+export function parseStreamingReasoning(text: string): StreamingReasoningTrace {
+  const openIdx = text.indexOf('<think>')
+  if (openIdx === -1) return { reasoning: null, answer: text, isThinking: false }
+
+  const closeIdx = text.indexOf('</think>')
+  if (closeIdx === -1) {
+    // Mid-stream: <think> opened, not yet closed — accumulate everything after it
+    const reasoning = text.slice(openIdx + 7).trimStart()
+    return { reasoning: reasoning || null, answer: text.slice(0, openIdx), isThinking: true }
+  }
+
+  // Complete <think> block
+  const reasoning = text.substring(openIdx + 7, closeIdx).trim()
+  const answer = (text.slice(0, openIdx) + text.slice(closeIdx + 8)).trim()
+  return { reasoning: reasoning || null, answer: answer || text, isThinking: false }
+}
+
 /** Splits a model response into reasoning trace + clean answer. */
 export function parseReasoningTrace(text: string): ReasoningTrace {
   const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
