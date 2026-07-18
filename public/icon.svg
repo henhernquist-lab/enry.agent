@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Synthesis/merge motif — two streams converging into one -->
+  <rect width="512" height="512" rx="112" fill="#080808"/>
+  
+  <!-- Stream 1 (left) — angled down toward center -->
+  <line x1="120" y1="170" x2="256" y2="320" stroke="#3a9e60" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+  
+  <!-- Stream 2 (right) — angled down toward center -->
+  <line x1="392" y1="170" x2="256" y2="320" stroke="#3a9e60" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+  
+  <!-- Convergence point — bright -->
+  <circle cx="256" cy="320" r="20" fill="#3a9e60"/>
+  
+  <!-- Output stream (down) — brighter, thicker -->
+  <line x1="256" y1="320" x2="256" y2="400" stroke="#3a9e60" stroke-width="18" stroke-linecap="round"/>
+  
+  <!-- Input dots on streams -->
+  <circle cx="160" cy="198" r="7" fill="#3a9e60" opacity="0.6"/>
+  <circle cx="352" cy="198" r="7" fill="#3a9e60" opacity="0.6"/>
+</svg>
