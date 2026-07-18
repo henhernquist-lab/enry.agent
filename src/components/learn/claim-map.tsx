@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type Simulation, type SimulationLinkDatum } from 'd3-force'
-import { Loader2, X, Swords, Eye, EyeOff } from 'lucide-react'
+import { Loader2, X, Swords, Eye, EyeOff, Save, FolderOpen } from 'lucide-react'
 import type { MapData, MapNode } from '@/lib/learn/map'
 
 // Learn's Map tab — a first-class pannable/zoomable canvas of every claim.
@@ -81,6 +81,12 @@ export function ClaimMap() {
   const [selected, setSelected] = useState<ClaimDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [fogSource, setFogSource] = useState<MapData['fog_source']>('fallback')
+  // Saveable views (item 4): persist camera + a frozen node/link snapshot so a
+  // saved map reopens EXACTLY, positions and all — no re-fetch, no re-layout.
+  const [saving, setSaving] = useState(false)
+  const [savedViews, setSavedViews] = useState<{ id: string; store: string; title: string }[]>([])
+  const [savedMenuOpen, setSavedMenuOpen] = useState(false)
+  const savedMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Render ────────────────────────────────────────────────────────────
   const draw = useCallback(() => {
@@ -290,6 +296,84 @@ export function ClaimMap() {
     }
   }, [])
 
+  // ── Saveable views ──────────────────────────────────────────────────
+  const saveCurrentView = useCallback(async () => {
+    if (nodesRef.current.length === 0) return
+    setSaving(true)
+    try {
+      // Freeze node positions + links (as id pairs) + camera. Reopen restores
+      // this verbatim instead of re-fetching/re-laying-out — exact, not live.
+      const snapshot = {
+        nodes: nodesRef.current.map((n) => ({ ...n })),
+        links: linksRef.current.map((l) => ({
+          source: (l.source as SimNode).id,
+          target: (l.target as SimNode).id,
+          similarity: l.similarity,
+        })),
+        fog,
+      }
+      const view = viewRef.current
+      await fetch('/api/learn/saved-views', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          view: 'map',
+          title: `Map · ${new Date().toLocaleString()}`,
+          params: { camera: { scale: view.scale, x: view.x, y: view.y }, fog },
+          snapshot,
+        }),
+      })
+    } catch { /* ignore */ } finally {
+      setSaving(false)
+    }
+  }, [fog])
+
+  const loadSavedList = useCallback(async () => {
+    try {
+      const res = await fetch('/api/learn/saved-views')
+      if (!res.ok) return
+      const { saved } = await res.json()
+      setSavedViews((saved ?? []).filter((r: { view: string }) => r.view === 'map'))
+    } catch { /* ignore */ }
+  }, [])
+
+  const reopenSaved = useCallback(async (id: string, store: string) => {
+    setSavedMenuOpen(false)
+    try {
+      const res = await fetch(`/api/learn/saved-views?id=${encodeURIComponent(id)}&store=${encodeURIComponent(store)}`)
+      if (!res.ok) return
+      const rec = await res.json()
+      const snap = rec.snapshot as { nodes: SimNode[]; links: { source: string; target: string; similarity: number }[]; fog?: boolean }
+      const nodes = (snap.nodes ?? []).map((n) => ({ ...n }))
+      const byId = new Map(nodes.map((n) => [n.id, n]))
+      // Re-resolve link endpoints from ids back to the restored node objects.
+      const links: SimLink[] = []
+      for (const l of snap.links ?? []) {
+        const s = byId.get(l.source)
+        const t = byId.get(l.target)
+        if (s && t) links.push({ source: s, target: t, similarity: l.similarity })
+      }
+      nodesRef.current = nodes
+      linksRef.current = links
+      const cam = (rec.params?.camera ?? {}) as { scale?: number; x?: number; y?: number }
+      viewRef.current = { scale: cam.scale ?? 1, x: cam.x ?? 0, y: cam.y ?? 0 }
+      if (typeof snap.fog === 'boolean') setFog(snap.fog)
+      setEmpty(nodes.length === 0)
+      setError(null)
+      setLoading(false)
+    } catch { /* ignore */ }
+  }, [])
+
+  // Click-outside close for the saved-views menu.
+  useEffect(() => {
+    if (!savedMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (savedMenuRef.current && !savedMenuRef.current.contains(e.target as Node)) setSavedMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [savedMenuOpen])
+
   const onPointerDown = (e: React.PointerEvent) => {
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
     dragRef.current = { startX: e.clientX - rect.left, startY: e.clientY - rect.top, moved: false }
@@ -354,6 +438,42 @@ export function ClaimMap() {
         >
           {fog ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />} {fog ? 'Fog on' : 'Fog off'}
         </button>
+
+        {/* Save / reopen this view */}
+        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+          <button
+            onClick={saveCurrentView}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded border border-border bg-surface-secondary px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+            title="Save this view — reopens exactly, positions and all"
+          >
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Save
+          </button>
+          <div ref={savedMenuRef} className="relative">
+            <button
+              onClick={() => { const next = !savedMenuOpen; setSavedMenuOpen(next); if (next) loadSavedList() }}
+              className="flex items-center gap-1 rounded border border-border bg-surface-secondary px-2 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+              title="Reopen a saved view"
+            >
+              <FolderOpen className="h-3 w-3" /> Saved
+            </button>
+            {savedMenuOpen && (
+              <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-56 overflow-y-auto rounded border border-border bg-surface-elevated shadow-lg">
+                {savedViews.length === 0 ? (
+                  <div className="px-3 py-2 font-mono text-[10px] text-muted-foreground/50">No saved maps yet.</div>
+                ) : savedViews.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => reopenSaved(s.id, s.store)}
+                    className="block w-full truncate px-3 py-2 text-left font-mono text-[10px] text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground"
+                  >
+                    {s.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Legend */}
         <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-3 rounded border border-border bg-surface-secondary/80 px-2.5 py-1.5 font-mono text-[9px] text-muted-foreground">
