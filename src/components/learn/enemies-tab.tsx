@@ -168,7 +168,7 @@ export default function EnemiesTab() {
           <div className="space-y-3">
             {active.length === 0 ? (
               <p className="font-mono text-[11px] text-muted-foreground/40">
-                No active enemies. Click "Add an enemy claim" to plant a false claim in your probe rotation.
+                No active enemies. Click &quot;Add an enemy claim&quot; to plant a false claim in your probe rotation.
               </p>
             ) : (
               active.map((e) => (
@@ -193,7 +193,7 @@ export default function EnemiesTab() {
         {view === 'caught' && (
           <div className="space-y-3">
             {caught.length === 0 ? (
-              <p className="font-mono text-[11px] text-muted-foreground/40">No enemies caught yet. They're blended into your probes — answer one as false to catch it.</p>
+              <p className="font-mono text-[11px] text-muted-foreground/40">No enemies caught yet. They&apos;re blended into your probes — answer one as false to catch it.</p>
             ) : (
               caught.map((e) => (
                 <div key={e.id} className="rounded border border-border bg-surface-secondary p-4 border-l-2 border-l-primary/30">
@@ -217,12 +217,12 @@ export default function EnemiesTab() {
         {view === 'defended' && (
           <div className="space-y-3">
             {defended.length === 0 ? (
-              <p className="font-mono text-[11px] text-muted-foreground/40">No missed enemies yet. You've correctly identified all enemies so far — or none have been probed yet.</p>
+              <p className="font-mono text-[11px] text-muted-foreground/40">No missed enemies yet. You&apos;ve correctly identified all enemies so far — or none have been probed yet.</p>
             ) : (
               <>
                 <div className="rounded border border-destructive/20 bg-destructive/5 p-3">
                   <p className="font-mono text-[10px] uppercase tracking-wider text-destructive/60">
-                    Claims you couldn't tell were false. These are the ones that matter.
+                    Claims you couldn&apos;t tell were false. These are the ones that matter.
                   </p>
                 </div>
                 {defended.map((e) => (
@@ -236,7 +236,7 @@ export default function EnemiesTab() {
                           <span className="text-destructive/60">defended on {new Date(e.defended_at).toLocaleDateString()}</span>
                         </div>
                         <p className="mt-1 font-mono text-[10px] text-muted-foreground/30 italic">
-                          you answered: "{e.answer_given}"
+                          you answered: &quot;{e.answer_given}&quot;
                         </p>
                       </div>
                     </div>

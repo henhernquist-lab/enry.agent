@@ -4,6 +4,8 @@ import { generateEmbedding } from '../embeddings'
 import { searchMemories } from '../memory'
 import { supabase } from '../supabase'
 import { casUpdateSessionPayload, loadSessionPayload } from '../session-cas'
+import { computeStrength, type ClaimForStrength } from './strength'
+import { cosineSimilarity, parseEmbedding } from './map'
 import type { LearnSessionPayload } from '../resources'
 
 // Learn's server-side orchestration — sibling to terminal/write-ops.ts, same
@@ -39,17 +41,13 @@ export async function dispatchLearn(verb: LearnVerb, args: string, ctx: LearnOps
     case 'probe':
       return probeNext(ctx, args)
     case 'gap':
+      return gapAnalysis(ctx)
     case 'defend':
+      return defendClaim(ctx, args)
     case 'teach':
+      return teachClaim(ctx, args)
     case 'retire':
-      return notYetImplemented(verb)
-  }
-}
-
-function notYetImplemented(verb: LearnVerb): LearnOpsResult {
-  return {
-    output: `${verb}: not yet implemented. Registered and routed — this is a stub waiting for a feature to be built on top of claims/claim_events. See LEARN.md's extension points.`,
-    exitCode: 0,
+      return retireClaim(ctx, args)
   }
 }
 
@@ -276,4 +274,380 @@ async function recordAnswer(
     exitCode: 0,
     data: { claim_id: pending.claim_id, next_probe_at: nextProbeAt },
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Core verbs — gap / defend / teach / retire. See LEARN.md for the
+// claim_events each writes (defense_attempted, explanation_graded) and the
+// teach-gated retire rule.
+// ════════════════════════════════════════════════════════════════════════
+
+interface ResolvedClaim {
+  id: string
+  content: string
+  topic: string
+  half_life: number
+  status: string
+}
+
+// Resolve a verb's free-text argument to one of the user's claims. Exact-ish
+// first (substring ilike, for when the user pastes the claim), then embedding
+// nearest-neighbor (for a paraphrase), reusing the Map's similarity helpers —
+// no new similarity system. With no argument, falls back to the most-due
+// active claim (same selection probe uses).
+async function resolveClaim(userId: string, argText: string): Promise<ResolvedClaim | null> {
+  const t = argText.trim()
+
+  if (t) {
+    const like = t.replace(/[%_]/g, '')
+    if (like.length >= 3) {
+      const { data } = await supabase
+        .from('claims')
+        .select('id, content, topic, half_life, status')
+        .eq('user_id', userId)
+        .ilike('content', `%${like}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data) return data as ResolvedClaim
+    }
+
+    // Embedding fallback: nearest claim to the argument text above a floor.
+    const queryEmbedding = await generateEmbedding(t, 'query')
+    if (queryEmbedding) {
+      const { data: all } = await supabase
+        .from('claims')
+        .select('id, content, topic, half_life, status, embedding')
+        .eq('user_id', userId)
+        .neq('status', 'retired')
+      let best: ResolvedClaim | null = null
+      let bestSim = 0.5 // floor — below this it isn't really "this claim"
+      for (const c of (all ?? []) as (ResolvedClaim & { embedding: unknown })[]) {
+        const emb = parseEmbedding(c.embedding)
+        if (!emb) continue
+        const sim = cosineSimilarity(queryEmbedding, emb)
+        if (sim > bestSim) { bestSim = sim; best = { id: c.id, content: c.content, topic: c.topic, half_life: c.half_life, status: c.status } }
+      }
+      return best
+    }
+    return null
+  }
+
+  // No argument: most-due active claim.
+  const nowIso = new Date().toISOString()
+  const { data } = await supabase
+    .from('claims')
+    .select('id, content, topic, half_life, status')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .or(`next_probe_at.is.null,next_probe_at.lte.${nowIso}`)
+    .order('next_probe_at', { ascending: true, nullsFirst: true })
+    .limit(1)
+    .maybeSingle()
+  return (data as ResolvedClaim) ?? null
+}
+
+// ── gap ─────────────────────────────────────────────────────────────────
+// Surface the topic with the weakest coverage: lowest average live strength,
+// tie-broken (if Fog of War / claim_activity data exists) toward the topic
+// that's gone coldest. Read-only — writes no events.
+interface GapClaimRow {
+  id: string
+  content: string
+  topic: string
+  strength: number
+  half_life: number
+  last_probed_at: string | null
+  created_at: string
+}
+
+async function gapAnalysis(ctx: LearnOpsContext): Promise<LearnOpsResult> {
+  const { data, error } = await supabase
+    .from('claims')
+    .select('id, content, topic, strength, half_life, last_probed_at, created_at')
+    .eq('user_id', ctx.userId)
+    .eq('status', 'active')
+  if (error) {
+    console.error('[learn-ops] gap query failed:', error)
+    return { output: `gap: could not read claims — ${error.message}`, exitCode: 1 }
+  }
+  const claims = (data ?? []) as GapClaimRow[]
+  if (claims.length === 0) {
+    return { output: 'gap: nothing learned yet — run learn "<topic>" to start building claims.', exitCode: 0 }
+  }
+
+  // Group by topic; average the LIVE strength (never the stored column).
+  const byTopic = new Map<string, { total: number; count: number; weakest: { content: string; s: number } }>()
+  for (const c of claims) {
+    const s = computeStrength(
+      { strength: c.strength, half_life: c.half_life, last_probed_at: c.last_probed_at, created_at: c.created_at } satisfies ClaimForStrength,
+      [],
+    )
+    const topic = c.topic || '(untopiced)'
+    const g = byTopic.get(topic) ?? { total: 0, count: 0, weakest: { content: c.content, s: 1 } }
+    g.total += s
+    g.count += 1
+    if (s < g.weakest.s) g.weakest = { content: c.content, s }
+    byTopic.set(topic, g)
+  }
+
+  const ranked = [...byTopic.entries()]
+    .map(([topic, g]) => ({ topic, avg: g.total / g.count, count: g.count, weakest: g.weakest.content }))
+    .sort((a, b) => a.avg - b.avg)
+  const worst = ranked[0]
+
+  // Fog tie-break: if claim_activity exists, note the coldest topic too.
+  let coldNote = ''
+  const { data: act } = await supabase.from('claim_activity').select('claim_id, last_touched_at').eq('user_id', ctx.userId)
+  if (act && act.length > 0) {
+    const claimTopic = new Map(claims.map((c) => [c.id, c.topic || '(untopiced)']))
+    const topicCold = new Map<string, number>()
+    for (const row of act as { claim_id: string; last_touched_at: string }[]) {
+      const topic = claimTopic.get(row.claim_id)
+      if (!topic) continue
+      const ms = new Date(row.last_touched_at).getTime()
+      const prev = topicCold.get(topic)
+      if (prev === undefined || ms < prev) topicCold.set(topic, ms)
+    }
+    const coldest = [...topicCold.entries()].sort((a, b) => a[1] - b[1])[0]
+    if (coldest && coldest[0] !== worst.topic) {
+      coldNote = `\nColdest (least recently touched): "${coldest[0]}" — last active ${new Date(coldest[1]).toLocaleDateString()}.`
+    }
+  }
+
+  const pct = Math.round(worst.avg * 100)
+  return {
+    output: `Weakest area: "${worst.topic}" — ${pct}% average retention across ${worst.count} claim${worst.count === 1 ? '' : 's'}. Lowest: "${worst.weakest}".${coldNote}\n\nShore it up: learn "${worst.topic}"`,
+    exitCode: 0,
+    data: { topic: worst.topic, avg_strength: worst.avg, suggested_learn: worst.topic, ranked },
+  }
+}
+
+// ── defend ──────────────────────────────────────────────────────────────
+// Two-phase: surface the strongest counterargument to a claim, then require a
+// rebuttal. Logs both sides as a `defense_attempted` event — payload shaped so
+// a future Argument Ledger can reconstruct the exchange without a schema change.
+const DEFEND_SYSTEM_PROMPT = `You are a sharp, fair intellectual opponent. Given one claim the user believes, produce the SINGLE strongest good-faith counterargument against it — the objection a smart skeptic would actually raise. Be concrete and specific to THIS claim, not a generic "have you considered the opposite". No hedging, no "on the other hand", no restating the claim. 2-4 sentences. Output the counterargument text only, nothing else.`
+
+async function defendClaim(ctx: LearnOpsContext, arg: string): Promise<LearnOpsResult> {
+  const payload = await loadSessionPayload<LearnSessionPayload>(ctx.sessionId, ctx.userId)
+  const pending = payload?.pending_defense
+  const rebuttal = arg.trim()
+
+  if (pending && rebuttal) return recordDefense(ctx, pending, rebuttal)
+  if (pending && !rebuttal) {
+    return { output: `Still defending: "${pending.claim_content}"\n\nCounterargument: ${pending.counterargument}\n\nArgue back.`, exitCode: 0, data: { claim_id: pending.claim_id } }
+  }
+
+  const claim = await resolveClaim(ctx.userId, arg)
+  if (!claim) {
+    return { output: 'defend: which claim? Give me a claim to attack, e.g. defend "spaced repetition beats cramming".', exitCode: 1 }
+  }
+
+  try {
+    const client = nimClientFor(ctx.model)
+    const { text } = await generateText({
+      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
+      system: DEFEND_SYSTEM_PROMPT,
+      prompt: `Claim: ${claim.content}\n\nGive your strongest counterargument.`,
+      temperature: 0.7,
+      maxOutputTokens: 500,
+      timeout: 40_000,
+      maxRetries: 0,
+    })
+    const counterargument = text.trim()
+    if (!counterargument) return { output: 'defend: could not generate a counterargument — try again.', exitCode: 1 }
+
+    const askedAt = new Date().toISOString()
+    await casUpdateSessionPayload<LearnSessionPayload>(ctx.sessionId, ctx.userId, () => ({
+      pending_defense: { claim_id: claim.id, claim_content: claim.content, counterargument, asked_at: askedAt },
+    }))
+
+    return {
+      output: `Defending: "${claim.content}"\n\nCounterargument: ${counterargument}\n\nArgue back — why does your claim still hold?`,
+      exitCode: 0,
+      data: { claim_id: claim.id, counterargument },
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { output: `defend: ${msg}`, exitCode: 1 }
+  }
+}
+
+async function recordDefense(
+  ctx: LearnOpsContext,
+  pending: NonNullable<LearnSessionPayload['pending_defense']>,
+  rebuttal: string,
+): Promise<LearnOpsResult> {
+  // Payload contract for a future Argument Ledger: claim_content + the two
+  // sides + a `rounds` array (one round today, but shaped for multi-round).
+  const { error } = await supabase.from('claim_events').insert({
+    claim_id: pending.claim_id,
+    event_type: 'defense_attempted',
+    payload: {
+      claim_content: pending.claim_content,
+      counterargument: pending.counterargument,
+      rebuttal,
+      rounds: [{ side: 'counter', text: pending.counterargument }, { side: 'rebuttal', text: rebuttal }],
+      asked_at: pending.asked_at,
+    },
+  })
+  if (error) {
+    console.error('[learn-ops] defense_attempted insert failed:', error)
+    return { output: `defend: failed to log the exchange — ${error.message}`, exitCode: 1 }
+  }
+  await casUpdateSessionPayload<LearnSessionPayload>(ctx.sessionId, ctx.userId, () => ({ pending_defense: null }))
+  return {
+    output: `Logged. You defended "${pending.claim_content}" against the counterargument. Both sides are in the record.`,
+    exitCode: 0,
+    data: { claim_id: pending.claim_id },
+  }
+}
+
+// ── teach (Feynman gate) ──────────────────────────────────────────────────
+// Two-phase: ask the user to explain the claim in their own words, then a
+// SEPARATE model call grades the explanation against the claim's actual
+// content. Exactly one of three verdicts — SURVIVED / EXPOSED / EVADED —
+// logged as `explanation_graded`. A SURVIVED verdict is what `retire` requires.
+//
+// ⚠ TEACH_GRADING_RUBRIC is a [PAUSE] review item — surfaced in OVERNIGHT.md.
+// It's isolated as this one constant so it can be swapped without touching any
+// wiring around it.
+const TEACH_GRADING_RUBRIC = `You are grading whether a learner truly understands a specific claim, Feynman-style: they were asked to explain it in their own words. Grade their explanation against the claim's ACTUAL content — not against how eloquent or confident it sounds.
+
+Return exactly one verdict:
+
+- SURVIVED — The explanation is accurate AND demonstrates real understanding of the claim's core mechanism or point. They could only have written this if they actually get it. Minor imprecision is fine as long as the central idea is correct and clearly grasped.
+- EXPOSED — The explanation reveals a genuine misunderstanding: it states something false about the claim, contradicts it, or gets the core mechanism wrong. A confidently wrong explanation is EXPOSED.
+- EVADED — The explanation dodges the actual point: vague, circular, merely restates the claim in other words, defines around it, or stays so general it never engages the specific mechanism. No clear factual error, but no demonstrated understanding either.
+
+Decision order: if there is a clear factual error about the claim → EXPOSED. Else if the core point is actually explained → SURVIVED. Else → EVADED.
+
+Output JSON only: { "verdict": "SURVIVED" | "EXPOSED" | "EVADED", "rationale": "<one sentence, specific to what they actually wrote>" }`
+
+async function teachClaim(ctx: LearnOpsContext, arg: string): Promise<LearnOpsResult> {
+  const payload = await loadSessionPayload<LearnSessionPayload>(ctx.sessionId, ctx.userId)
+  const pending = payload?.pending_teach
+  const explanation = arg.trim()
+
+  if (pending && explanation) return gradeExplanation(ctx, pending, explanation)
+  if (pending && !explanation) {
+    return { output: `Still teaching: explain "${pending.claim_content}" in your own words.`, exitCode: 0, data: { claim_id: pending.claim_id } }
+  }
+
+  const claim = await resolveClaim(ctx.userId, arg)
+  if (!claim) {
+    return { output: 'teach: which claim? Name a claim to teach back, e.g. teach "why the sky is blue".', exitCode: 1 }
+  }
+  const askedAt = new Date().toISOString()
+  await casUpdateSessionPayload<LearnSessionPayload>(ctx.sessionId, ctx.userId, () => ({
+    pending_teach: { claim_id: claim.id, claim_content: claim.content, asked_at: askedAt },
+  }))
+  return {
+    output: `Teach it back: explain "${claim.content}" in your own words, as if to someone who's never heard it. Don't just restate it — show the mechanism.`,
+    exitCode: 0,
+    data: { claim_id: claim.id },
+  }
+}
+
+const TEACH_VERDICTS = ['SURVIVED', 'EXPOSED', 'EVADED'] as const
+type TeachVerdict = typeof TEACH_VERDICTS[number]
+
+async function gradeExplanation(
+  ctx: LearnOpsContext,
+  pending: NonNullable<LearnSessionPayload['pending_teach']>,
+  explanation: string,
+): Promise<LearnOpsResult> {
+  let verdict: TeachVerdict
+  let rationale: string
+  try {
+    const client = nimClientFor(ctx.model)
+    const { text } = await generateText({
+      model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
+      system: TEACH_GRADING_RUBRIC,
+      prompt: `Claim (the actual, correct content): ${pending.claim_content}\n\nLearner's explanation: ${explanation}\n\nGrade it.`,
+      temperature: 0.2,
+      maxOutputTokens: 400,
+      timeout: 40_000,
+      maxRetries: 0,
+    })
+    const parsed = parseJsonLoose<{ verdict: string; rationale: string }>(text)
+    const v = (parsed?.verdict ?? '').toUpperCase()
+    if (!parsed || !(TEACH_VERDICTS as readonly string[]).includes(v)) {
+      // Don't log a bogus verdict — fail cleanly so the user can retry.
+      return { output: 'teach: could not grade that explanation cleanly — try explaining again.', exitCode: 1 }
+    }
+    verdict = v as TeachVerdict
+    rationale = (parsed.rationale ?? '').trim()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { output: `teach: grading failed — ${msg}`, exitCode: 1 }
+  }
+
+  const { error } = await supabase.from('claim_events').insert({
+    claim_id: pending.claim_id,
+    event_type: 'explanation_graded',
+    payload: { explanation, verdict, rationale, claim_content: pending.claim_content, asked_at: pending.asked_at },
+  })
+  if (error) {
+    console.error('[learn-ops] explanation_graded insert failed:', error)
+    return { output: `teach: graded ${verdict}, but failed to record it — ${error.message}`, exitCode: 1 }
+  }
+  await casUpdateSessionPayload<LearnSessionPayload>(ctx.sessionId, ctx.userId, () => ({ pending_teach: null }))
+
+  const tail = verdict === 'SURVIVED'
+    ? ' This claim is now eligible to retire.'
+    : verdict === 'EXPOSED'
+      ? ' Worth another learn pass — the mechanism slipped.'
+      : ' You talked around it. Try again once you can hit the actual point.'
+  return {
+    output: `${verdict}: ${rationale}${tail}`,
+    exitCode: 0,
+    data: { claim_id: pending.claim_id, verdict, rationale },
+  }
+}
+
+// ── retire ────────────────────────────────────────────────────────────────
+// Moves a claim to status='retired' — but ONLY if it has at least one passing
+// (SURVIVED) teach in its history. No passing teach → hard refusal. This is
+// the one place a claim leaves active rotation by the user's hand.
+async function retireClaim(ctx: LearnOpsContext, arg: string): Promise<LearnOpsResult> {
+  const claim = await resolveClaim(ctx.userId, arg)
+  if (!claim) {
+    return { output: 'retire: which claim? Name the claim to retire.', exitCode: 1 }
+  }
+  if (claim.status === 'retired') {
+    return { output: `"${claim.content}" is already retired.`, exitCode: 0, data: { claim_id: claim.id } }
+  }
+
+  const { data: graded, error } = await supabase
+    .from('claim_events')
+    .select('payload')
+    .eq('claim_id', claim.id)
+    .eq('event_type', 'explanation_graded')
+  if (error) {
+    console.error('[learn-ops] retire gate query failed:', error)
+    return { output: `retire: could not check teach history — ${error.message}`, exitCode: 1 }
+  }
+  const hasSurvived = (graded ?? []).some((row) => (row.payload as { verdict?: string })?.verdict === 'SURVIVED')
+  if (!hasSurvived) {
+    return {
+      output: `retire: "${claim.content}" hasn't passed a teach yet. Run teach on it and earn a SURVIVED verdict before it can retire.`,
+      exitCode: 1,
+      data: { claim_id: claim.id, gated: true },
+    }
+  }
+
+  const now = new Date().toISOString()
+  const { error: updateError } = await supabase
+    .from('claims')
+    .update({ status: 'retired', updated_at: now })
+    .eq('id', claim.id)
+    .eq('user_id', ctx.userId)
+  if (updateError) {
+    console.error('[learn-ops] retire update failed:', updateError)
+    return { output: `retire: failed to retire — ${updateError.message}`, exitCode: 1 }
+  }
+  await supabase.from('claim_events').insert({ claim_id: claim.id, event_type: 'claim_retired', payload: { claim_content: claim.content } })
+  return { output: `Retired "${claim.content}". It survived a teach and is out of active rotation.`, exitCode: 0, data: { claim_id: claim.id, status: 'retired' } }
 }

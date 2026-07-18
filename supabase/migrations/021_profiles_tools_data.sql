@@ -1,0 +1,15 @@
+-- profiles.tools_data — a per-user jsonb "bag" for lightweight tool state
+-- that doesn't warrant its own table or columns. Same DEFAULT '{}'::jsonb
+-- convention as profiles.profile_data (005_profiles_table.sql).
+--
+-- Two existing call sites already read/write this column and have since
+-- before this migration existed — both were silently broken without it
+-- (grades 500s on every load; daily-content's prompt-rotation cursor never
+-- persisted, so it silently reset every run instead of advancing):
+--   - src/app/api/tools/grades/route.ts       — { grades: {...} }
+--   - src/app/api/cron/daily-content/route.ts — { daily_content: { promptCategoryIndex } }
+--
+-- Each feature keys its own top-level entry in the jsonb object (`grades`,
+-- `daily_content`, ...) so multiple tools can share this column without
+-- colliding, same pattern as claim_events.payload / resources.payload.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS tools_data jsonb DEFAULT '{}'::jsonb;

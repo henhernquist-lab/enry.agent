@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
@@ -15,6 +15,7 @@ import {
   Loader2,
   MessageSquare,
   Plus,
+  Radio,
   Search,
   Send,
   ShieldAlert,
@@ -23,6 +24,8 @@ import {
 } from 'lucide-react'
 import { LEARN_SKILLS } from '@/lib/skills/registry'
 import { LEARN_TABS, getLearnTab } from '@/components/learn/tab-registry'
+import { LearnActionsProvider, type LearnActions } from '@/components/learn/learn-actions'
+import { AmbientSettingsModal } from '@/components/learn/ambient-settings'
 
 // Enry Learn — base scaffolding. Mirrors app/agent/page.tsx's structure
 // (client page, one exec endpoint, a scrollback of typed verbs) sized down
@@ -147,9 +150,10 @@ const SKILL_META: Record<string, { color: ColorKey; verb: 'teach' | 'defend' }> 
   'eli-expert': { color: 'primary', verb: 'defend' },
 }
 
-export default function LearnPage() {
+function LearnPageContent() {
   const { status } = useSession()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [activeTab, setActiveTab] = useState<string>(CHAT_TAB)
   // Feature tabs currently open in the bar (registry ids, excludes Chat).
@@ -157,6 +161,7 @@ export default function LearnPage() {
   const [openTabs, setOpenTabs] = useState<string[]>(() => LEARN_TABS.filter((t) => t.defaultOpen).map((t) => t.id))
   const [tabMenuOpen, setTabMenuOpen] = useState(false)
   const tabMenuRef = useRef<HTMLDivElement>(null)
+  const [ambientOpen, setAmbientOpen] = useState(false)
   const [lines, setLines] = useState<Line[]>([
     { kind: 'system', text: 'enry learn — every belief starts as a claim. learn "<topic>" to begin, or probe to check in on what\'s due.' },
   ])
@@ -164,7 +169,10 @@ export default function LearnPage() {
   const [running, setRunning] = useState(false)
   const [activeVerb, setActiveVerb] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [pendingProbe, setPendingProbe] = useState<{ claim_id: string; content: string; topic: string } | null>(null)
+  // Which two-phase interaction is awaiting the user's next message (probe /
+  // defend / teach). Only one is ever set. Drives follow-up routing + the
+  // header/placeholder — generalizes what used to be probe-only.
+  const [pendingVerb, setPendingVerb] = useState<'probe' | 'defend' | 'teach' | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -201,6 +209,19 @@ export default function LearnPage() {
 
   const closableTabs = LEARN_TABS.filter((t) => !openTabs.includes(t.id))
 
+  // Cross-tab actions a feature tab can invoke (e.g. Knowledge Diff's "start
+  // studying this gap"). Provided once here; consumed via useLearnActions().
+  const learnActions: LearnActions = {
+    openChatWith: (text: string) => {
+      setActiveTab(CHAT_TAB)
+      setInput(text)
+      requestAnimationFrame(() => {
+        const el = inputRef.current
+        if (el) { el.focus(); el.setSelectionRange(text.length, text.length) }
+      })
+    },
+  }
+
   const exec = useCallback(async (verb: string, verbInput: string, promptText?: string) => {
     setRunning(true)
     setActiveVerb(verb)
@@ -220,7 +241,10 @@ export default function LearnPage() {
       }
       const data = await res.json()
       if (data.session_id) setSessionId(data.session_id)
-      setPendingProbe(data.pending_probe ?? null)
+      // Route the next bare message to whichever interaction is now in flight.
+      setPendingVerb(
+        data.pending_probe ? 'probe' : data.pending_defense ? 'defend' : data.pending_teach ? 'teach' : null,
+      )
 
       const text = (data.output ?? data.error ?? '').toString()
       if (data.exit_code !== 0) {
@@ -238,15 +262,30 @@ export default function LearnPage() {
     }
   }, [sessionId])
 
+  // Ambient push notification deep link: the service worker's
+  // notificationclick handler opens /learn?probe=1. Auto-run the exact same
+  // `probe` invocation the Probe button triggers — no separate code path —
+  // so whatever claim is next-due surfaces and the reply goes through the
+  // normal in-app probe-answer flow. Runs once; strips the query param after
+  // so a refresh doesn't re-trigger it.
+  const autoProbeRan = useRef(false)
+  useEffect(() => {
+    if (autoProbeRan.current) return
+    if (searchParams.get('probe') !== '1') return
+    autoProbeRan.current = true
+    setTimeout(() => exec('probe', '', 'probe'), 0)
+    router.replace('/learn')
+  }, [searchParams, exec, router])
+
   const handleSend = () => {
     const text = input.trim()
     if (!text || running) return
     setInput('')
 
-    // If we're mid-probe, whatever the user typed is the answer — route it
-    // straight back into probe rather than making them type "probe" first.
-    if (pendingProbe) {
-      exec('probe', text, text)
+    // Mid-interaction (probe answer / defend rebuttal / teach explanation) —
+    // whatever the user typed continues that verb, no need to retype it.
+    if (pendingVerb) {
+      exec(pendingVerb, text, text)
       return
     }
 
@@ -310,10 +349,22 @@ export default function LearnPage() {
         <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">
           <GraduationCap className="h-3 w-3 text-primary/70" /> Learn
         </span>
-        {pendingProbe && (
-          <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-warning">Awaiting answer</span>
+        {pendingVerb && (
+          <span className="font-mono text-[10px] uppercase tracking-wider text-warning">
+            {pendingVerb === 'defend' ? 'Awaiting rebuttal' : pendingVerb === 'teach' ? 'Awaiting explanation' : 'Awaiting answer'}
+          </span>
         )}
+        {/* Ambient Mode — a background layer; its settings live here in Learn,
+            opened from this header (not a tab, not the global app settings). */}
+        <button
+          onClick={() => setAmbientOpen(true)}
+          className="ml-auto flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50 transition-colors hover:text-foreground"
+          title="Ambient Mode settings"
+        >
+          <Radio className="h-3 w-3" /> Ambient
+        </button>
       </header>
+      <AmbientSettingsModal open={ambientOpen} onClose={() => setAmbientOpen(false)} />
 
       <div className="flex flex-shrink-0 items-center gap-1 border-b border-border bg-background px-3">
         {/* Chat — the pinned home tab, always present, never closeable. */}
@@ -384,7 +435,9 @@ export default function LearnPage() {
       </div>
 
       {activeTab !== CHAT_TAB ? (
-        getLearnTab(activeTab)?.render() ?? null
+        <LearnActionsProvider value={learnActions}>
+          {getLearnTab(activeTab)?.render() ?? null}
+        </LearnActionsProvider>
       ) : (
       <div className="flex min-h-0 flex-1">
         {/* Conversation */}
@@ -484,7 +537,12 @@ export default function LearnPage() {
               </div>
               <div className="flex items-end gap-2">
                 <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                  placeholder={pendingProbe ? 'Type your answer…' : 'learn "<topic>" — or paste a source'}
+                  placeholder={
+                    pendingVerb === 'defend' ? 'Argue back…'
+                    : pendingVerb === 'teach' ? 'Explain it in your own words…'
+                    : pendingVerb === 'probe' ? 'Type your answer…'
+                    : 'learn "<topic>" — or paste a source'
+                  }
                   rows={1} spellCheck={false} disabled={running}
                   className="flex-1 resize-none rounded border border-border bg-surface-secondary px-3 py-2 font-mono text-[13px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40 min-h-[80px]"
                   style={{ maxHeight: '200px' }} />
@@ -536,5 +594,14 @@ export default function LearnPage() {
       </div>
       )}
     </div>
+  )
+}
+
+// useSearchParams (for the ?probe=1 deep link) requires a Suspense boundary.
+export default function LearnPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-background"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
+      <LearnPageContent />
+    </Suspense>
   )
 }

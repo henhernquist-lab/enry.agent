@@ -13,6 +13,8 @@ import {
   StickyNote,
 } from 'lucide-react'
 import { ClaimMap } from './claim-map'
+import { SourcesPanel } from './sources-panel'
+import { KnowledgeDiff } from './knowledge-diff'
 import CasinoTab from './casino-tab'
 import EnemiesTab from './enemies-tab'
 import ReceiptsTab from './receipts-tab'
@@ -45,29 +47,15 @@ export interface LearnTabDef {
   render: () => ReactNode
 }
 
-function ComingSoon({ icon: Icon, description }: { icon: LucideIcon; description: string }) {
-  return (
-    <div className="flex flex-1 items-center justify-center">
-      <div className="flex max-w-xs flex-col items-center gap-3 text-center">
-        <div className="rounded-full border border-border bg-surface-secondary p-4">
-          <Icon className="h-6 w-6 text-muted-foreground/40" />
-        </div>
-        <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground/50">Coming soon</p>
-        <p className="font-sans text-[12px] leading-relaxed text-muted-foreground/40">{description}</p>
-      </div>
-    </div>
-  )
-}
-
 export const LEARN_TABS: LearnTabDef[] = [
   // Freebuff / Map / Fog of War — Claude Code's earlier work.
   { id: 'map', label: 'Map', icon: MapIcon, defaultOpen: true, render: () => <ClaimMap /> },
-  { id: 'diff', label: 'Diff', icon: GitCompare, render: () => <ComingSoon icon={GitCompare} description="What changed in your understanding over time. Not built yet." /> },
-  { id: 'sources', label: 'Sources', icon: Library, render: () => <ComingSoon icon={Library} description="Where your claims came from, gathered in one place. Not built yet." /> },
+  { id: 'diff', label: 'Diff', icon: GitCompare, render: () => <KnowledgeDiff /> },
+  { id: 'sources', label: 'Sources', icon: Library, render: () => <SourcesPanel /> },
 
-  // Tonight's session — Casino / Enemy Claims / Receipts / Grade Calc, all
-  // registered as zero-prop feature tabs that read fresh state from the API
-  // on render (no props means the page doesn't know anything feature-specific).
+  // Casino / Enemy Claims / Receipts / Grade Calc — all registered as
+  // zero-prop feature tabs that read fresh state from the API on render (no
+  // props means the page doesn't know anything feature-specific).
   { id: 'casino', label: 'Casino', icon: Coins, render: () => <CasinoTab /> },
   { id: 'enemies', label: 'Enemies', icon: Crosshair, render: () => <EnemiesTab /> },
   { id: 'receipts', label: 'Receipts', icon: FileText, render: () => <ReceiptsTab /> },
@@ -77,12 +65,22 @@ export const LEARN_TABS: LearnTabDef[] = [
   // in the general tools panel. Each is a thin wrapper over the existing
   // tool component (mode="page"), so the source of truth stays in tools/
   // and `/resources/[slug]` continues to render the same components inline.
-  // Flashcards: paste notes → Anki-style cards. The article-driven "Study
-  // cards" flow above (saved articles' flashcards) reuses StudySession.
+  //
+  // Flashcards: paste notes → Anki-style cards. NOT wired to the `learn`
+  // verb's claim-extraction path — this is a deliberate, documented split,
+  // not an oversight. FlashcardGenerator saves to `resources` (type=
+  // 'flashcards': static Q/A pairs, no spaced repetition), while `learn`
+  // saves to `claims` (probed, gap-analyzed, defend/teach/retire-eligible,
+  // visible in Sources/Diff/Ambient). Cards is a lightweight, disposable
+  // study tool; `learn` is the durable path. If you want notes to actually
+  // join the claim system, use `learn "<topic>"` in Chat instead.
   { id: 'cards', label: 'Cards', icon: Brain, render: () => <FlashcardsTab /> },
   // Articles (Reading List): URL ingest → summary/claims/flashcards via
-  // /api/article-notes. The ArticlesTab wraps the previously standalone
-  // ingest form + saved list + StudySession overlay into one tab.
+  // /api/article-notes, saved as `resources` (type='article_note') — the
+  // SAME resource this tab writes to is what Sources' "Imports" section
+  // reads (by provenance). Not redundant: this tab is the workspace for
+  // creating/managing article notes and running study sessions; Sources
+  // browses them by where they came from and lets you pin custody.
   { id: 'articles', label: 'Articles', icon: Newspaper, render: () => <ArticlesTab /> },
   // Quick Notes: zero-friction text capture into the `note` resource table.
   // Kept general-purpose — saves into the same `note` resource any panel

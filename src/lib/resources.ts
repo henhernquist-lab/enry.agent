@@ -287,6 +287,13 @@ export interface LearnSessionPayload {
   // can tell an enemy claim apart once surfaced, without another schema/session
   // change. Optional — absent on sessions created before migration 020.
   pending_probe?: { claim_id: string; content: string; topic: string; asked_at: string; is_enemy?: boolean } | null
+  // Two-phase `defend`: phase 1 surfaces a counterargument and parks it here;
+  // phase 2 (the user's rebuttal) logs both sides and clears it. Same
+  // "one thing in flight" discipline as pending_probe.
+  pending_defense?: { claim_id: string; claim_content: string; counterargument: string; asked_at: string } | null
+  // Two-phase `teach` (Feynman gate): phase 1 asks the user to explain the
+  // claim; phase 2 grades the explanation, logs the verdict, and clears this.
+  pending_teach?: { claim_id: string; claim_content: string; asked_at: string } | null
   // Open tabs — persisted across refreshes so the tab bar survives a reload.
   // Chat is always open; every other tab is opt-in via the "+" menu.
   // Stored as a list of tab ids; chat excluded (it's always first).

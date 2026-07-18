@@ -67,12 +67,21 @@ feature registers a new event type by writing one — zero migration. This is
 the whole point of the table: features derive their behavior by reading this
 log, not by the base predicting what they'll need.
 
-Event types the base itself writes:
+Event types written across Learn (base + the verbs/features built on it):
 
 | event_type | payload shape | written by |
 |---|---|---|
-| `probe_asked` | `{ content: string }` | `probeNext` → `surfaceNextDue` |
-| `answer_recorded` | `{ answer: string, asked_at: string }` | `probeNext` → `recordAnswer` |
+| `probe_asked` | `{ content: string, via?: 'ambient' }` | `surfaceNextDue`; Ambient cron (`via:'ambient'`) |
+| `answer_recorded` | `{ answer: string, asked_at: string, via?: 'ambient' }` | `recordAnswer`; Ambient reply (`via:'ambient'`) |
+| `defense_attempted` | `{ claim_content, counterargument, rebuttal, rounds: [{side,text}], asked_at }` | `defend` (`recordDefense`) |
+| `explanation_graded` | `{ explanation, verdict: 'SURVIVED'\|'EXPOSED'\|'EVADED', rationale, claim_content, asked_at }` | `teach` (`gradeExplanation`) |
+| `claim_retired` | `{ claim_content }` | `retire` (on success) |
+| `resource_saved` | `{ view, title, params, snapshot, saved_at }` | `saveView` (claim-anchored path only) |
+
+`rounds[]` in `defense_attempted` is shaped for a future Argument Ledger to
+replay the exchange. `resource_saved` is the claim-anchored half of saveable
+views (see "Saveable views" below) — multi-claim view artifacts go to
+`resources`, not here.
 
 When you add a new event type, add a row to this table in your own PR — a
 feature agent reading this file next should be able to see the full registry
@@ -150,9 +159,19 @@ registered in the `switch` from day one:
 export const LEARN_VERBS = ['learn', 'probe', 'gap', 'defend', 'teach', 'retire'] as const
 ```
 
-`gap`, `defend`, `teach`, `retire` currently call `notYetImplemented(verb)`,
-which round-trips through the real route (not faked client-side) and
-returns a clear message. To implement one:
+**All six verbs are now implemented.** `gap` (weakest-topic surfacer, read-only),
+`defend` (two-phase: strongest counterargument → your rebuttal, logs
+`defense_attempted`), `teach` (Feynman gate: you explain a claim, a separate
+model call grades it `SURVIVED`/`EXPOSED`/`EVADED` and logs
+`explanation_graded`), and `retire` (moves a claim to `status='retired'` — hard-
+gated: refuses unless the claim has a `SURVIVED` `explanation_graded` in its
+history). `defend`/`teach` park a `pending_defense`/`pending_teach` in the
+session (same one-in-flight discipline as `pending_probe`); the client routes
+the next message to whichever interaction is pending. The teach rubric is
+isolated as `TEACH_GRADING_RUBRIC` in `learn-ops.ts` — swap that one constant
+to retune grading without touching any wiring.
+
+To add a further verb (or replace one):
 
 1. Write a real function in `learn-ops.ts` (or a new file in
    `src/lib/learn/` if it's substantial — `learn-ops.ts` importing from
@@ -179,12 +198,11 @@ requirement Drive's session writes already have.
 `feynman`, `fifth-grader`, `socratic-mode`, and `eli-expert` moved out of
 main chat's `SKILLS` registry array into `LEARN_SKILLS`
 (`src/lib/skills/registry.ts`) — same `SkillDefinition` objects, imported
-not forked. They're currently browsable in Learn's page (a static sidebar
-list) but **not wired into any verb** — `teach` and `defend` are the
-obvious homes for them (e.g. `teach` running the Feynman technique's
-system prompt against a specific claim, `defend` running ELI-Expert's
-"push back" mode to test whether a claim survives scrutiny). When you build
-either verb, that's where these plug in — `getSkill()` only searches the
+not forked. They're browsable in Learn's Chat-tab sidebar. `teach` and `defend` are now
+implemented but use their OWN prompts (`TEACH_GRADING_RUBRIC`,
+`DEFEND_SYSTEM_PROMPT`), not these skill definitions — wiring a specific
+technique's system prompt into a verb (e.g. Feynman into `teach`, ELI-Expert
+into `defend`) is still an open enhancement. `getSkill()` only searches the
 main `SKILLS` array, so look these up via `LEARN_SKILLS.find(...)` instead.
 
 ## Reused, not rebuilt
@@ -293,6 +311,140 @@ pending-probe state, so it can't be closed or opened from "+". Every feature
 (except the inline LLM skills in the Chat tab) must be a registry entry — that
 rule is what keeps "each feature is its own openable tab" true as Freebuff
 lands.
+
+Current tabs: Map, Diff, Sources, Casino, Enemies, Receipts, Grades, Cards,
+Articles, Notes.
+
+### Cards is deliberately NOT wired to `claims`
+
+The Cards tab wraps `FlashcardGenerator` (`src/components/tools/`) unchanged.
+It calls `/api/automations/generate`, parses `Q:`/`A:` text, and saves to
+`resources` (`type='flashcards'`) — plain, disposable Q/A pairs, no spaced
+repetition, no embedding.
+
+`learn "<topic>"` in Chat is a completely different path: dedicated
+claim-extraction prompt, real embedding, saved to `claims`. Only claims get
+the full lifecycle — probing, strength/half-life decay, Gap analysis, Sources
+custody, Knowledge Diff coverage, Ambient push probing, defend/teach/retire.
+
+**This split is a deliberate decision, confirmed with Henry, not an
+oversight**: Cards is a lightweight, disposable study tool; `learn` is the
+durable path. Notes pasted into Cards never become claims and are invisible
+to every claim-based feature above. If a future feature wants Cards' output
+to join the claim system, that's a real design question (a flashcard's Q/A
+shape doesn't map 1:1 onto a claim's single-provable-statement shape) — don't
+just point Cards' save call at `learnTopic()` without working that out.
+
+Articles is a different situation and NOT part of this split: it already
+saves to the same `resources` (`type='article_note'`) that Sources' "Imports"
+section reads by provenance — the tab is the creation/management workspace,
+Sources is the provenance browser. Same data, two views, not redundant.
+
+## Sources (Source Custody) + the pin mechanism
+
+The Sources tab (`src/lib/learn/sources.ts`, `/api/learn/sources`) groups every
+non-retired claim by its `(source_type, source_ref)` provenance. A source can be
+**pinned** as trusted. Pins are stored as `resources` rows
+(`type='learn_source_pin'`, payload `{source_type, source_ref}`) — no migration,
+same polymorphic pattern as `learn_session`. `getPinnedSourceKeys(userId)` is the
+seam a future **Source-Grounded Mode** reads to preferentially cite pinned
+sources and to treat unpinned-custody claims as untrusted. The base builds the
+mechanism only — it enforces nothing (the UI surfaces a "N claims lack pinned
+custody" count but changes no `status`).
+
+## Saveable views (Map / Diff / Sources)
+
+`src/lib/learn/saved-views.ts` + `/api/learn/saved-views` persist a view so it
+reopens EXACTLY (reads a frozen `snapshot`, never recomputes). Two stores:
+- **Multi-claim view artifact** (a Diff result, a Map camera + node snapshot):
+  `resources` row, `type='learn_saved_view'`.
+- **Claim-anchored save**: `claim_events` row, `event_type='resource_saved'` on
+  that claim.
+A new `learn_resources` table was deliberately NOT created: `resources` is the
+established generic home and avoids a migration; `claim_events` can't hold a
+multi-claim artifact anyway (`claim_id` is `NOT NULL`). Payload carries `params`
+(reopen inputs) + `snapshot` (frozen data). Note Postgres `jsonb` does not
+preserve key order — reconstruction must be value-equality, not string-equality.
+
+## Knowledge Diff — data model
+
+`src/lib/learn/diff.ts` + `/api/learn/diff`. Given a target topic: one LLM call
+maps its **semantic surface** into 8-14 facets; each facet (embedded as
+`facet + why`, `'query'` mode) is compared by cosine to the user's claim
+embeddings — the SAME pipeline the Map uses, no new similarity system. Per facet:
+`missing` (nearest claim sim < `FACET_MATCH_SIM`), else `known` (live
+`computeStrength ≥ 0.6` and no recent `EXPOSED`/`EVADED` teach) or `half_known`.
+`FACET_MATCH_SIM=0.40` is calibrated to nv-embedqa-e5-v5's COMPRESSED
+query↔passage range (exact match ~0.50, related-but-different ~0.25-0.30,
+unrelated ~0.10-0.19) — retune if the embedding model changes. Diffs are saveable
+(above), so one from last week reopens exactly rather than recomputing.
+
+## Ambient Mode — cron + Web Push contract
+
+A background layer (NOT a tab), `src/lib/learn/ambient.ts`. Delivery is Web
+Push (VAPID), not SMS — there is no reply channel; a push notification is a
+summons into the app, not a two-way conversation. The answer always goes
+through the same in-app probe-answer path every other probe uses.
+
+- **Settings** live in a `resources` row (`type='learn_ambient_settings'`) — in
+  Learn's own settings (the header "Ambient" modal), never global. Fields:
+  `enabled`, `push_subscription` (`{endpoint, keys:{p256dh, auth}}` or `null`),
+  `max_per_day`, `quiet_start/end_hour`, `timezone`. The daily-send counter +
+  the one in-flight `pending` probe live in that same payload.
+- **Subscription flow**: flipping "Enabled" on in the modal (or the standalone
+  "Enable" button under Push notifications) calls `subscribeToPush()`
+  (`src/lib/push-client.ts`) — requests Notification permission, registers
+  `public/sw.js`, subscribes via `PushManager` using
+  `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, and POSTs the resulting subscription to
+  `/api/learn/ambient/push-subscribe`, which stores it via `saveAmbientSettings`
+  (same row, same merge pattern as every other Ambient setting — no separate
+  table). `DELETE` on that route (or the modal's "Disable" button) clears it.
+- **Cron**: `GET /api/cron/ambient-probe`, `Bearer CRON_SECRET` (identical guard
+  to cruise-tick). Scheduled by `.github/workflows/enry-ambient-probe.yml`
+  (every ~15 min, mirrors `enry-cruise-tick.yml`). Per user, sends at most one
+  probe, gated in order: `enabled` → `push_subscription` present → not
+  quiet-hours (tz-aware) → not `awaiting_engagement` (see below) → under daily
+  cap → a claim is actually due (else `nothing_due` — silence is fine).
+- **Send**: `sendAmbientPush` (`src/lib/learn/ambient.ts`) is real Web Push,
+  credential-gated on `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` /
+  `VAPID_SUBJECT`. With no keys it's a logged no-op (`stubbed: true`) so the
+  decision path stays exercisable without keys — the schedule is inert until
+  keys are set. A genuine send failure (`send_failed`) does NOT consume the
+  daily cap or park `pending` — the claim stays due for the next tick. A `404`/
+  `410` from the push service means the subscription expired
+  (`subscription_expired`): handled the same as `send_failed` (no cap, no
+  pending) AND clears the dead subscription from settings so the UI shows
+  "not subscribed" and prompts a resubscribe.
+- **No reply webhook.** There used to be one (SMS-era); it's gone. Clicking a
+  notification is handled entirely client + service-worker side — see below.
+  Because there's no separate reply-recording path, `pending` (the
+  one-in-flight guard) can't be cleared by an inbound webhook anymore. Instead:
+  a pending probe is **resolved** once the claim's `next_probe_at` has moved
+  past `asked_at` — the fact `recordAnswer` (the in-app probe-answer path,
+  `learn-ops.ts`) already produces on any real answer, read back rather than
+  duplicated. If neither resolved nor answered within `PENDING_TIMEOUT_MS`
+  (24h), the guard lifts anyway — "don't nag, move on" — decision reported as
+  `awaiting_engagement` until then.
+- **Notification click → probe**: `public/sw.js`'s `notificationclick` handler
+  focuses (or opens) a client at `event.notification.data.url`, which is always
+  `/learn?probe=1`. `src/app/learn/page.tsx` reads that query param on mount
+  and auto-runs the exact same `probe` invocation the Probe button triggers
+  (`exec('probe', '', 'probe')`) — no separate code path. Because both this
+  module's `nextDueClaim` and the in-app probe's `selectDueClaim` order by
+  `next_probe_at` ascending, the claim that surfaces is the one the push was
+  about (barring a claim becoming due in between). The query param is stripped
+  via `router.replace('/learn')` right after, so a refresh doesn't re-trigger.
+  The user's typed answer then goes through `recordAnswer` like any other
+  probe — Ambient has no answer-recording logic of its own.
+
+## Cross-tab actions (the `LearnActions` seam)
+
+A feature tab that must hand off to the Chat console (Knowledge Diff's "start
+studying this gap" drops a scoped `learn` invocation into Chat) uses
+`useLearnActions()` (`src/components/learn/learn-actions.tsx`). The page provides
+`{ openChatWith }` ONCE via `LearnActionsProvider` wrapping tab content — so a
+tab never reaches into page/shell state directly. Add a new cross-tab action =
+one field on `LearnActions`, not per-tab shell surgery.
 
 ## Known gaps, left for you on purpose
 
