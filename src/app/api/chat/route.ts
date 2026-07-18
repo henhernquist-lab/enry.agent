@@ -14,6 +14,11 @@ import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { getReceiptsHook } from '@/lib/learn/receipts-hook'
+// Side-effect import: registers enryReceiptsDetector as the active
+// ReceiptsHook at module-load time, before this route's first
+// getReceiptsHook() call below. Order matters — must precede any code
+// that could call getReceiptsHook.
+import '@/lib/learn/receipts-detector'
 import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {

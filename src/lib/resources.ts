@@ -294,6 +294,14 @@ export interface LearnSessionPayload {
   // Two-phase `teach` (Feynman gate): phase 1 asks the user to explain the
   // claim; phase 2 grades the explanation, logs the verdict, and clears this.
   pending_teach?: { claim_id: string; claim_content: string; asked_at: string } | null
+  // Open tabs — persisted across refreshes so the tab bar survives a reload.
+  // Chat is always open; every other tab is opt-in via the "+" menu.
+  // Stored as a list of tab ids; chat excluded (it's always first).
+  open_tabs?: string[]
+  // Casino balance — persisted per session for fast access (also derivable
+  // from claim_events via src/lib/learn/casino.ts#getBalance but this avoids
+  // re-scanning on every tab load).
+  casino_balance?: number
 }
 
 export type GitHubActionType = 'create_file' | 'update_file' | 'create_branch' | 'create_pr' | 'create_repo'

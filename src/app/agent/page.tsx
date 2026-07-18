@@ -46,16 +46,18 @@ type ChatLine =
 
 type Mode = 'auto' | 'manual'
 
-// ─── Model & effort definitions ─────────────────────────────
+// ─── Model & effort definitions ─────────────────────────────// Drive picker draws from the 'drive' scope of the registry (see
+// src/lib/nim.ts). 'drive' is the most permissive scope — it includes every
+// model exposed to coding-agent calls, including Kimi K2.7 Code (the
+// intentional Drive-only entry). New models become available here the
+// instant they're added to the registry with `scopes: ['drive']`.
+import { listModels } from '@/lib/nim'
 
-const MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro',          label: 'DeepSeek V4 Pro', desc: 'Strongest free model. Best for complex tasks.' },
-  { id: 'minimax/minimax-m3',                    label: 'MiniMax M3',      desc: 'Fast and capable. Great for general tasks.' },
-  { id: 'qwen/qwen3.5-122b-a10b',                label: 'Qwen 3.5 122B',   desc: 'Large reasoning model. Great for analysis.' },
-  { id: 'z-ai/glm-5.2',                          label: 'GLM 5.2',         desc: 'Versatile all-rounder. Good at following instructions.' },
-  { id: 'nvidia/nemotron-3-ultra-550b-a55b',     label: 'Nemotron 3 Ultra', desc: 'NVIDIA flagship. 550B MoE, best for high-stakes generation.' },
-  { id: 'moonshotai/kimi-k2-instruct',           label: 'Kimi K2',         desc: 'Moonshot K2 Instruct. Strong instruction-following.' },
-] as const
+const MODELS = listModels('drive').map((m) => ({
+  id: m.id,
+  label: m.label,
+  desc: m.description,
+}))
 
 // Drive skills (coding-focused) — pulled from the shared registry.
 const DRIVE_SKILL_SLUGS = [

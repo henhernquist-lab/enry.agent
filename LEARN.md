@@ -312,6 +312,34 @@ pending-probe state, so it can't be closed or opened from "+". Every feature
 rule is what keeps "each feature is its own openable tab" true as Freebuff
 lands.
 
+Current tabs: Map, Diff, Sources, Casino, Enemies, Receipts, Grades, Cards,
+Articles, Notes.
+
+### Cards is deliberately NOT wired to `claims`
+
+The Cards tab wraps `FlashcardGenerator` (`src/components/tools/`) unchanged.
+It calls `/api/automations/generate`, parses `Q:`/`A:` text, and saves to
+`resources` (`type='flashcards'`) — plain, disposable Q/A pairs, no spaced
+repetition, no embedding.
+
+`learn "<topic>"` in Chat is a completely different path: dedicated
+claim-extraction prompt, real embedding, saved to `claims`. Only claims get
+the full lifecycle — probing, strength/half-life decay, Gap analysis, Sources
+custody, Knowledge Diff coverage, Ambient push probing, defend/teach/retire.
+
+**This split is a deliberate decision, confirmed with Henry, not an
+oversight**: Cards is a lightweight, disposable study tool; `learn` is the
+durable path. Notes pasted into Cards never become claims and are invisible
+to every claim-based feature above. If a future feature wants Cards' output
+to join the claim system, that's a real design question (a flashcard's Q/A
+shape doesn't map 1:1 onto a claim's single-provable-statement shape) — don't
+just point Cards' save call at `learnTopic()` without working that out.
+
+Articles is a different situation and NOT part of this split: it already
+saves to the same `resources` (`type='article_note'`) that Sources' "Imports"
+section reads by provenance — the tab is the creation/management workspace,
+Sources is the provenance browser. Same data, two views, not redundant.
+
 ## Sources (Source Custody) + the pin mechanism
 
 The Sources tab (`src/lib/learn/sources.ts`, `/api/learn/sources`) groups every

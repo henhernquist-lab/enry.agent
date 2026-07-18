@@ -8,6 +8,7 @@ import { Send, Mic, ChevronDown, MessageCircle, Clock, X } from 'lucide-react'
 import { BottomSheet } from '@/components/mobile/BottomSheet'
 import { TypingText } from '@/components/typing-text'
 import type { UIMessage, TextUIPart } from 'ai'
+import { listModels } from '@/lib/nim'
 
 function getTextContent(message: UIMessage): string {
   return message.parts

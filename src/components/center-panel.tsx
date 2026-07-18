@@ -41,6 +41,7 @@ import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
 import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS } from '@/lib/skills/registry'
+import { listModels } from '@/lib/nim'
 import type { SkillDefinition } from '@/lib/skills/types'
 import type { ActivityEvent } from '@/lib/chat-history'
 
@@ -85,20 +86,18 @@ function getDisplayInfo(message: UIMessage): { attachment: AttachmentMeta | null
   return parseMessageText(getTextContent(message))
 }
 
-// The only two NIM models with native image input (confirmed against
-// docs/model-selection-guide.md and the @ai-sdk/openai provider's actual
-// image_url conversion path) — attaching a real image part to any other
-// model would be silently ignored or rejected, so we gate on this.
-const VISION_MODELS = new Set(['qwen/qwen3.5-122b-a10b', 'minimax/minimax-m3'])
+// Model registry is the single source of truth — see src/lib/nim.ts.
+// Homepage picker draws from the 'chat' scope: Gemini 3.1 Pro, GPT-4o, and
+// all NIM-hosted models. Kimi K2.7 Code is intentionally NOT listed here
+// because its scope is 'drive' only (coding-agent model).
+const VISION_MODELS = new Set<string>(listModels('chat').filter((m) => m.supportsVision).map((m) => m.id))
 
-const MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro', label: 'V4 Pro', company: 'DeepSeek', desc: "Strongest free model. Best for complex tasks." },
-  { id: 'minimax/minimax-m3',            label: 'M3',      company: 'MiniMax', desc: 'Fast and capable. Great for general tasks.' },
-  { id: 'qwen/qwen3.5-122b-a10b',        label: '122B',   company: 'Qwen', desc: 'Large reasoning model. Great for analysis.' },
-  { id: 'z-ai/glm-5.2',                  label: 'GLM 5.2', company: 'Z.ai', desc: 'Versatile all-rounder. Good at following instructions.' },
-  { id: 'nvidia/nemotron-3-ultra-550b-a55b', label: 'Nemotron 3', company: 'NVIDIA', desc: '550B MoE flagship. Best for high-stakes generation.' },
-  { id: 'moonshotai/kimi-k2-instruct',   label: 'Kimi K2',  company: 'Moonshot', desc: 'Strong instruction-following. Defaults to Medium effort.' },
-] as const
+const MODELS = listModels('chat').map((m) => ({
+  id: m.id,
+  label: m.label,
+  company: m.company,
+  desc: m.description,
+}))
 
 type ModelId = typeof MODELS[number]['id']
 
@@ -112,15 +111,14 @@ const CHAT_EFFORTS = [
 
 type ChatEffortId = typeof CHAT_EFFORTS[number]['id']
 
-const CHAT_MODEL_DEFAULTS: Record<string, ChatEffortId> = {
-  'deepseek-ai/deepseek-v4-pro': 'medium',
-  'z-ai/glm-5.2':               'high',
-  'qwen/qwen3.5-122b-a10b':      'low',
-  'minimax/minimax-m3':          'medium',
-  // New/unproven models start at Medium until we have real testing data.
-  'nvidia/nemotron-3-ultra-550b-a55b': 'medium',
-  'moonshotai/kimi-k2-instruct':       'medium',
-}
+// Default chat effort per model. New/unproven models default to Medium
+// until we have real testing data on them; flip the flag in MODEL_LIST to
+// override. Same source-of-truth principle as MODELS above.
+const CHAT_MODEL_DEFAULTS: Record<string, ChatEffortId> = Object.fromEntries(
+  listModels('chat')
+    .filter((m): m is typeof m & { defaultEffort: ChatEffortId } => Boolean(m.defaultEffort))
+    .map((m) => [m.id, m.defaultEffort]),
+) as Record<string, ChatEffortId>
 
 const QUICK_ACTIONS = [
   { label: 'Search the web', glyph: '/', prompt: 'Search the web for ' },
