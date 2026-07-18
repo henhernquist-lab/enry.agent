@@ -1,11 +1,15 @@
 /**
- * Reasoning Trace — parses the <think>...</think> tags that NVIDIA NIM
- * reasoning-capable models embed in their output to separate the model's
- * chain-of-thought from its final answer.
+ * Reasoning Trace — parses the <think>...</think> tags that some models emit
+ * to separate chain-of-thought from the final answer. Only models known to
+ * emit these tags get extra thinking enabled (see reasoningExtraBody); for
+ * the rest the request just goes through without the param.
  *
- * Not all models emit these tags. When they don't, reasoning is null and
- * the entire text is treated as the answer.
+ * Capability lookup is now delegated to MODEL_LIST in src/lib/nim.ts so
+ * adding a reasoning-capable model is as simple as flipping its
+ * `supportsReasoning: true` flag.
  */
+
+import { getModelMeta } from './nim'
 
 export type ReasoningDepth = 'off' | 'summary' | 'full'
 
@@ -61,25 +65,15 @@ export function renderReasoningTrace(reasoning: string | null, depth: ReasoningD
   return reasoning // full
 }
 
-/**
- * Models known to support reasoning traces via <think> tags (or equivalent) on
- * NVIDIA NIM. For models NOT in this set, we don't pass `enable_thinking` —
- * it would be silently ignored or, worse, cause an error.
- */
-const REASONING_CAPABLE_MODELS = new Set([
-  'deepseek-ai/deepseek-v4-pro',
-  'nvidia/nemotron-3-ultra-550b-a55b',
-  'qwen/qwen3.5-122b-a10b',
-])
-
+// ─── Reasoning capability lookup ─────────────────────────────────
+// New models default to NO reasoning support — opt-in by adding
+// `supportsReasoning: true` to the MODEL_LIST entry when an upstream is
+// verified to emit `<think>`-style reasoning on its own.
 export function modelSupportsReasoning(model: string): boolean {
-  return REASONING_CAPABLE_MODELS.has(model)
+  return getModelMeta(model)?.supportsReasoning === true
 }
 
-/** Extra body parameters to enable thinking on supported NIM models. */
-export function reasoningExtraBody(model: string): Record<string, unknown> | undefined {
-  if (!modelSupportsReasoning(model)) return undefined
-  return {
-    chat_template_kwargs: { enable_thinking: true },
-  }
+/** Extra body parameters to enable thinking on supported models. */
+export function reasoningExtraBody(_model: string): Record<string, unknown> | undefined {
+  return { chat_template_kwargs: { enable_thinking: true } }
 }

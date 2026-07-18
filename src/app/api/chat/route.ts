@@ -14,22 +14,38 @@ import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { checkContradictions, logContradiction } from '@/lib/learn/receipts'
+import {
+  MODEL_LIST,
+  getModelMeta,
+  getChatModel,
+  isModelConfigured,
+  defaultModelForScope,
+  type ModelScope,
+} from '@/lib/nim'
 import type { GitHubActionPayload } from '@/lib/resources'
 
-const MODEL_CONFIG = {
-  'deepseek-ai/deepseek-v4-pro':      () => process.env.DEEPSEEK_API_KEY ?? '',
-  'minimax/minimax-m3':                () => process.env.MINIMAX_API_KEY ?? '',
-  'qwen/qwen3.5-122b-a10b':           () => process.env.QWEN_API_KEY ?? '',
-  'z-ai/glm-5.2':                     () => process.env.GLM_API_KEY ?? '',
-  'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
-  // Moonshot Kimi K2 Instruct — 6th NIM model. Falls back to NVIDIA_API_KEY
-  // since the same NIM endpoint handles Moonshot-hosted Kimi builds.
-  'moonshotai/kimi-k2-instruct':       () => process.env.MOONSHOT_API_KEY ?? '',
-} as const
+// The chat route serves all three surfaces (homepage, enry lite, plus the
+// Drive live-chat sidebar). The MODEL_LIST registry in src/lib/nim.ts is the
+// single source of truth — every surface filters by scope when rendering
+// the picker, so by the time a request lands here, the model id is already
+// one of the registered entries. We still validate on the server because
+// nothing stops a malicious client from hand-crafting a request body.
+type AllowedModel = string
+const ALLOWED_MODELS: string[] = MODEL_LIST.map((m) => m.id)
+const DEFAULT_MODEL = defaultModelForScope('chat')
 
-type AllowedModel = keyof typeof MODEL_CONFIG
-const ALLOWED_MODELS = Object.keys(MODEL_CONFIG) as AllowedModel[]
-const DEFAULT_MODEL: AllowedModel = 'deepseek-ai/deepseek-v4-pro'
+// Resolve the requested model against the active surface. Drive-only models
+// (e.g. moonshotai/kimi-k2.7-code) are rejected unless surface === 'drive'.
+// Falls back to the scope's default if the id is unknown or mismatched.
+function resolveModelForSurface(requested: unknown, surface: ModelScope): string {
+  const id = typeof requested === 'string' ? requested : ''
+  const meta = getModelMeta(id)
+  if (meta && meta.scopes.includes(surface)) return id
+  if (id && meta && !meta.scopes.includes(surface)) {
+    console.warn(`[chat/route] model ${id} not allowed for surface=${surface}; falling back to default`)
+  }
+  return defaultModelForScope(surface)
+}
 
 export const maxDuration = 60
 
@@ -249,12 +265,17 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 export async function POST(req: Request) {
   const body = await req.json()
   const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn } = body
-  const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
-  const apiKey = MODEL_CONFIG[selectedModel]()
 
-  if (!apiKey) {
+  // Surface — one of 'chat' | 'drive' | 'lite'. Defaults to 'chat' so
+  // homepage and enry lite both reject drive-only models (e.g. Kimi K2.7 Code)
+  // if a hand-crafted request bypasses the picker. Drive's live-chat sidebar
+  // passes surface='drive'.
+  const surface: ModelScope = ['chat', 'drive', 'lite'].includes(body.surface) ? body.surface : 'chat'
+  const selectedModel: AllowedModel = resolveModelForSurface(model, surface)
+
+  if (!isModelConfigured(selectedModel)) {
     return new Response(
-      JSON.stringify({ error: `No API key configured for ${selectedModel}` }),
+      JSON.stringify({ error: `No provider API key configured for ${selectedModel}` }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
     )
   }
@@ -296,10 +317,10 @@ export async function POST(req: Request) {
   const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
   const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
 
-  const client = createOpenAI({
-    baseURL: 'https://integrate.api.nvidia.com/v1',
-    apiKey,
-  })
+  // Single factory dispatch — picks the right provider baseURL + auth for
+  // whichever model won the scope gate above. NIM, Gemini (OpenAI-compat),
+  // GitHub Models (Azure inference), and OpenRouter all flow through this.
+  const chatModel = getChatModel(selectedModel)
 
   const focusDirective = focusMode !== 'all'
     ? `\n\nFOCUS MODE: ${focusMode.replace(/_/g, ' ').toUpperCase()} — you are restricted to only the tools available in this mode. Do not attempt to use tools outside this scope.`
@@ -359,7 +380,7 @@ export async function POST(req: Request) {
     }
 
     const skillResult = streamText({
-      model: client.chat(selectedModel),
+      model: chatModel,
       system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${contradictionContext}`,
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
@@ -539,7 +560,7 @@ export async function POST(req: Request) {
   Object.assign(allTools, composioTools)
 
   const result = streamText({
-    model: client.chat(selectedModel),
+    model: chatModel,
     system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.
 
 You exist to move Henry's work forward: shipping features on the enry.agent codebase itself, answering technical questions with real research, running tool-calling loops on his behalf, and remembering context across sessions so he never has to re-explain his stack.
