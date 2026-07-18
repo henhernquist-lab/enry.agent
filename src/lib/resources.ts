@@ -284,6 +284,13 @@ export interface LearnSessionPayload {
   // in the session row (not just client state) so a page refresh doesn't
   // lose which claim is "live," same reasoning as PendingDiff above.
   pending_probe?: { claim_id: string; content: string; topic: string; asked_at: string } | null
+  // Open tabs — persisted across refreshes so the tab bar survives a reload.
+  // Chat is always open; every other tab is opt-in via the "+" menu.
+  // Stored as a list of tab keys, chat excluded (it's always first).
+  open_tabs?: string[]
+  // Casino balance — persisted per session for fast access (also derivable
+  // from claim_events but this avoids re-scanning on every tab load).
+  casino_balance?: number
 }
 
 export type GitHubActionType = 'create_file' | 'update_file' | 'create_branch' | 'create_pr' | 'create_repo'
