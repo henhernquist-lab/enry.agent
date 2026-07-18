@@ -238,6 +238,54 @@ async function postStep(seq, status, detail) {
   await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'step', seq, status, detail })
 }
 
+// ── Heartbeat + control signals (matches scan.mjs pattern) ───────────────────
+
+async function stepUpdate(action, { file = null, command = null, output_preview = null } = {}) {
+  // Send a step update to the LIVE-STEPS endpoint (visible workspace), NOT the
+  // goal-runs ingest — the live-steps endpoint stores these for LiveWorkspace
+  // polling, and the goal-run ingest handles the step state separately.
+  return api('POST', '/api/cruise/ingest', {
+    scan_id: GOAL_RUN_ID,
+    phase: 'step_update',
+    action,
+    file,
+    command,
+    output_preview,
+  })
+}
+
+// Check for pause/cancel signals from the UI. Called between major phases.
+// Returns 'proceed' if clear, 'paused' if signal was pause (waited for clear),
+// or exits the process if cancel.
+async function checkControlSignal() {
+  const resp = await api('POST', '/api/cruise/goal-runs/' + GOAL_RUN_ID + '/ingest', { phase: 'heartbeat' })
+  const signal = resp.json?.control_signal
+  if (signal === 'cancel') {
+    console.log('[enry-cruise-goal] cancel signal received, exiting cleanly')
+    await api('POST', '/api/cruise/goal-runs/' + GOAL_RUN_ID + '/ingest', { phase: 'finalize', status: 'cancelled' })
+    process.exit(0)
+  }
+  if (signal === 'pause') {
+    console.log('[enry-cruise-goal] pause signal received, waiting...')
+    await stepUpdate('control: paused by user', { output_preview: (resp.json?.control_instructions || 'Waiting for resume signal') })
+    while (true) {
+      await sleep(10000)
+      const check = await api('POST', '/api/cruise/goal-runs/' + GOAL_RUN_ID + '/ingest', { phase: 'heartbeat' })
+      if (check.json?.control_signal === 'cancel') {
+        console.log('[enry-cruise-goal] cancel during pause, exiting')
+        await api('POST', '/api/cruise/goal-runs/' + GOAL_RUN_ID + '/ingest', { phase: 'finalize', status: 'cancelled' })
+        process.exit(0)
+      }
+      if (!check.json?.control_signal) {
+        console.log('[enry-cruise-goal] pause cleared, resuming')
+        await stepUpdate('control: resumed')
+        return 'paused'
+      }
+    }
+  }
+  return 'proceed'
+}
+
 // Runs the repo's own build script (npm run build — executes package.json's
 // "build", e.g. `vite build`, regardless of which package manager installed
 // deps). This is the gate for errors tsc/eslint never see: undefined Tailwind
@@ -350,9 +398,11 @@ async function runScanfix(ctx) {
   const remaining = []
 
   for (let seq = 0; seq < cats.length; seq++) {
+    await checkControlSignal()
     if (doneSeqs.has(seq)) continue
     const cat = cats[seq]
     if (filesChanged >= CAP_FILES) { capped = true; remaining.push(SCANFIX_LABEL[cat]); continue }
+    await stepUpdate(`scanfix: ${SCANFIX_LABEL[cat]}`, { action: `fixing ${cat}` })
     await postStep(seq, 'running')
 
     let note = ''
@@ -503,11 +553,13 @@ Keep each step small enough that ONE model call can generate its content quickly
   const editorSystem = ctx.mode === 'fix' ? FIX_EDITOR_SYSTEM : GOAL_EDITOR_SYSTEM
 
   for (let seq = 0; seq < plan.length; seq++) {
+    await checkControlSignal()
     if (doneSeqs.has(seq)) continue
     const stepDesc = plan[seq]
 
     if (filesChanged >= CAP_FILES) { capped = true; remaining.push(stepDesc); continue }
 
+    await stepUpdate(`step ${seq + 1}/${plan.length}: ${stepDesc.slice(0, 100)}`, { action: stepDesc.slice(0, 80) })
     await postStep(seq, 'running')
 
     const paths = extractPaths(stepDesc)
