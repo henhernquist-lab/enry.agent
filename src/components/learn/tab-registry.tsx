@@ -1,11 +1,25 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Calculator, Coins, Crosshair, FileText, GitCompare, Library, Map as MapIcon } from 'lucide-react'
+import {
+  Brain,
+  Calculator,
+  Coins,
+  Crosshair,
+  FileText,
+  GitCompare,
+  Library,
+  Map as MapIcon,
+  Newspaper,
+  StickyNote,
+} from 'lucide-react'
 import { ClaimMap } from './claim-map'
 import CasinoTab from './casino-tab'
 import EnemiesTab from './enemies-tab'
 import ReceiptsTab from './receipts-tab'
 import GradeCalcTab from './grade-calc-tab'
+import FlashcardsTab from './flashcards-tab'
+import ArticlesTab from './articles-tab'
+import QuickNotesTab from './quick-notes-tab'
 
 // ── Learn tab-registration contract ────────────────────────────────────────
 // THE single point for making a Learn feature openable as its own tab. To add
@@ -58,6 +72,22 @@ export const LEARN_TABS: LearnTabDef[] = [
   { id: 'enemies', label: 'Enemies', icon: Crosshair, render: () => <EnemiesTab /> },
   { id: 'receipts', label: 'Receipts', icon: FileText, render: () => <ReceiptsTab /> },
   { id: 'grades', label: 'Grades', icon: Calculator, render: () => <GradeCalcTab /> },
+
+  // Migrated from /tools — the learning-shaped tools that belong here, not
+  // in the general tools panel. Each is a thin wrapper over the existing
+  // tool component (mode="page"), so the source of truth stays in tools/
+  // and `/resources/[slug]` continues to render the same components inline.
+  // Flashcards: paste notes → Anki-style cards. The article-driven "Study
+  // cards" flow above (saved articles' flashcards) reuses StudySession.
+  { id: 'cards', label: 'Cards', icon: Brain, render: () => <FlashcardsTab /> },
+  // Articles (Reading List): URL ingest → summary/claims/flashcards via
+  // /api/article-notes. The ArticlesTab wraps the previously standalone
+  // ingest form + saved list + StudySession overlay into one tab.
+  { id: 'articles', label: 'Articles', icon: Newspaper, render: () => <ArticlesTab /> },
+  // Quick Notes: zero-friction text capture into the `note` resource table.
+  // Kept general-purpose — saves into the same `note` resource any panel
+  // (Drive, enry lite, command palette's "new note") can read from later.
+  { id: 'notes', label: 'Notes', icon: StickyNote, render: () => <QuickNotesTab /> },
 ]
 
 export function getLearnTab(id: string): LearnTabDef | undefined {
