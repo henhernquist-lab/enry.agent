@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import Link from 'next/link'
+import { Settings } from 'lucide-react'
 import { onResourceSaved } from '@/lib/resource-events'
 
 interface SystemStatus {
@@ -92,7 +94,8 @@ export function SystemStatusStrip() {
   }, [refetch])
 
   return (
-    <div className="flex items-center gap-2 border-b border-border bg-surface-secondary/80 px-4 py-1 font-mono text-[10px] text-muted-foreground backdrop-blur">
+    <div className="flex items-center justify-between border-b border-border bg-surface-secondary/80 px-4 py-1 font-mono text-[10px] text-muted-foreground backdrop-blur">
+      <div className="flex items-center gap-2">
       <Dot pulsing={pulsing} />
       <span className="font-medium text-foreground">enry</span>
       <Sep />
@@ -108,6 +111,14 @@ export function SystemStatusStrip() {
       </span>
       <Sep />
       <span>synced {status ? relativeSync(status.lastSync, now) : '…'}</span>
+      </div>
+      <Link
+        href="/settings"
+        className="flex items-center gap-1 rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+        title="Settings"
+      >
+        <Settings className="h-3 w-3" />
+      </Link>
     </div>
   )
 }
