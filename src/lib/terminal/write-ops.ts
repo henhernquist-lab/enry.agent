@@ -501,8 +501,53 @@ export async function applyEdit(ctx: WriteOpsContext): Promise<WriteOpsResult> {
   // reading the same repo+headSha.
   await resolveExecutionDir(ctx.sessionId, ctx.pristineSnapshotDir)
 
+  // Auto-create a working branch when this session doesn't have one yet.
+  // Previously apply always left current_branch unset until the user
+  // manually ran `branch "<name>"` — Commit/Create PR would then render as
+  // clickable, but both guard on current_branch and bounce with "no working
+  // branch set", a dead end after every applied change unless you already
+  // knew to type that command first. This is the same pattern Cruise already
+  // uses (dispatch-scanfix.ts auto-generates `enry-cruise/goal-<id>` with no
+  // user interaction) — Drive's quick-action buttons (Apply/Commit/Create PR)
+  // are built for zero manual typing too, so auto-create fits the existing
+  // UX better than adding a new inline-prompt pattern nothing else here uses.
+  if (!payload?.current_branch) {
+    const branchName = autoBranchName(pending.file)
+    const { error: branchError } = await createOrSwitchBranch(ctx.accessToken, ctx.owner, ctx.repo, branchName, ctx.defaultBranch)
+    if (branchError) {
+      // The working copy already saved successfully — don't fail the apply
+      // over the auto-branch step. Degrade to the old manual-branch path.
+      console.error('[terminal/write-ops] applyEdit auto-branch failed:', branchError)
+      await saveSessionPayload(ctx.sessionId, ctx.userId, { pending_diff: null })
+      return {
+        output: `applied: ${pending.file} (working copy — not committed yet). Couldn't auto-create a branch (${branchError}) — run branch "<name>" manually before commit/pr.`,
+        exitCode: 0,
+      }
+    }
+    await saveSessionPayload(ctx.sessionId, ctx.userId, { pending_diff: null, current_branch: branchName })
+    return {
+      output: `applied: ${pending.file} (working copy) — created and switched to branch "${branchName}". Run commit "<message>" when ready.`,
+      exitCode: 0,
+    }
+  }
+
   await saveSessionPayload(ctx.sessionId, ctx.userId, { pending_diff: null })
   return { output: `applied: ${pending.file} (working copy — not committed yet; run commit "<message>" when ready)`, exitCode: 0 }
+}
+
+// Deterministic-enough, collision-resistant branch name for an auto-created
+// working branch: enry/edit-<slugified file basename>-<short random suffix>.
+// Only ever called when the session has no current_branch yet — once one
+// exists, every subsequent apply in that session reuses it (same as the
+// manual `branch "<name>"` flow always has).
+function autoBranchName(filePath: string): string {
+  const base = (filePath.split('/').pop() ?? filePath).replace(/\.[^./]+$/, '')
+  // Split camelCase/PascalCase boundaries before lowercasing, so
+  // "DeepAnalysis" reads as "deep-analysis" rather than "deepanalysis".
+  const withWordBreaks = base.replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+  const slug = withWordBreaks.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'change'
+  const suffix = Math.random().toString(36).slice(2, 7)
+  return `enry/edit-${slug}-${suffix}`
 }
 
 // ── discard ───────────────────────────────────────────────────────────────────
