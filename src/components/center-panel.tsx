@@ -228,9 +228,12 @@ export function CenterPanel({
   // Sync compaction state after each response (written by transport's custom fetch)
   useEffect(() => {
     if (status === 'ready' && _pendingCompaction) {
-      setContextCompacted(_pendingCompaction.compacted)
-      setCompactionSummary(_pendingCompaction.summary)
+      const pending = _pendingCompaction
       _pendingCompaction = null
+      setTimeout(() => {
+        setContextCompacted(pending.compacted)
+        setCompactionSummary(pending.summary)
+      }, 0)
     }
   }, [status])
 
@@ -344,7 +347,7 @@ export function CenterPanel({
     if (!activeSkill) return
     const done = skillTurnsCompleted >= activeSkill.structure.assistantTurns
     if (done && status !== 'streaming' && status !== 'submitted') {
-      exitSkill()
+      setTimeout(() => exitSkill(), 0)
     }
   }, [activeSkill, skillTurnsCompleted, status, exitSkill])
 
