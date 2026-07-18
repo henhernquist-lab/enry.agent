@@ -17,7 +17,6 @@ import {
   GitBranch,
   Target,
   BookMarked,
-  Newspaper,
   Library,
   Circle,
   Timer,
@@ -47,15 +46,17 @@ interface ToolDef {
   href?: string
 }
 
+// NOTE: 'flashcards' and 'articles' were migrated into Enry Learn (tool
+// migration). Flashcards now live in the `learn` verb (paste notes → claims);
+// Article Notes + Reading List are folded into Learn's Sources tab. Their route
+// pages remain in the repo but are intentionally unlinked from this grid.
 const TOOLS: ToolDef[] = [
-  { slug: 'flashcards',       type: 'flashcards',   name: 'Flashcard Generator', desc: 'Paste notes → AI-generated Anki cards',               icon: BookOpen },
   { slug: 'grade-calculator', type: 'grade_calc',   name: 'Grade Calculator',    desc: 'What do you need on finals for target GPA?',          icon: Calculator },
   { slug: 'workout',          type: 'workout',       name: 'Workout Logger',      desc: 'Track sets, reps, and weight over time',             icon: Dumbbell },
   { slug: 'meal',             type: 'meal',          name: 'Meal Logger',         desc: 'Plain-English logging with macro estimation',        icon: Utensils },
   { slug: 'repo-scanner',     type: 'repo_scan',     name: 'Repo Scanner',        desc: 'Fetch a GitHub repo and chat about the code',        icon: GitBranch },
   { slug: 'habits',           type: 'habit_streak',  name: 'Habit Streaks',       desc: 'Daily check-ins with streak tracking',              icon: Target },
   { slug: 'prompts',          type: 'prompt',        name: 'Prompt Library',      desc: 'Browse and save reusable AI prompts',               icon: BookMarked },
-  { slug: 'articles',         type: 'article_note',   name: 'Article Notes',       desc: 'Save articles with AI summaries and flashcards',    icon: Newspaper },
   { slug: 'race-pace',        type: 'race_pace',       name: 'Race Pace Calculator', desc: 'Split targets and PR tracking',                     icon: Timer },
   { slug: 'repo-review',      type: 'repo_review',     name: 'Repo Reviewer',       desc: 'AI code review for your GitHub repos',              icon: ScanSearch },
   { slug: 'countdown',        type: 'countdown',       name: 'Meet/Game Countdown', desc: 'Upcoming events with live day counts',              icon: Hourglass },

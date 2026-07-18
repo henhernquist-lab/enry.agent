@@ -9,14 +9,12 @@ import {
   Archive,
   Settings,
   Search,
-  BookOpen,
   Calculator,
   Dumbbell,
   Utensils,
   GitBranch,
   Target,
   BookMarked,
-  Newspaper,
   Timer,
   ScanSearch,
   Hourglass,
@@ -47,20 +45,20 @@ const MAIN_ROUTES: NavItem[] = [
   { label: 'Tools & Resources', path: '/resources', icon: LayoutGrid },
   { label: 'Saved Items', path: '/resources/saved', icon: Archive },
   { label: 'Prompt Library', path: '/prompts', icon: BookMarked, keywords: 'prompts' },
-  { label: 'Reading List', path: '/reading-list', icon: BookOpen },
   { label: 'Memory', path: '/resources/memory', icon: Brain, keywords: 'memory memories preferences context' },
   { label: 'Enry Lab', path: '/lab', icon: FlaskConical, keywords: 'lab experiments skills revisions' },
   { label: 'Settings', path: '/settings', icon: Settings },
 ]
 
+// Flashcard Generator + Article Notes migrated into Enry Learn (flashcards →
+// `learn`; Article Notes → Learn's Sources tab). Their routes stay in the repo
+// but are unlinked here.
 const TOOL_ROUTES: NavItem[] = [
-  { label: 'Flashcard Generator', path: '/resources/flashcards', icon: BookOpen, keywords: 'flash cards study' },
   { label: 'Grade Calculator', path: '/resources/grade-calculator', icon: Calculator, keywords: 'gpa grades' },
   { label: 'Workout Logger', path: '/resources/workout', icon: Dumbbell, keywords: 'gym exercise sets reps' },
   { label: 'Meal Logger', path: '/resources/meal', icon: Utensils, keywords: 'food macros calories' },
   { label: 'Repo Scanner', path: '/resources/repo-scanner', icon: GitBranch, keywords: 'github code' },
   { label: 'Habit Streaks', path: '/resources/habits', icon: Target, keywords: 'streak checkin' },
-  { label: 'Article Notes', path: '/resources/articles', icon: Newspaper, keywords: 'article read summary' },
   { label: 'Race Pace Calculator', path: '/resources/race-pace', icon: Timer, keywords: 'race running splits' },
   { label: 'Repo Reviewer', path: '/resources/repo-review', icon: ScanSearch, keywords: 'code review github' },
   { label: 'Meet/Game Countdown', path: '/resources/countdown', icon: Hourglass, keywords: 'event track meet football' },
@@ -93,7 +91,6 @@ const ACTIONS: ActionItem[] = [
   { label: 'Check in for today', icon: SmilePlus, run: (router) => router.push('/resources/checkin') },
   { label: 'Log a workout', icon: Dumbbell, run: (router) => router.push('/resources/workout') },
   { label: 'Start a repo review', icon: ScanSearch, run: (router) => router.push('/resources/repo-review') },
-  { label: 'Generate flashcards', icon: BookOpen, run: (router) => router.push('/resources/flashcards') },
   { label: 'Something went wrong', icon: AlertOctagon, run: (router) => router.push('/resources/root-cause?start=1') },
   { label: 'Talk to Past Henry', icon: Ghost, run: (router) => router.push('/resources/ghost') },
   { label: 'Open terminal', icon: TerminalSquare, run: () => window.dispatchEvent(new Event('enry:open-terminal')) },
