@@ -9,6 +9,7 @@ import { createBranch, createFile, updateFile, createPR, createRepo } from '@/li
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { supabase } from '@/lib/supabase'
 import { getSkill, getSkills, buildMultiSkillPrompt } from '@/lib/skills/registry'
+import { parseSessionFocusId, sessionFocusDomains, sessionFocusLabel } from '@/lib/focus-mode'
 import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
@@ -267,6 +268,23 @@ export async function POST(req: Request) {
   const focusMode: FocusMode = ['all', 'memory_only', 'web_only', 'repo_only'].includes(body.focusMode) ? body.focusMode : 'all'
   const reasoningDepth: string = ['off','summary','full'].includes(body.reasoningDepth) ? body.reasoningDepth : 'off'
 
+  // Session focus (domain scope — orthogonal to focusMode/source scope).
+  // Accepts the compact wire form "drive" | "learn" | "school" | "none"
+  // | "custom:<id>"; unknown values collapse to "none" via the parser.
+  // Used for: 1) a directive line in the system prompt so the agent
+  // self-contextualizes, 2) hinting the agent which skill family to lean
+  // toward. (Server-side doesn't run phrase matching — that's client-side
+  // in center-panel via detectSkillInvocation on the typed input — so the
+  // server's job here is just labeling the session for the model.)
+  const sessionFocus = parseSessionFocusId(body.sessionFocus ?? 'none')
+  const focusDomains = sessionFocusDomains(sessionFocus)
+  // (Local focusLabel / focusDirective — same shape as `focusDirective` above
+  // for source-scope so the agent's system prompt doesn't fence-post the two.)
+  const focusLabel = sessionFocusLabel(sessionFocus)
+  const sessionFocusDirective = sessionFocus.kind !== 'none'
+    ? `\n\nSESSION FOCUS: ${focusLabel.toUpperCase()} — the user has scoped this session to ${focusLabel} work. Prefer skills, examples, and tone that fit this domain. Don't pivot into unrelated domains unless the user does.`
+    : ''
+
   const session = await auth()
   const googleId    = (session?.user as { id?: string })?.id
   const githubToken = (session as { githubToken?: string } | null)?.githubToken
@@ -361,7 +379,7 @@ export async function POST(req: Request) {
 
     const skillResult = streamText({
       model: client.chat(selectedModel),
-      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}`,
+      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}`,
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
         providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
@@ -643,7 +661,7 @@ GITHUB WRITE SAFETY RAILS — these are non-negotiable, enforced server-side:
 5. If Henry says no or asks for changes, do not execute. Adjust and re-preview.
 
 Bound strictly to the above. If a task needs a tool not on this list, state that instead of improvising.
-${focusDirective}
+${focusDirective}${sessionFocusDirective}
 ${userProfile ? `\n${userProfile}` : ''}`,
     messages: finalMessages as any,
     stopWhen: stepCountIs(7),

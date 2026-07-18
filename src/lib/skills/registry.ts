@@ -116,6 +116,95 @@ export const SKILLS: SkillDefinition[] = [
 // not yet wired into teach/defend (those are stubs — see LEARN.md).
 export const LEARN_SKILLS: SkillDefinition[] = [feynman, fifthGrader, socraticMode, eliExpert]
 
+// ─── Skill Domains (for SessionFocus filtering) ───────────────────────
+//
+// Maps each skill slug to one or more domain tags. The chat route uses this
+// to narrow /skill discoverability + invocation when a SessionFocus is
+// active (a "Drive" focus hides Devil's Advocate and surfaces Cartographer;
+// a "Learn" focus surfaces feynman/fifthGrader — except those live in
+// /learn now, so for chat they appear as a hint, see filterSkillsByDomain).
+// Skills outside this map default to ['general'] — backward compatible with
+// any future skill that doesn't get a domain tag.
+
+export type SkillDomain = 'coding' | 'general' | 'learning'
+
+export const SKILL_DOMAIN_BY_SLUG: Record<string, SkillDomain[]> = {
+  // Drive coding skills (28)
+  cartographer: ['coding'], ghostHunter: ['coding'], bisector: ['coding'],
+  buildVsBuyVsSkip: ['coding'], estimator: ['coding'], scopeCutter: ['coding'],
+  failureModeMapper: ['coding'], driveDevilAdvocate: ['coding'],
+  driveAssumptionExcavator: ['coding'], drivePreMortem: ['coding'],
+  driveInterrogator: ['coding'], driveEliExpert: ['coding'],
+  codeReviewer: ['coding'], codeCouncil: ['coding'], simplifier: ['coding'],
+  architect: ['coding'], rubberDuck: ['coding'], explainer: ['coding'],
+  showYourWork: ['coding'], testFirst: ['coding'], slowDown: ['coding'],
+  proveItWorks: ['coding'], firstPrinciples: ['coding'],
+  adversarialCoding: ['coding'], twoModelConsensus: ['coding'],
+  codebaseGrounded: ['coding'],
+  // Chat skills (general reasoning)
+  devilAdvocate: ['general'], steelmanDrill: ['general'],
+  attentionAudit: ['general'], askTheCouncil: ['general'],
+  assumptionExcavator: ['general'], preMortem: ['general'],
+  secondOrderSimulator: ['general'], interrogator: ['general'],
+  distiller: ['general'], tenTenTen: ['general'], editor: ['general'],
+  voiceMatch: ['general'], antiCliché: ['general'], envyCompass: ['general'],
+  // Learn skills (live in /learn, surfaced here only when no focus)
+  feynman: ['learning'], fifthGrader: ['learning'],
+  socraticMode: ['learning'], eliExpert: ['learning'],
+}
+
+export function getSkillDomains(slug: string): SkillDomain[] {
+  if (SKILL_DOMAIN_BY_SLUG[slug]) return SKILL_DOMAIN_BY_SLUG[slug]
+  // Fall back: scan SKILLS + LEARN_SKILLS rather than failing closed, so a
+  // newly-added skill is reachable until the user updates the map (good DX).
+  if (LEARN_SKILLS.some((s) => s.slug === slug)) return ['learning']
+  return ['general']
+}
+
+// Filter skills by an active session focus's enabled domains. An empty
+// domain list (`{ domains: [] }`, e.g. Learn focus) yields a sentinel
+// `showHint` flag so the UI can surface "Learn skills live in /learn"
+// instead of an empty dropdown.
+export interface SkillFilterResult {
+  skills: SkillDefinition[]
+  showLearnHint: boolean
+  showCodingHint: boolean
+}
+
+export function filterSkillsByDomain(
+  skills: SkillDefinition[],
+  focusDomains: string[],
+): SkillFilterResult {
+  // 'none' focus or unfiltered scopes → pass everything through unchanged.
+  if (focusDomains.length === 0 || (focusDomains.length === 3
+        && focusDomains.includes('coding') && focusDomains.includes('general')
+        && focusDomains.includes('learning'))) {
+    return { skills, showLearnHint: false, showCodingHint: false }
+  }
+
+  const codingPresent = focusDomains.includes('coding')
+  const generalPresent = focusDomains.includes('general')
+  const learningPresent = focusDomains.includes('learning')
+
+  const filtered = skills.filter((s) => {
+    const sd = getSkillDomains(s.slug)
+    return sd.some((d) =>
+      (d === 'coding' && codingPresent) ||
+      (d === 'general' && generalPresent) ||
+      (d === 'learning' && learningPresent),
+    )
+  })
+
+  return {
+    skills: filtered,
+    // When a Learn focus is active and chat is hiding learn skills, the hint
+    // tells the user where they actually live. (Chat's typed-input discover-
+    // ability panel reads this; the `/skill` discoverability list is empty.)
+    showLearnHint: !learningPresent && filtered.length === 0,
+    showCodingHint: !codingPresent,
+  }
+}
+
 export function getSkill(slug: string): SkillDefinition | undefined {
   return SKILLS.find((s) => s.slug === slug)
 }
@@ -146,7 +235,14 @@ export interface SkillInvocation {
 //       "run devil's advocate on my plan to cut sleep" → topic after the phrase.
 // Returns null when the input is just normal chat.
 // For multi-skill support, use detectSkillInvocations() instead.
-export function detectSkillInvocation(raw: string): SkillInvocation | null {
+export function detectSkillInvocation(
+  raw: string,
+  // Optional SessionFocus domain filter — when an active focus narrows the
+  // skill list (e.g. "Drive" focus removes Devil's Advocate from chat's
+  // reach), phrases for filtered-out skills should still match and the call
+  // site can decide whether to skip. Passing [] or undefined = no filter.
+  focusDomains?: string[],
+): SkillInvocation | null {
   const trimmed = raw.trim()
 
   // (a) Explicit command.

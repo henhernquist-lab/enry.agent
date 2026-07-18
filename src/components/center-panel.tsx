@@ -41,10 +41,18 @@ import { SkillBanner } from './skill-banner'
 import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
 import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
-import { detectSkillInvocation, SKILLS } from '@/lib/skills/registry'
+import { detectSkillInvocation, SKILLS, filterSkillsByDomain } from '@/lib/skills/registry'
 import { listModels } from '@/lib/nim'
 import type { SkillDefinition } from '@/lib/skills/types'
 import type { ActivityEvent } from '@/lib/chat-history'
+import {
+  parseSessionFocusId,
+  serializeSessionFocus,
+  sessionFocusDomains,
+  sessionFocusLabel,
+  SESSION_FOCUS_META,
+  type SessionFocus,
+} from '@/lib/focus-mode'
 
 interface CenterPanelProps {
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
@@ -167,11 +175,64 @@ export function CenterPanel({
   const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS['deepseek-ai/deepseek-v4-pro'] ?? 'medium')
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
 
-  // Focus mode — controls what context the agent draws from
+  // Focus mode (source scope) — controls which DRAWERS the agent reads from
   type FocusMode = 'all' | 'memory_only' | 'web_only' | 'repo_only'
   const [focusMode, setFocusMode] = useState<FocusMode>('all')
   const [focusMenuOpen, setFocusMenuOpen] = useState(false)
   const focusDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Session focus (domain scope) — what work I'm doing right now. Hybrid:
+  // built-in seeds (Drive / Learn / School) + user-named custom focuses that
+  // persist to localStorage and surface as additional chips. Orthogonal to
+  // `focusMode` above — same session can be "Drive" (domain) + "repo_only"
+  // (source). Mid-session swap is live: change the pill, the next chat POST
+  // carries the new value; prior messages keep their old context.
+  const SESSION_FOCUS_STORAGE_KEY = 'enry.sessionFocus.v1'
+  const CUSTOM_FOCUSES_STORAGE_KEY = 'enry.customFocuses.v1'
+  const [sessionFocus, setSessionFocus] = useState<SessionFocus>({ kind: 'none' })
+  const [sessionFocusMenuOpen, setSessionFocusMenuOpen] = useState(false)
+  const sessionFocusDropdownRef = useRef<HTMLDivElement>(null)
+  const [customFocuses, setCustomFocuses] = useState<string[]>([])
+  const [customFocusInput, setCustomFocusInput] = useState('')
+
+  // Load persisted focus + custom list on mount. localStorage is the only
+  // place this lives for now — no server round-trip on swap (live mid-session
+  // would lag the user with a full POST on every chip click).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SESSION_FOCUS_STORAGE_KEY)
+      if (raw) setSessionFocus(parseSessionFocusId(raw))
+      const customsRaw = localStorage.getItem(CUSTOM_FOCUSES_STORAGE_KEY)
+      if (customsRaw) {
+        const list = JSON.parse(customsRaw)
+        if (Array.isArray(list)) {
+          setCustomFocuses(list.filter((s): s is string => typeof s === 'string' && s.length > 0 && s.length <= 32))
+        }
+      }
+    } catch { /* localStorage unavailable; fall back to defaults */ }
+  }, [])
+
+  const selectSessionFocus = (next: SessionFocus) => {
+    setSessionFocus(next)
+    try { localStorage.setItem(SESSION_FOCUS_STORAGE_KEY, serializeSessionFocus(next)) } catch { /* noop */ }
+    setSessionFocusMenuOpen(false)
+  }
+
+  const addCustomFocus = () => {
+    const id = customFocusInput.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 32)
+    if (!id) return
+    if (customFocuses.includes(id)) {
+      // Already exists — just select it.
+      selectSessionFocus({ kind: 'custom', id })
+      setCustomFocusInput('')
+      return
+    }
+    const updated = [...customFocuses, id]
+    setCustomFocuses(updated)
+    try { localStorage.setItem(CUSTOM_FOCUSES_STORAGE_KEY, JSON.stringify(updated)) } catch { /* noop */ }
+    selectSessionFocus({ kind: 'custom', id })
+    setCustomFocusInput('')
+  }
 
   const FOCUS_MODES = [
     { id: 'all' as const, label: 'All', icon: Zap, desc: 'No restrictions — web, memory, repo' },
@@ -353,6 +414,15 @@ export function CenterPanel({
   }, [effortMenuOpen])
 
   useEffect(() => {
+    if (!sessionFocusMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!sessionFocusDropdownRef.current?.contains(e.target as Node)) setSessionFocusMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [sessionFocusMenuOpen])
+
+  useEffect(() => {
     if (!reasoningMenuOpen) return
     const handler = (e: MouseEvent) => {
       if (!reasoningDropdownRef.current?.contains(e.target as Node)) setReasoningMenuOpen(false)
@@ -389,7 +459,7 @@ export function CenterPanel({
     const turnsSoFar = messages.slice(startIndex).filter((m) => m.role === 'assistant').length
     onActivity({ type: 'user-sent', content: text, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
-    sendMessage({ text }, { body: { model, effort: chatEffort, skill: skill.slug, skillTurn: turnsSoFar + 1, focusMode, reasoningDepth } })
+    sendMessage({ text }, { body: { model, effort: chatEffort, skill: skill.slug, skillTurn: turnsSoFar + 1, focusMode, sessionFocus: serializeSessionFocus(sessionFocus), reasoningDepth } })
   }
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -436,7 +506,7 @@ export function CenterPanel({
 
     onActivity({ type: 'user-sent', content: text || `[Attached: ${attachment?.filename}]`, at: Date.now() })
     onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
-    const body: Record<string, unknown> = { model, effort: chatEffort, focusMode, reasoningDepth }
+    const body: Record<string, unknown> = { model, effort: chatEffort, focusMode, sessionFocus: serializeSessionFocus(sessionFocus), reasoningDepth }
 
     // Only attach the raw image to the model when the selected model actually
     // supports vision — otherwise the text description in finalText is the
@@ -905,20 +975,42 @@ export function CenterPanel({
               <div className="border-b border-border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                 skills
               </div>
-              {SKILLS.filter((s) => {
-                const q = input.trim().replace(/^\/skill\s*/i, '').toLowerCase()
-                return !q || s.slug.includes(q) || s.name.toLowerCase().includes(q)
-              }).map((s) => (
-                <button
-                  key={s.slug}
-                  type="button"
-                  onClick={() => { setInput(`/skill ${s.slug} `); textareaRef.current?.focus() }}
-                  className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-surface-elevated"
-                >
-                  <span className="font-mono text-[11px] text-primary">/skill {s.slug}</span>
-                  <span className="text-[11px] text-muted-foreground">{s.description}</span>
-                </button>
-              ))}
+              {(() => {
+                const filtered = filterSkillsByDomain(SKILLS, sessionFocusDomains(sessionFocus)).skills
+                const typed = filtered.filter((s) => {
+                  const q = input.trim().replace(/^\/skill\s*/i, '').toLowerCase()
+                  return !q || s.slug.includes(q) || s.name.toLowerCase().includes(q)
+                })
+                if (typed.length === 0) {
+                  const filtersAll = sessionFocusDomains(sessionFocus)
+                  if (filtersAll.length === 0) {
+                    return (
+                      <div className="px-3 py-2 font-mono text-[11px] text-muted-foreground leading-relaxed">
+                        Learn skills live in /learn. Switch focus off to see all chat skills, or pick one from /learn.
+                      </div>
+                    )
+                  }
+                  if (filtersAll.length === 1 && filtersAll[0] === 'coding') {
+                    return (
+                      <div className="px-3 py-2 font-mono text-[11px] text-muted-foreground leading-relaxed">
+                        No general/multi-domain skills in Drive focus. Switch to “None” for reasoning modes.
+                      </div>
+                    )
+                  }
+                  return null
+                }
+                return typed.map((s) => (
+                  <button
+                    key={s.slug}
+                    type="button"
+                    onClick={() => { setInput(`/skill ${s.slug} `); textareaRef.current?.focus() }}
+                    className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-surface-elevated"
+                  >
+                    <span className="font-mono text-[11px] text-primary">/skill {s.slug}</span>
+                    <span className="text-[11px] text-muted-foreground">{s.description}</span>
+                  </button>
+                ))
+              })()}
             </div>
           </div>
         )}
@@ -1057,6 +1149,102 @@ export function CenterPanel({
                       <span className="font-sans text-[9px] text-muted-foreground leading-tight">{f.desc}</span>
                     </button>
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* Session Focus (domain scope) */}
+            <div ref={sessionFocusDropdownRef} className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setSessionFocusMenuOpen((o) => !o)}
+                className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                  sessionFocus.kind !== 'none' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
+                }`}
+                title={`Session Focus: ${sessionFocus.kind !== 'none' ? sessionFocusLabel(sessionFocus) : 'None — no scoping'}`}
+              >
+                <Globe className="h-3 w-3" />
+                {sessionFocus.kind === 'none' ? 'Session' : sessionFocusLabel(sessionFocus)}
+              </button>
+              {sessionFocusMenuOpen && (
+                <div className="absolute top-full right-0 z-50 mt-1 w-56 border border-border bg-surface-secondary shadow-xl">
+                  {/* None: opt out of session scoping entirely */}
+                  <button
+                    type="button"
+                    onClick={() => selectSessionFocus({ kind: 'none' })}
+                    className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                      sessionFocus.kind === 'none' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <span className="font-mono text-[10px] font-semibold">None</span>
+                    <span className="font-sans text-[9px] text-muted-foreground leading-tight">No scoping — every skill reachable.</span>
+                  </button>
+                  <div className="border-t border-border" />
+                  {/* Seeds: Drive / Learn / School */}
+                  <div className="px-3 pt-1.5 pb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground/60">
+                    presets
+                  </div>
+                  {(['drive', 'learn', 'school'] as const).map((id) => {
+                    const meta = SESSION_FOCUS_META[id]
+                    const isActive = sessionFocus.kind === 'seed' && sessionFocus.id === id
+                    return (
+                      <button
+                        type="button"
+                        key={id}
+                        onClick={() => selectSessionFocus({ kind: 'seed', id })}
+                        className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                          isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <span className="font-mono text-[10px] font-semibold">{meta.label}</span>
+                        <span className="font-sans text-[9px] text-muted-foreground leading-tight">{meta.description}</span>
+                      </button>
+                    )
+                  })}
+                  {customFocuses.length > 0 && (
+                    <>
+                      <div className="border-t border-border" />
+                      <div className="px-3 pt-1.5 pb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground/60">
+                        custom
+                      </div>
+                      {customFocuses.map((id) => {
+                        const isActive = sessionFocus.kind === 'custom' && sessionFocus.id === id
+                        return (
+                          <button
+                            type="button"
+                            key={id}
+                            onClick={() => selectSessionFocus({ kind: 'custom', id })}
+                            className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                              isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            <span className="font-mono text-[10px] font-semibold">{id}</span>
+                          </button>
+                        )
+                      })}
+                    </>
+                  )}
+                  <div className="border-t border-border" />
+                  {/* Custom slot — inline input, commits on Enter or button click */}
+                  <div className="flex items-center gap-1 px-3 py-2">
+                    <input
+                      type="text"
+                      value={customFocusInput}
+                      onChange={(e) => setCustomFocusInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomFocus() } }}
+                      placeholder="+ Custom…"
+                      maxLength={32}
+                      className="flex-1 rounded border border-border bg-surface-elevated px-2 py-1 font-mono text-[10px] text-foreground placeholder-muted-foreground focus:border-primary/40 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={addCustomFocus}
+                      disabled={!customFocusInput.trim()}
+                      className="rounded border border-primary/30 bg-primary/5 px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-muted-foreground"
+                    >
+                      Add
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
