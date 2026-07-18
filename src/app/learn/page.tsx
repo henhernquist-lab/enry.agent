@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { LEARN_SKILLS } from '@/lib/skills/registry'
 import { LEARN_TABS, getLearnTab } from '@/components/learn/tab-registry'
+import { LearnActionsProvider, type LearnActions } from '@/components/learn/learn-actions'
 
 // Enry Learn — base scaffolding. Mirrors app/agent/page.tsx's structure
 // (client page, one exec endpoint, a scrollback of typed verbs) sized down
@@ -203,6 +204,19 @@ export default function LearnPage() {
   }
 
   const closableTabs = LEARN_TABS.filter((t) => !openTabs.includes(t.id))
+
+  // Cross-tab actions a feature tab can invoke (e.g. Knowledge Diff's "start
+  // studying this gap"). Provided once here; consumed via useLearnActions().
+  const learnActions: LearnActions = {
+    openChatWith: (text: string) => {
+      setActiveTab(CHAT_TAB)
+      setInput(text)
+      requestAnimationFrame(() => {
+        const el = inputRef.current
+        if (el) { el.focus(); el.setSelectionRange(text.length, text.length) }
+      })
+    },
+  }
 
   const exec = useCallback(async (verb: string, verbInput: string, promptText?: string) => {
     setRunning(true)
@@ -392,7 +406,9 @@ export default function LearnPage() {
       </div>
 
       {activeTab !== CHAT_TAB ? (
-        getLearnTab(activeTab)?.render() ?? null
+        <LearnActionsProvider value={learnActions}>
+          {getLearnTab(activeTab)?.render() ?? null}
+        </LearnActionsProvider>
       ) : (
       <div className="flex min-h-0 flex-1">
         {/* Conversation */}
