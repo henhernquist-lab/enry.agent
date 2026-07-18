@@ -872,6 +872,158 @@ export function CenterPanel({
           </div>
         )}
 
+        {/* Controls Row — model primary, toggles secondary */}
+        <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-1.5 px-4 pt-2">
+          {/* Left group: model */}
+          <div className="flex items-center gap-1.5">
+            <div ref={modelDropdownRef} className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setModelOpen((o) => !o)}
+                className="flex h-10 items-center gap-1.5 rounded border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
+              >
+                <span className="text-muted-foreground/60 text-[10px]">
+                  {MODELS.find((m) => m.id === model)?.company}
+                </span>
+                <span className="text-primary font-semibold">
+                  {MODELS.find((m) => m.id === model)?.label}
+                </span>
+                <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {modelOpen && (
+                <div className="absolute top-full left-0 z-50 mt-1 w-64 border border-border bg-surface-secondary shadow-xl">
+                  {MODELS.map((m) => (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => handleModelSelect(m.id)}
+                      className={`flex w-full items-start gap-2 px-3 py-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-elevated ${
+                        model === m.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <span className="mt-0.5 flex-shrink-0">
+                        {model === m.id ? (
+                          <span className="block h-1.5 w-1.5 rounded-full bg-primary" />
+                        ) : (
+                          <span className="block h-1.5 w-1.5 rounded-full border border-border" />
+                        )}
+                      </span>
+                      <span className="flex flex-col">
+                        <span>
+                          <span className="text-muted-foreground/60 text-[10px]">{m.company}</span>{' '}
+                          <span>{m.label}</span>
+                        </span>
+                        <span className="font-normal text-[10px] text-muted-foreground leading-tight mt-0.5">
+                          {m.desc}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Flex spacer */}
+          <div className="flex-1" />
+
+          {/* Right group: Think · Focus · Effort */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* Reasoning Depth */}
+            <div ref={reasoningDropdownRef} className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setReasoningMenuOpen((o) => !o)}
+                className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                  reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
+                }`}
+                title={currentReasoning.desc}
+              >
+                <Brain className="h-3 w-3" />
+                {reasoningDepth === 'off' ? 'Think' : currentReasoning.label.replace('Think: ', '')}
+              </button>
+              {reasoningMenuOpen && (
+                <div className="absolute top-full right-0 z-50 mt-1 w-48 border border-border bg-surface-secondary shadow-xl">
+                  {REASONING_DEPTHS.map((r) => (
+                    <button
+                      type="button"
+                      key={r.id}
+                      onClick={() => { setReasoningDepth(r.id); setReasoningMenuOpen(false) }}
+                      className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                        reasoningDepth === r.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <span className="font-mono text-[10px] font-semibold">{r.label}</span>
+                      <span className="font-sans text-[9px] text-muted-foreground leading-tight">{r.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Focus Mode */}
+            <div ref={focusDropdownRef} className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setFocusMenuOpen((o) => !o)}
+                className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                  focusMode !== 'all' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
+                }`}
+                title={`Focus: ${currentFocus.desc}`}
+              >
+                {currentFocus.icon && <currentFocus.icon className="h-3 w-3" />}
+                {currentFocus.label}
+              </button>
+              {focusMenuOpen && (
+                <div className="absolute top-full right-0 z-50 mt-1 w-44 border border-border bg-surface-secondary shadow-xl">
+                  {FOCUS_MODES.map((f) => (
+                    <button
+                      type="button"
+                      key={f.id}
+                      onClick={() => { setFocusMode(f.id); setFocusMenuOpen(false) }}
+                      className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                        focusMode === f.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <span className="font-mono text-[10px] font-semibold">{f.label}</span>
+                      <span className="font-sans text-[9px] text-muted-foreground leading-tight">{f.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Effort */}
+            <div ref={effortDropdownRef} className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setEffortMenuOpen((o) => !o)}
+                className="flex h-10 items-center gap-1 rounded border border-border bg-surface-elevated px-2.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+              >
+                <Zap className="h-3 w-3" />{currentChatEffort?.label}
+                <ChevronDown className={`h-2.5 w-2.5 transition-transform ${effortMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {effortMenuOpen && (
+                <div className="absolute top-full right-0 z-50 mt-1 w-40 border border-border bg-surface-secondary shadow-xl">
+                  {CHAT_EFFORTS.map((e) => (
+                    <button
+                      type="button"
+                      key={e.id}
+                      onClick={() => { setChatEffort(e.id); setEffortMenuOpen(false) }}
+                      className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                        chatEffort === e.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <span className="font-mono text-[10px] font-semibold">{e.label}</span>
+                      <span className="font-sans text-[9px] text-muted-foreground leading-tight">{e.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Main Input */}
         <form
           onSubmit={handleSubmit}
@@ -888,10 +1040,6 @@ export function CenterPanel({
             className="hidden"
           />
           <div className="relative flex-1">
-            {/* Resting height is deliberately ~2x the 48px (h-12) control buttons
-                beside it, so the input reads as the primary element of this row
-                rather than one more control in a strip of them. The form is
-                items-end, so those buttons stay bottom-aligned against it. */}
             <textarea
               ref={textareaRef}
               value={input}
@@ -909,7 +1057,7 @@ export function CenterPanel({
               rows={3}
               disabled={isStreaming}
               className="w-full resize-none rounded border border-border bg-surface-elevated px-4 py-3 pr-12 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-50"
-              style={{ minHeight: '96px', maxHeight: '320px' }}
+              style={{ minHeight: '80px', maxHeight: '320px' }}
             />
             <button
               type="button"
@@ -920,151 +1068,10 @@ export function CenterPanel({
             </button>
           </div>
 
-          {/* Model Selector */}
-          <div ref={modelDropdownRef} className="relative flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setModelOpen((o) => !o)}
-              className="flex h-12 items-center gap-1.5 rounded border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
-            >
-              <span className="text-muted-foreground/60 text-[10px]">
-                {MODELS.find((m) => m.id === model)?.company}
-              </span>
-              <span className="text-primary font-semibold">
-                {MODELS.find((m) => m.id === model)?.label}
-              </span>
-              <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {modelOpen && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 w-64 border border-border bg-surface-secondary shadow-xl">
-                {MODELS.map((m) => (
-                  <button
-                    type="button"
-                    key={m.id}
-                    onClick={() => handleModelSelect(m.id)}
-                    className={`flex w-full items-start gap-2 px-3 py-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-elevated ${
-                      model === m.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <span className="mt-0.5 flex-shrink-0">
-                      {model === m.id ? (
-                        <span className="block h-1.5 w-1.5 rounded-full bg-primary" />
-                      ) : (
-                        <span className="block h-1.5 w-1.5 rounded-full border border-border" />
-                      )}
-                    </span>
-                    <span className="flex flex-col">
-                      <span>
-                        <span className="text-muted-foreground/60 text-[10px]">{m.company}</span>{' '}
-                        <span>{m.label}</span>
-                      </span>
-                      <span className="font-normal text-[10px] text-muted-foreground leading-tight mt-0.5">
-                        {m.desc}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Reasoning Depth selector */}
-          <div ref={reasoningDropdownRef} className="relative flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setReasoningMenuOpen((o) => !o)}
-              className={`flex h-12 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
-                reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
-              }`}
-              title={currentReasoning.desc}
-            >
-              <Brain className="h-3 w-3" />
-              {reasoningDepth === 'off' ? 'Think' : currentReasoning.label.replace('Think: ', '')}
-            </button>
-            {reasoningMenuOpen && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 w-48 border border-border bg-surface-secondary shadow-xl">
-                {REASONING_DEPTHS.map((r) => (
-                  <button
-                    type="button"
-                    key={r.id}
-                    onClick={() => { setReasoningDepth(r.id); setReasoningMenuOpen(false) }}
-                    className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
-                      reasoningDepth === r.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <span className="font-mono text-[10px] font-semibold">{r.label}</span>
-                    <span className="font-sans text-[9px] text-muted-foreground leading-tight">{r.desc}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Focus Mode selector */}
-          <div ref={focusDropdownRef} className="relative flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setFocusMenuOpen((o) => !o)}
-              className={`flex h-12 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
-                focusMode !== 'all' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
-              }`}
-              title={`Focus: ${currentFocus.desc}`}
-            >
-              {currentFocus.icon && <currentFocus.icon className="h-3 w-3" />}
-              {currentFocus.label}
-            </button>
-            {focusMenuOpen && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 w-44 border border-border bg-surface-secondary shadow-xl">
-                {FOCUS_MODES.map((f) => (
-                  <button
-                    type="button"
-                    key={f.id}
-                    onClick={() => { setFocusMode(f.id); setFocusMenuOpen(false) }}
-                    className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
-                      focusMode === f.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <span className="font-mono text-[10px] font-semibold">{f.label}</span>
-                    <span className="font-sans text-[9px] text-muted-foreground leading-tight">{f.desc}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Chat Effort Toggle — 3 levels, separate from coding agent's 5 */}
-          <div ref={effortDropdownRef} className="relative flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setEffortMenuOpen((o) => !o)}
-              className="flex h-12 items-center gap-1 rounded border border-border bg-surface-elevated px-2.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-            >
-              <Zap className="h-3 w-3" />{currentChatEffort?.label}
-              <ChevronDown className={`h-2.5 w-2.5 transition-transform ${effortMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {effortMenuOpen && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 w-40 border border-border bg-surface-secondary shadow-xl">
-                {CHAT_EFFORTS.map((e) => (
-                  <button
-                    type="button"
-                    key={e.id}
-                    onClick={() => { setChatEffort(e.id); setEffortMenuOpen(false) }}
-                    className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
-                      chatEffort === e.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <span className="font-mono text-[10px] font-semibold">{e.label}</span>
-                    <span className="font-sans text-[9px] text-muted-foreground leading-tight">{e.desc}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
           <button
             type="submit"
             disabled={(!input.trim() && !uploadResult) || isStreaming || pendingUpload?.status === 'uploading'}
-            className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded border border-primary bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-muted-foreground"
+            className="flex h-10 w-12 flex-shrink-0 items-center justify-center rounded border border-primary bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-muted-foreground"
           >
             <Send className="h-4 w-4" />
           </button>

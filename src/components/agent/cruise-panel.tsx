@@ -15,6 +15,7 @@ import type {
 } from '@/lib/cruise/types'
 import { SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG, isGoalRunActive } from '@/lib/cruise/types'
 import { nextRun } from '@/lib/cruise/schedule'
+import { LiveWorkspace } from '@/components/live-workspace'
 
 // Enry Cruise — the autonomous-scan main pane. Per-repo allowlist, on-demand
 // static scans, scan-and-fix categories, ranked findings with dismiss/not-a-bug.
@@ -287,6 +288,21 @@ export function CruisePanel({ repo }: { repo: string }) {
             <EnableCard busy={busy} needsReauth={needsReauth} error={error} onEnable={enable} onReauth={() => signIn('github')} repo={repo} />
           ) : (
             <>
+              {/* Live Workspace — visible when a scan or goal run is active */}
+              <div className="mb-5">
+                <LiveWorkspace
+                  pollUrl={
+                    hasActive
+                      ? `/api/cruise/live-steps?scan_id=${scans.find((s) => isActive(s.status))?.id ?? ''}`
+                      : hasActiveGoal
+                        ? `/api/lab/overnight/live-steps?run_id=${activeGoalRuns[0]?.id ?? ''}`
+                        : null
+                  }
+                  controlUrl={hasActive ? '/api/cruise/control' : null}
+                  controlId={scans.find((s) => isActive(s.status))?.id ?? null}
+                />
+              </div>
+
               {/* Controls */}
               <div className="mb-5 flex items-center gap-2">
                 <button onClick={scanNow} disabled={busy || hasActive}
