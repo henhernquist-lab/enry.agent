@@ -13,6 +13,7 @@ import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOver
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { buildComposioTools } from '@/lib/composio-tools'
+import { checkContradictions, logContradiction } from '@/lib/learn/receipts'
 import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
@@ -271,6 +272,26 @@ export async function POST(req: Request) {
 
   const modelMessages = await convertToModelMessages(messages)
 
+  // ── Receipts hook: check for contradictions against stored claims ────
+  // All logic lives in lib/learn/receipts.ts — this call is the extension point.
+  // If contradictions are found, they're injected as context and logged.
+  let contradictionContext = ''
+  if (uid) {
+    const lastUserMsg = [...modelMessages].reverse().find((m) => m.role === 'user')
+    if (lastUserMsg && typeof lastUserMsg.content === 'string') {
+      const contradictions = await checkContradictions(lastUserMsg.content, uid)
+      if (contradictions && contradictions.length > 0) {
+        contradictionContext = `\n\n⚠ RECEIPT: The following claims contradict what the user just said (high semantic similarity to the user's message, but potentially opposite meaning). The user may have changed their mind or forgotten a prior belief. If you think this is a genuine contradiction, surface it as an inline interrupt and ask which claim is correct. Otherwise, just be aware of the tension.\n${contradictions.map((c, i) => `${i + 1}. [${c.claim_id.slice(0, 8)}…] ${c.claim_content}`).join('\n')}\n${contradictions.length > 1 ? '' : '\nReply directly but acknowledge this receipt. '}  `
+        // Log contradictions asynchronously (don't block the response)
+        for (const c of contradictions) {
+          logContradiction(c.claim_id, c.message_snippet, c.similarity).catch((err) => {
+            console.error('[chat/route] failed to log contradiction:', err)
+          })
+        }
+      }
+    }
+  }
+
   // Apply context compaction (extracts decisions, files, unresolved Qs)
   const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
   const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
@@ -339,7 +360,7 @@ export async function POST(req: Request) {
 
     const skillResult = streamText({
       model: client.chat(selectedModel),
-      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}`,
+      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${contradictionContext}`,
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
         providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
@@ -621,7 +642,7 @@ GITHUB WRITE SAFETY RAILS — these are non-negotiable, enforced server-side:
 5. If Henry says no or asks for changes, do not execute. Adjust and re-preview.
 
 Bound strictly to the above. If a task needs a tool not on this list, state that instead of improvising.
-${focusDirective}
+${focusDirective}${contradictionContext}
 ${userProfile ? `\n${userProfile}` : ''}`,
     messages: finalMessages as any,
     stopWhen: stepCountIs(7),
