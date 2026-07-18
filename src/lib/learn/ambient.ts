@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { supabase } from '../supabase'
 import { localParts } from '../cruise/schedule'
 
@@ -98,17 +99,78 @@ export function buildProbeMessage(claimContent: string): string {
   return `enry: quick check — in a sentence, what's the deal with: "${claimContent}"? Reply here to log it. (Txt STOP to pause.)`
 }
 
-// SMS SEND — STUB. There is no SMS provider wired in this repo. This function
-// NEVER sends; it returns a stubbed result so the cron's decision path is fully
-// exercisable without touching a phone. Wiring a provider (Twilio, etc.) means
-// replacing this body — nothing else in the flow changes.
-export async function sendAmbientSms(phone: string, message: string): Promise<{ sent: boolean; stubbed: true }> {
-  console.log(`[ambient] STUB send → ${phone.slice(0, 3)}***: ${message.slice(0, 60)}…`)
-  return { sent: false, stubbed: true }
+// SMS SEND — real Twilio, credential-gated. When Twilio creds are present this
+// actually POSTs to Twilio's Messages API; when they're absent it degrades to a
+// logged no-op (stubbed) so the cron's decision path stays fully exercisable
+// without a provider. Credentials needed (env):
+//   TWILIO_ACCOUNT_SID
+//   TWILIO_AUTH_TOKEN
+//   TWILIO_FROM_NUMBER        (a Twilio SMS-capable number, E.164)
+//     — or — TWILIO_MESSAGING_SERVICE_SID (use one, not both)
+export interface SmsResult { sent: boolean; stubbed: boolean; error?: string }
+
+export function twilioConfigured(): boolean {
+  return Boolean(
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_MESSAGING_SERVICE_SID),
+  )
+}
+
+export async function sendAmbientSms(phone: string, message: string): Promise<SmsResult> {
+  const sid = process.env.TWILIO_ACCOUNT_SID
+  const token = process.env.TWILIO_AUTH_TOKEN
+  const from = process.env.TWILIO_FROM_NUMBER
+  const messagingService = process.env.TWILIO_MESSAGING_SERVICE_SID
+
+  if (!twilioConfigured()) {
+    console.log(`[ambient] STUB send (no Twilio creds) → ${phone.slice(0, 3)}***: ${message.slice(0, 60)}…`)
+    return { sent: false, stubbed: true }
+  }
+
+  const body = new URLSearchParams({ To: phone, Body: message })
+  if (messagingService) body.set('MessagingServiceSid', messagingService)
+  else body.set('From', from!)
+
+  try {
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body,
+    })
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      console.error(`[ambient] Twilio send failed ${res.status}: ${detail.slice(0, 200)}`)
+      return { sent: false, stubbed: false, error: `twilio_${res.status}` }
+    }
+    return { sent: true, stubbed: false }
+  } catch (e) {
+    console.error('[ambient] Twilio send threw:', e)
+    return { sent: false, stubbed: false, error: 'twilio_exception' }
+  }
+}
+
+// Twilio request-signature verification for the inbound reply webhook. Twilio
+// signs each webhook: signature = base64(HMAC-SHA1(authToken, fullUrl +
+// concat(POST params sorted by key as key+value))). We recompute and compare in
+// constant time. Fails closed: no auth token configured → not valid.
+// (https://www.twilio.com/docs/usage/security#validating-requests)
+export function verifyTwilioSignature(fullUrl: string, params: Record<string, string>, signature: string | null): boolean {
+  const token = process.env.TWILIO_AUTH_TOKEN
+  if (!token || !signature) return false
+  let data = fullUrl
+  for (const key of Object.keys(params).sort()) data += key + params[key]
+  const expected = createHmac('sha1', token).update(Buffer.from(data, 'utf-8')).digest('base64')
+  const a = Buffer.from(expected)
+  const b = Buffer.from(signature)
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 // Reason strings the cron reports per user, so a dry run is legible.
-export type AmbientDecision = 'sent' | 'quiet_hours' | 'daily_cap' | 'awaiting_reply' | 'nothing_due' | 'disabled' | 'no_phone'
+export type AmbientDecision = 'sent' | 'quiet_hours' | 'daily_cap' | 'awaiting_reply' | 'nothing_due' | 'disabled' | 'no_phone' | 'send_failed'
 
 async function loadRows(): Promise<AmbientRow[]> {
   const { data } = await supabase
@@ -156,7 +218,12 @@ export async function runAmbientForRow(row: AmbientRow, now: Date): Promise<Ambi
   if (!due) return 'nothing_due' // silence is fine
 
   const asked_at = now.toISOString()
-  await sendAmbientSms(s.phone, buildProbeMessage(due.content))
+  const send = await sendAmbientSms(s.phone, buildProbeMessage(due.content))
+  // A real provider error (creds present but Twilio rejected) must NOT consume
+  // the daily cap or park a pending probe — leave it due so the next tick
+  // retries. A stubbed no-op (no creds) still advances the flow so the decision
+  // path stays exercisable in a dry run.
+  if (!send.sent && !send.stubbed) return 'send_failed'
   // Mirror an in-app probe: write probe_asked (via ambient) so activity/fog
   // reflect it, and park the pending probe + bump the daily counter.
   await supabase.from('claim_events').insert({ claim_id: due.id, event_type: 'probe_asked', payload: { content: due.content, via: 'ambient' } })

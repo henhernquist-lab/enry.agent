@@ -2,9 +2,10 @@ import { runAmbientTick } from '@/lib/learn/ambient'
 
 // Ambient Mode cron tick. Mirrors cruise-tick's shape: a scheduler curls this
 // with the CRON_SECRET bearer; it evaluates every user's ambient settings and
-// (stub-)sends at most one due probe each, respecting quiet hours + daily cap +
-// one-in-flight. NOTHING SCHEDULES THIS YET — no GitHub Actions workflow entry
-// was added (see OVERNIGHT.md [PAUSE]). The SMS send is a stub (no provider).
+// sends at most one due probe each, respecting quiet hours + daily cap +
+// one-in-flight. Scheduled by .github/workflows/enry-ambient-probe.yml (every
+// ~15 min). Sending is credential-gated: with no Twilio env vars the send is a
+// logged no-op, so the schedule is inert until creds are added.
 export const maxDuration = 60
 
 export async function GET(req: Request) {
