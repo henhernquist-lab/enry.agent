@@ -1250,8 +1250,10 @@ USER REQUEST: ${userText}`
           {/* Command bar — two-row layout: compact toolbar above, dominant textarea below */}
           <div className="flex-shrink-0 border-t border-border bg-background px-4 py-3">
             <div className="mx-auto max-w-[820px] space-y-2">
-              {/* Row 1: controls toolbar — wraps on narrow viewports */}
+              {/* Row 1: controls toolbar — model primary, toggles secondary */}
               <div className="flex flex-wrap items-center gap-1.5">
+                {/* Left group: model + skill */}
+                <div className="flex items-center gap-1.5">
                 {/* Model picker — Enry Engine routing */}
                 <div ref={modelMenuRef} className="relative flex-shrink-0">
                   <button onClick={() => setModelMenuOpen((o) => !o)}
@@ -1324,6 +1326,13 @@ USER REQUEST: ${userText}`
                     )}
                   </AnimatePresence>
                 </div>
+              </div>
+
+              <div className="flex-1 min-w-[12px]" />
+
+              {/* Right group: toggles */}
+              <div className="flex items-center gap-1.5">
+
 
                 {/* Reasoning Depth selector — now genuinely wired for plain
                     code edits too, not just skills. proposeEdit's diff output
@@ -1421,6 +1430,8 @@ USER REQUEST: ${userText}`
                   {mode === 'manual' ? 'Manual' : 'Auto'}
                 </button>
               </div>
+            </div>
+
 
               {/* Row 2: textarea + send button — textarea is the dominant element */}
               <div className="flex items-end gap-2">
