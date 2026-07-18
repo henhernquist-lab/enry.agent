@@ -164,7 +164,10 @@ export default function LearnPage() {
   const [running, setRunning] = useState(false)
   const [activeVerb, setActiveVerb] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [pendingProbe, setPendingProbe] = useState<{ claim_id: string; content: string; topic: string } | null>(null)
+  // Which two-phase interaction is awaiting the user's next message (probe /
+  // defend / teach). Only one is ever set. Drives follow-up routing + the
+  // header/placeholder — generalizes what used to be probe-only.
+  const [pendingVerb, setPendingVerb] = useState<'probe' | 'defend' | 'teach' | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -220,7 +223,10 @@ export default function LearnPage() {
       }
       const data = await res.json()
       if (data.session_id) setSessionId(data.session_id)
-      setPendingProbe(data.pending_probe ?? null)
+      // Route the next bare message to whichever interaction is now in flight.
+      setPendingVerb(
+        data.pending_probe ? 'probe' : data.pending_defense ? 'defend' : data.pending_teach ? 'teach' : null,
+      )
 
       const text = (data.output ?? data.error ?? '').toString()
       if (data.exit_code !== 0) {
@@ -243,10 +249,10 @@ export default function LearnPage() {
     if (!text || running) return
     setInput('')
 
-    // If we're mid-probe, whatever the user typed is the answer — route it
-    // straight back into probe rather than making them type "probe" first.
-    if (pendingProbe) {
-      exec('probe', text, text)
+    // Mid-interaction (probe answer / defend rebuttal / teach explanation) —
+    // whatever the user typed continues that verb, no need to retype it.
+    if (pendingVerb) {
+      exec(pendingVerb, text, text)
       return
     }
 
@@ -310,8 +316,10 @@ export default function LearnPage() {
         <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">
           <GraduationCap className="h-3 w-3 text-primary/70" /> Learn
         </span>
-        {pendingProbe && (
-          <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-warning">Awaiting answer</span>
+        {pendingVerb && (
+          <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-warning">
+            {pendingVerb === 'defend' ? 'Awaiting rebuttal' : pendingVerb === 'teach' ? 'Awaiting explanation' : 'Awaiting answer'}
+          </span>
         )}
       </header>
 
@@ -484,7 +492,12 @@ export default function LearnPage() {
               </div>
               <div className="flex items-end gap-2">
                 <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                  placeholder={pendingProbe ? 'Type your answer…' : 'learn "<topic>" — or paste a source'}
+                  placeholder={
+                    pendingVerb === 'defend' ? 'Argue back…'
+                    : pendingVerb === 'teach' ? 'Explain it in your own words…'
+                    : pendingVerb === 'probe' ? 'Type your answer…'
+                    : 'learn "<topic>" — or paste a source'
+                  }
                   rows={1} spellCheck={false} disabled={running}
                   className="flex-1 resize-none rounded border border-border bg-surface-secondary px-3 py-2 font-mono text-[13px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40 min-h-[80px]"
                   style={{ maxHeight: '200px' }} />

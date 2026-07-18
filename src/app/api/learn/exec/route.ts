@@ -50,14 +50,16 @@ export async function POST(req: Request) {
   }
   await appendCommand(uid, sessionId, entry)
 
-  const pendingProbe = await readPendingProbe(uid, sessionId)
+  const pending = await readPending(uid, sessionId)
 
   return Response.json({
     output: result.output,
     exit_code: result.exitCode,
     session_id: sessionId,
     data: result.data ?? null,
-    pending_probe: pendingProbe,
+    pending_probe: pending.pending_probe,
+    pending_defense: pending.pending_defense,
+    pending_teach: pending.pending_teach,
   })
 }
 
@@ -99,7 +101,14 @@ async function appendCommand(uid: string, sessionId: string, entry: LearnCommand
   }
 }
 
-async function readPendingProbe(uid: string, sessionId: string): Promise<LearnSessionPayload['pending_probe']> {
+// Read whatever interaction is in flight for this session — probe, defend, or
+// teach. The client routes the user's next bare message to whichever is set
+// (only one is ever non-null at a time, same "one thing in flight" discipline).
+async function readPending(uid: string, sessionId: string): Promise<{
+  pending_probe: LearnSessionPayload['pending_probe']
+  pending_defense: LearnSessionPayload['pending_defense']
+  pending_teach: LearnSessionPayload['pending_teach']
+}> {
   const { data } = await supabase
     .from('resources')
     .select('payload')
@@ -107,5 +116,9 @@ async function readPendingProbe(uid: string, sessionId: string): Promise<LearnSe
     .eq('user_id', uid)
     .maybeSingle()
   const payload = data?.payload as LearnSessionPayload | undefined
-  return payload?.pending_probe ?? null
+  return {
+    pending_probe: payload?.pending_probe ?? null,
+    pending_defense: payload?.pending_defense ?? null,
+    pending_teach: payload?.pending_teach ?? null,
+  }
 }
