@@ -27,6 +27,7 @@ import { TodayBand } from '@/components/home/today-band'
 import { TerminalLauncher } from '@/components/home/terminal-launcher'
 import { AgentLauncher } from '@/components/home/agent-launcher'
 import { DriveHeroCard } from '@/components/home/drive-hero-card'
+import { LearnHeroCard } from '@/components/home/learn-hero-card'
 
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
@@ -192,6 +193,7 @@ export default function EnryAgentPage() {
         />          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {sessionStatus === 'authenticated' && <TodayBand />}
           {sessionStatus === 'authenticated' && <DriveHeroCard />}
+          {sessionStatus === 'authenticated' && <LearnHeroCard />}
           <CenterPanel
             key={activeId}
             agentStatus={agentStatus}

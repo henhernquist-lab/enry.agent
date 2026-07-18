@@ -91,23 +91,30 @@ export const SKILLS: SkillDefinition[] = [
   // Chat skills (homepage)
   devilAdvocate,
   steelmanDrill,
-  fifthGrader,
   attentionAudit,
   askTheCouncil,
   assumptionExcavator,
   preMortem,
-  socraticMode,
-  eliExpert,
   secondOrderSimulator,
   interrogator,
   distiller,
   tenTenTen,
-  feynman,
   editor,
   voiceMatch,
   antiCliché,
   envyCompass,
+  // feynman, fifthGrader, socraticMode, eliExpert moved to Learn (see
+  // LEARN_SKILLS below) — they test/build retention of a topic, which is
+  // now Learn's job, not main chat's. Not deleted, not forked: same
+  // definition objects, just no longer reachable via /skill in chat.
 ]
+
+// Learning-technique skills, moved out of main chat's SKILLS array (and its
+// /skill discoverability + detectSkillInvocation phrase matching) into Learn.
+// Imported, not copy-pasted — same SkillDefinition objects main chat used to
+// expose. Currently browsable from app/learn/page.tsx's Techniques panel;
+// not yet wired into teach/defend (those are stubs — see LEARN.md).
+export const LEARN_SKILLS: SkillDefinition[] = [feynman, fifthGrader, socraticMode, eliExpert]
 
 export function getSkill(slug: string): SkillDefinition | undefined {
   return SKILLS.find((s) => s.slug === slug)

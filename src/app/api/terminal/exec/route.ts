@@ -630,7 +630,7 @@ async function appendCommand(uid: string, sessionId: string, entry: TerminalComm
     // each other's changes. Shares the compare-and-swap helper instead: the
     // mutate callback recomputes `commands` from whatever payload is CURRENT
     // on each retry attempt, not a snapshot taken before this function ran.
-    await casUpdateSessionPayload(sessionId, uid, (payload) => ({
+    await casUpdateSessionPayload<TerminalSessionPayload>(sessionId, uid, (payload) => ({
       commands: [...(payload.commands ?? []), entry].slice(-200),
       session_end: entry.timestamp,
     }))

@@ -1,7 +1,7 @@
 import type { ResourceSource } from './resource-source'
 import { emitResourceSaved } from './resource-events'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret' | 'memory'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret' | 'memory' | 'learn_session'
 
 export interface Resource<T = unknown> {
   id: string
@@ -261,6 +261,29 @@ export interface GhostConversationPayload {
   messages: GhostMessage[]
   corpus_resource_ids: string[]
   created_at: string
+}
+
+// ── Learn session state ──────────────────────────────────────────────────
+// Same shape convention as TerminalSessionPayload above: a durable per-session
+// row in `resources` (type='learn_session'), atomically persisted via the
+// same compare-and-swap helper Drive uses (see src/lib/session-cas.ts).
+export interface LearnCommand {
+  verb: 'learn' | 'probe' | 'gap' | 'defend' | 'teach' | 'retire'
+  input: string
+  output: string
+  timestamp: string
+  exit_code: number
+}
+
+export interface LearnSessionPayload {
+  commands: LearnCommand[]
+  session_start: string
+  session_end?: string
+  // The claim currently awaiting an answer from probe() — set when probe
+  // surfaces a due claim, cleared once the answer event is recorded. Lives
+  // in the session row (not just client state) so a page refresh doesn't
+  // lose which claim is "live," same reasoning as PendingDiff above.
+  pending_probe?: { claim_id: string; content: string; topic: string; asked_at: string } | null
 }
 
 export type GitHubActionType = 'create_file' | 'update_file' | 'create_branch' | 'create_pr' | 'create_repo'
