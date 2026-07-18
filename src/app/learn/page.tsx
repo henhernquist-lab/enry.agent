@@ -15,6 +15,7 @@ import {
   Loader2,
   MessageSquare,
   Plus,
+  Radio,
   Search,
   Send,
   ShieldAlert,
@@ -24,6 +25,7 @@ import {
 import { LEARN_SKILLS } from '@/lib/skills/registry'
 import { LEARN_TABS, getLearnTab } from '@/components/learn/tab-registry'
 import { LearnActionsProvider, type LearnActions } from '@/components/learn/learn-actions'
+import { AmbientSettingsModal } from '@/components/learn/ambient-settings'
 
 // Enry Learn — base scaffolding. Mirrors app/agent/page.tsx's structure
 // (client page, one exec endpoint, a scrollback of typed verbs) sized down
@@ -158,6 +160,7 @@ export default function LearnPage() {
   const [openTabs, setOpenTabs] = useState<string[]>(() => LEARN_TABS.filter((t) => t.defaultOpen).map((t) => t.id))
   const [tabMenuOpen, setTabMenuOpen] = useState(false)
   const tabMenuRef = useRef<HTMLDivElement>(null)
+  const [ambientOpen, setAmbientOpen] = useState(false)
   const [lines, setLines] = useState<Line[]>([
     { kind: 'system', text: 'enry learn — every belief starts as a claim. learn "<topic>" to begin, or probe to check in on what\'s due.' },
   ])
@@ -331,11 +334,21 @@ export default function LearnPage() {
           <GraduationCap className="h-3 w-3 text-primary/70" /> Learn
         </span>
         {pendingVerb && (
-          <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-warning">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-warning">
             {pendingVerb === 'defend' ? 'Awaiting rebuttal' : pendingVerb === 'teach' ? 'Awaiting explanation' : 'Awaiting answer'}
           </span>
         )}
+        {/* Ambient Mode — a background layer; its settings live here in Learn,
+            opened from this header (not a tab, not the global app settings). */}
+        <button
+          onClick={() => setAmbientOpen(true)}
+          className="ml-auto flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50 transition-colors hover:text-foreground"
+          title="Ambient Mode settings"
+        >
+          <Radio className="h-3 w-3" /> Ambient
+        </button>
       </header>
+      <AmbientSettingsModal open={ambientOpen} onClose={() => setAmbientOpen(false)} />
 
       <div className="flex flex-shrink-0 items-center gap-1 border-b border-border bg-background px-3">
         {/* Chat — the pinned home tab, always present, never closeable. */}
