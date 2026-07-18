@@ -2,16 +2,18 @@
 
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2, Radio } from 'lucide-react'
+import { X, Loader2, Radio, Bell, BellOff, BellRing } from 'lucide-react'
+import { pushSupported, subscribeToPush, unsubscribeFromPush } from '@/lib/push-client'
 
 // Ambient Mode settings — Learn's own settings surface (a modal), deliberately
 // NOT the global app settings and NOT a tab (Ambient is a background layer).
-// Editing here writes to /api/learn/ambient/settings. Nothing is scheduled or
-// sent from the UI — this only configures the (currently unscheduled) cron.
+// Editing here writes to /api/learn/ambient/settings; the push subscription
+// itself is managed via /api/learn/ambient/push-subscribe (browser
+// PushManager object, not a form field).
 
 interface AmbientSettings {
   enabled: boolean
-  phone: string | null
+  push_subscription: { endpoint: string; keys: { p256dh: string; auth: string } } | null
   max_per_day: number
   quiet_start_hour: number
   quiet_end_hour: number
@@ -28,19 +30,23 @@ export function AmbientSettingsModal({ open, onClose }: { open: boolean; onClose
   const [settings, setSettings] = useState<AmbientSettings | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushError, setPushError] = useState<string | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/learn/ambient/settings')
+      if (res.ok) setSettings(await res.json())
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      try {
-        const res = await fetch('/api/learn/ambient/settings')
-        if (res.ok && !cancelled) setSettings(await res.json())
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
+    ;(async () => { if (!cancelled) await load() })()
     return () => { cancelled = true }
   }, [open])
 
@@ -49,7 +55,8 @@ export function AmbientSettingsModal({ open, onClose }: { open: boolean; onClose
     setSaving(true)
     try {
       const res = await fetch('/api/learn/ambient/settings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: settings.enabled, max_per_day: settings.max_per_day, quiet_start_hour: settings.quiet_start_hour, quiet_end_hour: settings.quiet_end_hour, timezone: settings.timezone }),
       })
       if (res.ok) { setSettings(await res.json()); onClose() }
     } finally {
@@ -58,6 +65,40 @@ export function AmbientSettingsModal({ open, onClose }: { open: boolean; onClose
   }
 
   const patch = (p: Partial<AmbientSettings>) => setSettings((s) => (s ? { ...s, ...p } : s))
+
+  const subscribed = Boolean(settings?.push_subscription)
+
+  const enablePush = async () => {
+    setPushBusy(true)
+    setPushError(null)
+    try {
+      const result = await subscribeToPush()
+      if (!result.ok) { setPushError(result.error ?? 'failed'); return }
+      await load()
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const disablePush = async () => {
+    setPushBusy(true)
+    setPushError(null)
+    try {
+      await unsubscribeFromPush()
+      await load()
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  // Flipping "Enabled" on with no subscription yet is the natural moment to
+  // prompt for notification permission and register — do both in one click.
+  const toggleEnabled = async () => {
+    if (!settings) return
+    const turningOn = !settings.enabled
+    patch({ enabled: turningOn })
+    if (turningOn && !subscribed) await enablePush()
+  }
 
   return (
     <AnimatePresence>
@@ -86,26 +127,44 @@ export function AmbientSettingsModal({ open, onClose }: { open: boolean; onClose
             ) : (
               <div className="space-y-4 p-4">
                 <p className="font-sans text-[11px] leading-relaxed text-muted-foreground/70">
-                  Ambient Mode texts you an occasional probe when a claim is due — never during quiet hours, never more than your daily cap, and never if nothing&apos;s due. Your reply gets logged just like an in-app probe.
+                  Ambient Mode sends a push notification when a claim is due — never during quiet hours, never more than your daily cap, and never if nothing&apos;s due. Tapping it opens Learn with that probe ready to answer — the same in-app probe flow, not a reply channel.
                 </p>
 
                 <label className="flex items-center justify-between">
                   <span className="font-mono text-[11px] text-foreground">Enabled</span>
                   <button
-                    onClick={() => patch({ enabled: !settings.enabled })}
+                    onClick={toggleEnabled}
                     className={`relative h-5 w-9 rounded-full transition-colors ${settings.enabled ? 'bg-primary' : 'bg-surface-elevated'}`}
                   >
                     <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${settings.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                   </button>
                 </label>
 
-                <div>
-                  <label className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">Phone (for SMS)</label>
-                  <input
-                    value={settings.phone ?? ''} onChange={(e) => patch({ phone: e.target.value || null })}
-                    placeholder="+1 555 123 4567"
-                    className="w-full rounded border border-border bg-surface-base px-3 py-2 font-mono text-[12px] text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none"
-                  />
+                <div className="rounded border border-border bg-surface-base p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                      {subscribed ? <BellRing className="h-3 w-3 text-primary" /> : <BellOff className="h-3 w-3" />}
+                      Push notifications
+                    </span>
+                    {subscribed ? (
+                      <button onClick={disablePush} disabled={pushBusy} className="flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40">
+                        {pushBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <BellOff className="h-3 w-3" />} Disable
+                      </button>
+                    ) : (
+                      <button onClick={enablePush} disabled={pushBusy || !pushSupported()} className="flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary hover:bg-primary/20 disabled:opacity-40">
+                        {pushBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bell className="h-3 w-3" />} Enable
+                      </button>
+                    )}
+                  </div>
+                  {!pushSupported() && (
+                    <p className="mt-1.5 font-sans text-[10px] leading-relaxed text-warning">Push isn&apos;t supported in this browser.</p>
+                  )}
+                  {pushError && (
+                    <p className="mt-1.5 font-sans text-[10px] leading-relaxed text-destructive">
+                      {pushError === 'permission_denied' ? 'Notification permission was denied.' : `Couldn't subscribe (${pushError}).`}
+                    </p>
+                  )}
+                  {subscribed && <p className="mt-1.5 font-sans text-[10px] leading-relaxed text-muted-foreground/50">This browser will receive Ambient probes.</p>}
                 </div>
 
                 <div>

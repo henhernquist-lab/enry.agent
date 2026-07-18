@@ -351,25 +351,63 @@ query↔passage range (exact match ~0.50, related-but-different ~0.25-0.30,
 unrelated ~0.10-0.19) — retune if the embedding model changes. Diffs are saveable
 (above), so one from last week reopens exactly rather than recomputing.
 
-## Ambient Mode — cron + SMS contract
+## Ambient Mode — cron + Web Push contract
 
-A background layer (NOT a tab), `src/lib/learn/ambient.ts`:
+A background layer (NOT a tab), `src/lib/learn/ambient.ts`. Delivery is Web
+Push (VAPID), not SMS — there is no reply channel; a push notification is a
+summons into the app, not a two-way conversation. The answer always goes
+through the same in-app probe-answer path every other probe uses.
+
 - **Settings** live in a `resources` row (`type='learn_ambient_settings'`) — in
   Learn's own settings (the header "Ambient" modal), never global. Fields:
-  enabled, phone, max_per_day, quiet_start/end_hour, timezone. The daily-send
-  counter + the one in-flight `pending` probe live in that same payload.
+  `enabled`, `push_subscription` (`{endpoint, keys:{p256dh, auth}}` or `null`),
+  `max_per_day`, `quiet_start/end_hour`, `timezone`. The daily-send counter +
+  the one in-flight `pending` probe live in that same payload.
+- **Subscription flow**: flipping "Enabled" on in the modal (or the standalone
+  "Enable" button under Push notifications) calls `subscribeToPush()`
+  (`src/lib/push-client.ts`) — requests Notification permission, registers
+  `public/sw.js`, subscribes via `PushManager` using
+  `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, and POSTs the resulting subscription to
+  `/api/learn/ambient/push-subscribe`, which stores it via `saveAmbientSettings`
+  (same row, same merge pattern as every other Ambient setting — no separate
+  table). `DELETE` on that route (or the modal's "Disable" button) clears it.
 - **Cron**: `GET /api/cron/ambient-probe`, `Bearer CRON_SECRET` (identical guard
-  to cruise-tick). Per user, sends at most one probe, gated: enabled → phone →
-  not quiet-hours (tz-aware) → not awaiting a reply (never nags) → under daily
-  cap → a claim is actually due (else silence). **It is not scheduled** — no
-  GitHub Actions workflow entry exists yet; add one (like `enry-cruise-tick.yml`)
-  to go live.
-- **Send**: `sendAmbientSms` is a STUB — no SMS provider is wired. Replace that
-  one function body (Twilio, etc.); nothing else changes.
-- **Reply**: `POST /api/learn/ambient/reply` → `recordAmbientReply` writes
-  `answer_recorded` (`via:'ambient'`) and advances `next_probe_at`, exactly like
-  an in-app probe. Currently guarded by `?token=CRON_SECRET` as a placeholder —
-  replace with the provider's request-signature verification before exposing it.
+  to cruise-tick). Scheduled by `.github/workflows/enry-ambient-probe.yml`
+  (every ~15 min, mirrors `enry-cruise-tick.yml`). Per user, sends at most one
+  probe, gated in order: `enabled` → `push_subscription` present → not
+  quiet-hours (tz-aware) → not `awaiting_engagement` (see below) → under daily
+  cap → a claim is actually due (else `nothing_due` — silence is fine).
+- **Send**: `sendAmbientPush` (`src/lib/learn/ambient.ts`) is real Web Push,
+  credential-gated on `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` /
+  `VAPID_SUBJECT`. With no keys it's a logged no-op (`stubbed: true`) so the
+  decision path stays exercisable without keys — the schedule is inert until
+  keys are set. A genuine send failure (`send_failed`) does NOT consume the
+  daily cap or park `pending` — the claim stays due for the next tick. A `404`/
+  `410` from the push service means the subscription expired
+  (`subscription_expired`): handled the same as `send_failed` (no cap, no
+  pending) AND clears the dead subscription from settings so the UI shows
+  "not subscribed" and prompts a resubscribe.
+- **No reply webhook.** There used to be one (SMS-era); it's gone. Clicking a
+  notification is handled entirely client + service-worker side — see below.
+  Because there's no separate reply-recording path, `pending` (the
+  one-in-flight guard) can't be cleared by an inbound webhook anymore. Instead:
+  a pending probe is **resolved** once the claim's `next_probe_at` has moved
+  past `asked_at` — the fact `recordAnswer` (the in-app probe-answer path,
+  `learn-ops.ts`) already produces on any real answer, read back rather than
+  duplicated. If neither resolved nor answered within `PENDING_TIMEOUT_MS`
+  (24h), the guard lifts anyway — "don't nag, move on" — decision reported as
+  `awaiting_engagement` until then.
+- **Notification click → probe**: `public/sw.js`'s `notificationclick` handler
+  focuses (or opens) a client at `event.notification.data.url`, which is always
+  `/learn?probe=1`. `src/app/learn/page.tsx` reads that query param on mount
+  and auto-runs the exact same `probe` invocation the Probe button triggers
+  (`exec('probe', '', 'probe')`) — no separate code path. Because both this
+  module's `nextDueClaim` and the in-app probe's `selectDueClaim` order by
+  `next_probe_at` ascending, the claim that surfaces is the one the push was
+  about (barring a claim becoming due in between). The query param is stripped
+  via `router.replace('/learn')` right after, so a refresh doesn't re-trigger.
+  The user's typed answer then goes through `recordAnswer` like any other
+  probe — Ambient has no answer-recording logic of its own.
 
 ## Cross-tab actions (the `LearnActions` seam)
 

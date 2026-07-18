@@ -1,21 +1,29 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import webpush from 'web-push'
 import { supabase } from '../supabase'
 import { localParts } from '../cruise/schedule'
 
-// Ambient Mode — passive SMS probing. A background layer (NOT a tab): a cron
-// tick decides whether to text the user one due claim, and an inbound webhook
-// records their reply into claim_events exactly like an in-app probe.
+// Ambient Mode — passive Web Push probing. A background layer (NOT a tab): a
+// cron tick decides whether to push-notify the user about one due claim.
+// There is no reply channel — a push notification is a summons, not a
+// two-way channel. Clicking it opens Learn's Chat tab at /learn?probe=1,
+// which auto-runs the real `probe` verb (src/app/learn/page.tsx), and the
+// user's typed answer goes through the exact same in-app probe-answer path
+// (recordAnswer in learn-ops.ts) as any other probe — this module has no
+// answer-recording logic of its own.
 //
-// This module is the whole decision + parsing surface. It is deliberately
-// build-complete but NOT scheduled and NOT wired to a real SMS provider —
-// sendAmbientSms is a stub (there is no Twilio/etc. in this repo yet). See
-// LEARN.md's Ambient contract and the [PAUSE] items in OVERNIGHT.md.
+// This module is the whole decision + send surface. See LEARN.md's Ambient
+// contract for the full design.
 
 export const AMBIENT_SETTINGS_TYPE = 'learn_ambient_settings'
 
+export interface PushSubscriptionData {
+  endpoint: string
+  keys: { p256dh: string; auth: string }
+}
+
 export interface AmbientSettings {
   enabled: boolean
-  phone: string | null
+  push_subscription: PushSubscriptionData | null
   max_per_day: number          // default 2
   quiet_start_hour: number     // default 22 (10pm) — no sends at/after this local hour
   quiet_end_hour: number       // default 8  (8am)  — resume sends at/after this local hour
@@ -24,7 +32,7 @@ export interface AmbientSettings {
 
 export const DEFAULT_AMBIENT: AmbientSettings = {
   enabled: false,
-  phone: null,
+  push_subscription: null,
   max_per_day: 2,
   quiet_start_hour: 22,
   quiet_end_hour: 8,
@@ -32,8 +40,10 @@ export const DEFAULT_AMBIENT: AmbientSettings = {
 }
 
 interface AmbientPayload extends AmbientSettings {
-  // One probe awaiting a reply. Set on send, cleared on reply. While set, the
-  // cron does NOT send again — "if a response doesn't arrive, don't nag."
+  // One probe awaiting engagement. Set on send, cleared once the claim's
+  // next_probe_at moves past asked_at (proof it was actually answered via the
+  // normal probe path) or once PENDING_TIMEOUT_MS elapses ("don't nag, move
+  // on"). While set and not timed out, the cron does NOT send again.
   pending?: { claim_id: string; content: string; asked_at: string } | null
   // Daily send counter, reset when the local date rolls (same pattern as
   // cruise-tick's monthly cap counter).
@@ -57,7 +67,7 @@ export async function getAmbientSettings(userId: string): Promise<AmbientSetting
   const p = (data?.payload ?? {}) as Partial<AmbientPayload>
   return {
     enabled: p.enabled ?? DEFAULT_AMBIENT.enabled,
-    phone: p.phone ?? DEFAULT_AMBIENT.phone,
+    push_subscription: p.push_subscription ?? DEFAULT_AMBIENT.push_subscription,
     max_per_day: p.max_per_day ?? DEFAULT_AMBIENT.max_per_day,
     quiet_start_hour: p.quiet_start_hour ?? DEFAULT_AMBIENT.quiet_start_hour,
     quiet_end_hour: p.quiet_end_hour ?? DEFAULT_AMBIENT.quiet_end_hour,
@@ -93,84 +103,67 @@ export function isQuietHours(now: Date, settings: AmbientSettings): boolean {
   return start > end ? minutes >= start || minutes < end : minutes >= start && minutes < end
 }
 
-// The one probe message template. Kept here (not inline in the cron) so it's a
-// single reviewable string — see OVERNIGHT.md [PAUSE].
-export function buildProbeMessage(claimContent: string): string {
-  return `enry: quick check — in a sentence, what's the deal with: "${claimContent}"? Reply here to log it. (Txt STOP to pause.)`
+// The notification a due probe becomes. `data.url` is what the service
+// worker's notificationclick handler opens/focuses — Learn's Chat tab,
+// pre-loaded to auto-run `probe` (same claim, since both this module's
+// nextDueClaim and the in-app probe's selectDueClaim order by next_probe_at
+// ascending — whichever claim is actually next-due when the user engages).
+export interface ProbePushPayload {
+  title: string
+  body: string
+  data: { url: string; claim_id: string }
 }
 
-// SMS SEND — real Twilio, credential-gated. When Twilio creds are present this
-// actually POSTs to Twilio's Messages API; when they're absent it degrades to a
-// logged no-op (stubbed) so the cron's decision path stays fully exercisable
-// without a provider. Credentials needed (env):
-//   TWILIO_ACCOUNT_SID
-//   TWILIO_AUTH_TOKEN
-//   TWILIO_FROM_NUMBER        (a Twilio SMS-capable number, E.164)
-//     — or — TWILIO_MESSAGING_SERVICE_SID (use one, not both)
-export interface SmsResult { sent: boolean; stubbed: boolean; error?: string }
-
-export function twilioConfigured(): boolean {
-  return Boolean(
-    process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_MESSAGING_SERVICE_SID),
-  )
+export function buildProbePushPayload(claimId: string, claimContent: string): ProbePushPayload {
+  return {
+    title: 'enry — quick check',
+    body: claimContent,
+    data: { url: '/learn?probe=1', claim_id: claimId },
+  }
 }
 
-export async function sendAmbientSms(phone: string, message: string): Promise<SmsResult> {
-  const sid = process.env.TWILIO_ACCOUNT_SID
-  const token = process.env.TWILIO_AUTH_TOKEN
-  const from = process.env.TWILIO_FROM_NUMBER
-  const messagingService = process.env.TWILIO_MESSAGING_SERVICE_SID
+// PUSH SEND — real Web Push (VAPID), credential-gated. When VAPID keys are
+// present this actually sends via the browser's push service; when they're
+// absent it degrades to a logged no-op (stubbed) so the cron's decision path
+// stays fully exercisable without keys. Credentials needed (env):
+//   NEXT_PUBLIC_VAPID_PUBLIC_KEY
+//   VAPID_PRIVATE_KEY
+//   VAPID_SUBJECT        (a 'mailto:' address or 'https:' URL, per the spec)
+export interface PushResult { sent: boolean; stubbed: boolean; expired?: boolean; error?: string }
 
-  if (!twilioConfigured()) {
-    console.log(`[ambient] STUB send (no Twilio creds) → ${phone.slice(0, 3)}***: ${message.slice(0, 60)}…`)
+export function pushConfigured(): boolean {
+  return Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT)
+}
+
+export async function sendAmbientPush(subscription: PushSubscriptionData, payload: ProbePushPayload): Promise<PushResult> {
+  if (!pushConfigured()) {
+    console.log(`[ambient] STUB send (no VAPID keys) → ${subscription.endpoint.slice(0, 40)}…: ${payload.body.slice(0, 60)}…`)
     return { sent: false, stubbed: true }
   }
 
-  const body = new URLSearchParams({ To: phone, Body: message })
-  if (messagingService) body.set('MessagingServiceSid', messagingService)
-  else body.set('From', from!)
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT!, process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!, process.env.VAPID_PRIVATE_KEY!)
 
   try {
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body,
-    })
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '')
-      console.error(`[ambient] Twilio send failed ${res.status}: ${detail.slice(0, 200)}`)
-      return { sent: false, stubbed: false, error: `twilio_${res.status}` }
-    }
+    await webpush.sendNotification(subscription, JSON.stringify(payload))
     return { sent: true, stubbed: false }
   } catch (e) {
-    console.error('[ambient] Twilio send threw:', e)
-    return { sent: false, stubbed: false, error: 'twilio_exception' }
+    const err = e as { statusCode?: number; message?: string }
+    // 404 (Not Found) and 410 (Gone) mean the push service has invalidated
+    // this subscription — the browser unregistered it, the user cleared site
+    // data, etc. That's an expiry, not a transient failure.
+    if (err.statusCode === 404 || err.statusCode === 410) {
+      console.log(`[ambient] push subscription expired (${err.statusCode})`)
+      return { sent: false, stubbed: false, expired: true, error: `push_${err.statusCode}` }
+    }
+    console.error('[ambient] push send failed:', err.statusCode, err.message)
+    return { sent: false, stubbed: false, error: `push_${err.statusCode ?? 'exception'}` }
   }
 }
 
-// Twilio request-signature verification for the inbound reply webhook. Twilio
-// signs each webhook: signature = base64(HMAC-SHA1(authToken, fullUrl +
-// concat(POST params sorted by key as key+value))). We recompute and compare in
-// constant time. Fails closed: no auth token configured → not valid.
-// (https://www.twilio.com/docs/usage/security#validating-requests)
-export function verifyTwilioSignature(fullUrl: string, params: Record<string, string>, signature: string | null): boolean {
-  const token = process.env.TWILIO_AUTH_TOKEN
-  if (!token || !signature) return false
-  let data = fullUrl
-  for (const key of Object.keys(params).sort()) data += key + params[key]
-  const expected = createHmac('sha1', token).update(Buffer.from(data, 'utf-8')).digest('base64')
-  const a = Buffer.from(expected)
-  const b = Buffer.from(signature)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
-
 // Reason strings the cron reports per user, so a dry run is legible.
-export type AmbientDecision = 'sent' | 'quiet_hours' | 'daily_cap' | 'awaiting_reply' | 'nothing_due' | 'disabled' | 'no_phone' | 'send_failed'
+export type AmbientDecision =
+  | 'sent' | 'quiet_hours' | 'daily_cap' | 'awaiting_engagement' | 'nothing_due'
+  | 'disabled' | 'no_subscription' | 'send_failed' | 'subscription_expired'
 
 async function loadRows(): Promise<AmbientRow[]> {
   const { data } = await supabase
@@ -194,41 +187,76 @@ async function nextDueClaim(userId: string): Promise<{ id: string; content: stri
   return (data as { id: string; content: string }) ?? null
 }
 
-// Evaluate + (stub-)send one user's ambient probe. Pure decision logic; the
-// actual "send" is the stub above. Returns the decision for the cron summary.
+// A pending probe is "resolved" once the claim's next_probe_at has moved past
+// asked_at — which only happens via the in-app probe-answer path's
+// recordAnswer (it bumps next_probe_at forward by half_life on a real
+// answer). No separate write path needed — this reads the same fact the
+// answer path already produced.
+async function pendingIsResolved(pending: NonNullable<AmbientPayload['pending']>): Promise<boolean> {
+  const { data } = await supabase.from('claims').select('next_probe_at').eq('id', pending.claim_id).maybeSingle()
+  if (!data?.next_probe_at) return false
+  return new Date(data.next_probe_at).getTime() > new Date(pending.asked_at).getTime()
+}
+
+// "If a response doesn't arrive in a reasonable window, don't nag — move on."
+// There's no reply webhook to clear `pending` anymore, so this is the only
+// thing that lifts the one-in-flight guard when the user never engages.
+const PENDING_TIMEOUT_MS = 24 * 60 * 60 * 1000
+
+// Evaluate + send one user's ambient probe. Pure decision logic aside from the
+// actual send call. Returns the decision for the cron summary.
 export async function runAmbientForRow(row: AmbientRow, now: Date): Promise<AmbientDecision> {
   const s: AmbientSettings = {
     enabled: row.payload.enabled ?? false,
-    phone: row.payload.phone ?? null,
+    push_subscription: row.payload.push_subscription ?? null,
     max_per_day: row.payload.max_per_day ?? DEFAULT_AMBIENT.max_per_day,
     quiet_start_hour: row.payload.quiet_start_hour ?? DEFAULT_AMBIENT.quiet_start_hour,
     quiet_end_hour: row.payload.quiet_end_hour ?? DEFAULT_AMBIENT.quiet_end_hour,
     timezone: row.payload.timezone ?? DEFAULT_AMBIENT.timezone,
   }
   if (!s.enabled) return 'disabled'
-  if (!s.phone) return 'no_phone'
+  if (!s.push_subscription) return 'no_subscription'
   if (isQuietHours(now, s)) return 'quiet_hours'
-  if (row.payload.pending) return 'awaiting_reply' // don't nag
+
+  let payload = row.payload
+  if (payload.pending) {
+    const timedOut = now.getTime() - new Date(payload.pending.asked_at).getTime() > PENDING_TIMEOUT_MS
+    const resolved = await pendingIsResolved(payload.pending)
+    if (!resolved && !timedOut) return 'awaiting_engagement'
+    // Resolved or abandoned — lift the guard and persist the clear so future
+    // ticks don't redo this check for a stale flag.
+    payload = { ...payload, pending: null }
+    await supabase.from('resources').update({ payload }).eq('id', row.resourceId)
+  }
 
   const localDate = localParts(now, s.timezone).date
-  const countToday = row.payload.sends_local_date === localDate ? (row.payload.sends_count ?? 0) : 0
+  const countToday = payload.sends_local_date === localDate ? (payload.sends_count ?? 0) : 0
   if (countToday >= s.max_per_day) return 'daily_cap'
 
   const due = await nextDueClaim(row.userId)
   if (!due) return 'nothing_due' // silence is fine
 
   const asked_at = now.toISOString()
-  const send = await sendAmbientSms(s.phone, buildProbeMessage(due.content))
-  // A real provider error (creds present but Twilio rejected) must NOT consume
-  // the daily cap or park a pending probe — leave it due so the next tick
-  // retries. A stubbed no-op (no creds) still advances the flow so the decision
-  // path stays exercisable in a dry run.
+  const send = await sendAmbientPush(s.push_subscription, buildProbePushPayload(due.id, due.content))
+
+  if (send.expired) {
+    // Invalidate the dead subscription so the UI can prompt a resubscribe.
+    // Per spec: expiry behaves like send_failed — no cap consumed, no pending
+    // parked.
+    await supabase.from('resources').update({ payload: { ...payload, push_subscription: null } }).eq('id', row.resourceId)
+    return 'subscription_expired'
+  }
+  // A real provider error (keys present but the push service rejected it)
+  // must NOT consume the daily cap or park a pending probe — leave it due so
+  // the next tick retries. A stubbed no-op (no keys) still advances the flow
+  // so the decision path stays exercisable in a dry run.
   if (!send.sent && !send.stubbed) return 'send_failed'
+
   // Mirror an in-app probe: write probe_asked (via ambient) so activity/fog
   // reflect it, and park the pending probe + bump the daily counter.
   await supabase.from('claim_events').insert({ claim_id: due.id, event_type: 'probe_asked', payload: { content: due.content, via: 'ambient' } })
   const merged: AmbientPayload = {
-    ...row.payload, ...s,
+    ...payload, ...s,
     pending: { claim_id: due.id, content: due.content, asked_at },
     sends_local_date: localDate,
     sends_count: countToday + 1,
@@ -248,35 +276,4 @@ export async function runAmbientTick(now: Date = new Date()): Promise<{ evaluate
     }
   }
   return { evaluated: rows.length, sent: decisions.filter((d) => d.decision === 'sent').length, decisions }
-}
-
-// Inbound reply → record like an in-app probe answer. Finds the user by phone,
-// writes answer_recorded (via ambient), advances next_probe_at using the
-// claim's half_life, clears pending. Returns what happened.
-export async function recordAmbientReply(fromPhone: string, body: string): Promise<{ ok: boolean; reason: string }> {
-  const answer = body.trim()
-  if (!answer) return { ok: false, reason: 'empty_body' }
-
-  const rows = await loadRows()
-  const norm = (p: string | null) => (p ?? '').replace(/[^\d]/g, '').slice(-10)
-  const row = rows.find((r) => norm(r.payload.phone ?? null) === norm(fromPhone) && norm(fromPhone).length >= 10)
-  if (!row) return { ok: false, reason: 'unknown_sender' }
-  const pending = row.payload.pending
-  if (!pending) return { ok: false, reason: 'no_pending_probe' }
-
-  const { error: evErr } = await supabase.from('claim_events').insert({
-    claim_id: pending.claim_id,
-    event_type: 'answer_recorded',
-    payload: { answer, asked_at: pending.asked_at, via: 'ambient' },
-  })
-  if (evErr) return { ok: false, reason: `event_insert_failed:${evErr.message}` }
-
-  const { data: claim } = await supabase.from('claims').select('half_life').eq('id', pending.claim_id).maybeSingle()
-  const halfLife = (claim?.half_life as number) ?? 24
-  const now = new Date()
-  const nextProbeAt = new Date(now.getTime() + halfLife * 3_600_000).toISOString()
-  await supabase.from('claims').update({ last_probed_at: now.toISOString(), next_probe_at: nextProbeAt, updated_at: now.toISOString() }).eq('id', pending.claim_id)
-
-  await supabase.from('resources').update({ payload: { ...row.payload, pending: null } }).eq('id', row.resourceId)
-  return { ok: true, reason: 'recorded' }
 }

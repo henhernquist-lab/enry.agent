@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
@@ -150,9 +150,10 @@ const SKILL_META: Record<string, { color: ColorKey; verb: 'teach' | 'defend' }> 
   'eli-expert': { color: 'primary', verb: 'defend' },
 }
 
-export default function LearnPage() {
+function LearnPageContent() {
   const { status } = useSession()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [activeTab, setActiveTab] = useState<string>(CHAT_TAB)
   // Feature tabs currently open in the bar (registry ids, excludes Chat).
@@ -260,6 +261,21 @@ export default function LearnPage() {
       setActiveVerb(null)
     }
   }, [sessionId])
+
+  // Ambient push notification deep link: the service worker's
+  // notificationclick handler opens /learn?probe=1. Auto-run the exact same
+  // `probe` invocation the Probe button triggers — no separate code path —
+  // so whatever claim is next-due surfaces and the reply goes through the
+  // normal in-app probe-answer flow. Runs once; strips the query param after
+  // so a refresh doesn't re-trigger it.
+  const autoProbeRan = useRef(false)
+  useEffect(() => {
+    if (autoProbeRan.current) return
+    if (searchParams.get('probe') !== '1') return
+    autoProbeRan.current = true
+    setTimeout(() => exec('probe', '', 'probe'), 0)
+    router.replace('/learn')
+  }, [searchParams, exec, router])
 
   const handleSend = () => {
     const text = input.trim()
@@ -578,5 +594,14 @@ export default function LearnPage() {
       </div>
       )}
     </div>
+  )
+}
+
+// useSearchParams (for the ?probe=1 deep link) requires a Suspense boundary.
+export default function LearnPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-background"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
+      <LearnPageContent />
+    </Suspense>
   )
 }

@@ -23,7 +23,6 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const patch: Partial<AmbientSettings> = {}
   if (typeof body.enabled === 'boolean') patch.enabled = body.enabled
-  if (typeof body.phone === 'string' || body.phone === null) patch.phone = body.phone
   if (Number.isFinite(body.max_per_day)) patch.max_per_day = Math.max(1, Math.min(10, Math.floor(body.max_per_day)))
   if (Number.isFinite(body.quiet_start_hour)) patch.quiet_start_hour = Math.max(0, Math.min(23, Math.floor(body.quiet_start_hour)))
   if (Number.isFinite(body.quiet_end_hour)) patch.quiet_end_hour = Math.max(0, Math.min(23, Math.floor(body.quiet_end_hour)))

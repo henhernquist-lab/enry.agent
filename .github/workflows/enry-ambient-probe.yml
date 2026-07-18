@@ -1,12 +1,12 @@
 # Enry Learn — Ambient Mode probe tick.
 #
 # Pings the deployed app's /api/cron/ambient-probe every ~15 min. The endpoint
-# evaluates each Ambient-enabled user's settings and sends at most one due probe
-# each, respecting quiet hours + daily cap + one-in-flight. NOTHING is sent
-# unless a claim is actually due AND Twilio creds are configured — with no
-# creds the send is a logged no-op, so scheduling this is safe on its own.
-# Hosted here (not a Vercel cron) so it works on Vercel Hobby and survives
-# redeploys — same pattern as enry-cruise-tick.yml.
+# evaluates each Ambient-enabled user's settings and sends at most one due
+# Web Push probe each, respecting quiet hours + daily cap + one-in-flight.
+# NOTHING is sent unless a claim is actually due AND VAPID keys are configured
+# — with no keys the send is a logged no-op, so scheduling this is safe on its
+# own. Hosted here (not a Vercel cron) so it works on Vercel Hobby and
+# survives redeploys — same pattern as enry-cruise-tick.yml.
 #
 # GitHub's scheduler is best-effort — a run can land 5–15 min late, so
 # wall-clock precision is ~quarter-hour, not exact. Quiet-hours + daily-cap
@@ -16,9 +16,9 @@
 #   CRON_SECRET  — must match the app's CRON_SECRET env var
 #   DEPLOY_URL   — the app's public base URL, e.g. https://enry-agent.vercel.app
 #
-# To actually send SMS, the app also needs Twilio env vars set in the
-# deployment (NOT here): TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and one of
-# TWILIO_FROM_NUMBER / TWILIO_MESSAGING_SERVICE_SID.
+# To actually send push notifications, the app also needs VAPID env vars set
+# in the deployment (NOT here): NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
+# VAPID_SUBJECT.
 name: Enry Learn — Ambient probe tick
 
 on:

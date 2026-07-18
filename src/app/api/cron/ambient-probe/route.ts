@@ -2,10 +2,11 @@ import { runAmbientTick } from '@/lib/learn/ambient'
 
 // Ambient Mode cron tick. Mirrors cruise-tick's shape: a scheduler curls this
 // with the CRON_SECRET bearer; it evaluates every user's ambient settings and
-// sends at most one due probe each, respecting quiet hours + daily cap +
-// one-in-flight. Scheduled by .github/workflows/enry-ambient-probe.yml (every
-// ~15 min). Sending is credential-gated: with no Twilio env vars the send is a
-// logged no-op, so the schedule is inert until creds are added.
+// sends at most one due probe each (Web Push), respecting quiet hours + daily
+// cap + one-in-flight. Scheduled by .github/workflows/enry-ambient-probe.yml
+// (every ~15 min). Sending is credential-gated: with no VAPID env vars the
+// send is a logged no-op, so the schedule is inert until keys are added — see
+// NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT.
 export const maxDuration = 60
 
 export async function GET(req: Request) {
