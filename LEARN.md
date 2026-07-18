@@ -67,12 +67,21 @@ feature registers a new event type by writing one — zero migration. This is
 the whole point of the table: features derive their behavior by reading this
 log, not by the base predicting what they'll need.
 
-Event types the base itself writes:
+Event types written across Learn (base + the verbs/features built on it):
 
 | event_type | payload shape | written by |
 |---|---|---|
-| `probe_asked` | `{ content: string }` | `probeNext` → `surfaceNextDue` |
-| `answer_recorded` | `{ answer: string, asked_at: string }` | `probeNext` → `recordAnswer` |
+| `probe_asked` | `{ content: string, via?: 'ambient' }` | `surfaceNextDue`; Ambient cron (`via:'ambient'`) |
+| `answer_recorded` | `{ answer: string, asked_at: string, via?: 'ambient' }` | `recordAnswer`; Ambient reply (`via:'ambient'`) |
+| `defense_attempted` | `{ claim_content, counterargument, rebuttal, rounds: [{side,text}], asked_at }` | `defend` (`recordDefense`) |
+| `explanation_graded` | `{ explanation, verdict: 'SURVIVED'\|'EXPOSED'\|'EVADED', rationale, claim_content, asked_at }` | `teach` (`gradeExplanation`) |
+| `claim_retired` | `{ claim_content }` | `retire` (on success) |
+| `resource_saved` | `{ view, title, params, snapshot, saved_at }` | `saveView` (claim-anchored path only) |
+
+`rounds[]` in `defense_attempted` is shaped for a future Argument Ledger to
+replay the exchange. `resource_saved` is the claim-anchored half of saveable
+views (see "Saveable views" below) — multi-claim view artifacts go to
+`resources`, not here.
 
 When you add a new event type, add a row to this table in your own PR — a
 feature agent reading this file next should be able to see the full registry
@@ -150,9 +159,19 @@ registered in the `switch` from day one:
 export const LEARN_VERBS = ['learn', 'probe', 'gap', 'defend', 'teach', 'retire'] as const
 ```
 
-`gap`, `defend`, `teach`, `retire` currently call `notYetImplemented(verb)`,
-which round-trips through the real route (not faked client-side) and
-returns a clear message. To implement one:
+**All six verbs are now implemented.** `gap` (weakest-topic surfacer, read-only),
+`defend` (two-phase: strongest counterargument → your rebuttal, logs
+`defense_attempted`), `teach` (Feynman gate: you explain a claim, a separate
+model call grades it `SURVIVED`/`EXPOSED`/`EVADED` and logs
+`explanation_graded`), and `retire` (moves a claim to `status='retired'` — hard-
+gated: refuses unless the claim has a `SURVIVED` `explanation_graded` in its
+history). `defend`/`teach` park a `pending_defense`/`pending_teach` in the
+session (same one-in-flight discipline as `pending_probe`); the client routes
+the next message to whichever interaction is pending. The teach rubric is
+isolated as `TEACH_GRADING_RUBRIC` in `learn-ops.ts` — swap that one constant
+to retune grading without touching any wiring.
+
+To add a further verb (or replace one):
 
 1. Write a real function in `learn-ops.ts` (or a new file in
    `src/lib/learn/` if it's substantial — `learn-ops.ts` importing from
@@ -179,12 +198,11 @@ requirement Drive's session writes already have.
 `feynman`, `fifth-grader`, `socratic-mode`, and `eli-expert` moved out of
 main chat's `SKILLS` registry array into `LEARN_SKILLS`
 (`src/lib/skills/registry.ts`) — same `SkillDefinition` objects, imported
-not forked. They're currently browsable in Learn's page (a static sidebar
-list) but **not wired into any verb** — `teach` and `defend` are the
-obvious homes for them (e.g. `teach` running the Feynman technique's
-system prompt against a specific claim, `defend` running ELI-Expert's
-"push back" mode to test whether a claim survives scrutiny). When you build
-either verb, that's where these plug in — `getSkill()` only searches the
+not forked. They're browsable in Learn's Chat-tab sidebar. `teach` and `defend` are now
+implemented but use their OWN prompts (`TEACH_GRADING_RUBRIC`,
+`DEFEND_SYSTEM_PROMPT`), not these skill definitions — wiring a specific
+technique's system prompt into a verb (e.g. Feynman into `teach`, ELI-Expert
+into `defend`) is still an open enhancement. `getSkill()` only searches the
 main `SKILLS` array, so look these up via `LEARN_SKILLS.find(...)` instead.
 
 ## Reused, not rebuilt
@@ -293,6 +311,74 @@ pending-probe state, so it can't be closed or opened from "+". Every feature
 (except the inline LLM skills in the Chat tab) must be a registry entry — that
 rule is what keeps "each feature is its own openable tab" true as Freebuff
 lands.
+
+## Sources (Source Custody) + the pin mechanism
+
+The Sources tab (`src/lib/learn/sources.ts`, `/api/learn/sources`) groups every
+non-retired claim by its `(source_type, source_ref)` provenance. A source can be
+**pinned** as trusted. Pins are stored as `resources` rows
+(`type='learn_source_pin'`, payload `{source_type, source_ref}`) — no migration,
+same polymorphic pattern as `learn_session`. `getPinnedSourceKeys(userId)` is the
+seam a future **Source-Grounded Mode** reads to preferentially cite pinned
+sources and to treat unpinned-custody claims as untrusted. The base builds the
+mechanism only — it enforces nothing (the UI surfaces a "N claims lack pinned
+custody" count but changes no `status`).
+
+## Saveable views (Map / Diff / Sources)
+
+`src/lib/learn/saved-views.ts` + `/api/learn/saved-views` persist a view so it
+reopens EXACTLY (reads a frozen `snapshot`, never recomputes). Two stores:
+- **Multi-claim view artifact** (a Diff result, a Map camera + node snapshot):
+  `resources` row, `type='learn_saved_view'`.
+- **Claim-anchored save**: `claim_events` row, `event_type='resource_saved'` on
+  that claim.
+A new `learn_resources` table was deliberately NOT created: `resources` is the
+established generic home and avoids a migration; `claim_events` can't hold a
+multi-claim artifact anyway (`claim_id` is `NOT NULL`). Payload carries `params`
+(reopen inputs) + `snapshot` (frozen data). Note Postgres `jsonb` does not
+preserve key order — reconstruction must be value-equality, not string-equality.
+
+## Knowledge Diff — data model
+
+`src/lib/learn/diff.ts` + `/api/learn/diff`. Given a target topic: one LLM call
+maps its **semantic surface** into 8-14 facets; each facet (embedded as
+`facet + why`, `'query'` mode) is compared by cosine to the user's claim
+embeddings — the SAME pipeline the Map uses, no new similarity system. Per facet:
+`missing` (nearest claim sim < `FACET_MATCH_SIM`), else `known` (live
+`computeStrength ≥ 0.6` and no recent `EXPOSED`/`EVADED` teach) or `half_known`.
+`FACET_MATCH_SIM=0.40` is calibrated to nv-embedqa-e5-v5's COMPRESSED
+query↔passage range (exact match ~0.50, related-but-different ~0.25-0.30,
+unrelated ~0.10-0.19) — retune if the embedding model changes. Diffs are saveable
+(above), so one from last week reopens exactly rather than recomputing.
+
+## Ambient Mode — cron + SMS contract
+
+A background layer (NOT a tab), `src/lib/learn/ambient.ts`:
+- **Settings** live in a `resources` row (`type='learn_ambient_settings'`) — in
+  Learn's own settings (the header "Ambient" modal), never global. Fields:
+  enabled, phone, max_per_day, quiet_start/end_hour, timezone. The daily-send
+  counter + the one in-flight `pending` probe live in that same payload.
+- **Cron**: `GET /api/cron/ambient-probe`, `Bearer CRON_SECRET` (identical guard
+  to cruise-tick). Per user, sends at most one probe, gated: enabled → phone →
+  not quiet-hours (tz-aware) → not awaiting a reply (never nags) → under daily
+  cap → a claim is actually due (else silence). **It is not scheduled** — no
+  GitHub Actions workflow entry exists yet; add one (like `enry-cruise-tick.yml`)
+  to go live.
+- **Send**: `sendAmbientSms` is a STUB — no SMS provider is wired. Replace that
+  one function body (Twilio, etc.); nothing else changes.
+- **Reply**: `POST /api/learn/ambient/reply` → `recordAmbientReply` writes
+  `answer_recorded` (`via:'ambient'`) and advances `next_probe_at`, exactly like
+  an in-app probe. Currently guarded by `?token=CRON_SECRET` as a placeholder —
+  replace with the provider's request-signature verification before exposing it.
+
+## Cross-tab actions (the `LearnActions` seam)
+
+A feature tab that must hand off to the Chat console (Knowledge Diff's "start
+studying this gap" drops a scoped `learn` invocation into Chat) uses
+`useLearnActions()` (`src/components/learn/learn-actions.tsx`). The page provides
+`{ openChatWith }` ONCE via `LearnActionsProvider` wrapping tab content — so a
+tab never reaches into page/shell state directly. Add a new cross-tab action =
+one field on `LearnActions`, not per-tab shell surgery.
 
 ## Known gaps, left for you on purpose
 
