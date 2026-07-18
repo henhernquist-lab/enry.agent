@@ -892,7 +892,7 @@ export function CenterPanel({
                 <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
               </button>
               {modelOpen && (
-                <div className="absolute top-full left-0 z-50 mt-1 w-64 border border-border bg-surface-secondary shadow-xl">
+                <div className="absolute top-full left-0 z-50 mt-1 w-80 max-h-[min(28rem,calc(100dvh-12rem))] overflow-y-auto border border-border bg-surface-secondary shadow-xl">
                   {MODELS.map((m) => (
                     <button
                       type="button"

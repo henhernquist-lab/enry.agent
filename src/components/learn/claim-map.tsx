@@ -428,12 +428,16 @@ export function ClaimMap() {
           onWheel={onWheel}
         />
 
-        {/* Fog toggle */}
+        {/* Fog toggle — absolute over the canvas at top-left, z-10 so it's
+            definitively above the canvas regardless of stacking quirks. The
+            onClick flips the `fog` state used by `draw()` to paint the
+            overlay; the animation-loop useEffect re-creates on fog change. */}
         <button
           onClick={() => setFog((f) => !f)}
-          className={`absolute left-3 top-3 flex items-center gap-1.5 rounded border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-colors ${
+          className={`absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-colors ${
             fog ? 'border-accent/50 bg-accent/15 text-accent' : 'border-border bg-surface-secondary text-muted-foreground hover:text-foreground'
           }`}
+          style={{ pointerEvents: 'auto' }}
           title={fogLabel}
         >
           {fog ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />} {fog ? 'Fog on' : 'Fog off'}
