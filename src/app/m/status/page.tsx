@@ -1,41 +1,86 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Activity, CheckCircle, AlertTriangle, XCircle, Play, ChevronDown } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Activity, Loader2, RefreshCw } from 'lucide-react'
+import { CruiseAutoCard } from '@/components/mobile/CruiseAutoCard'
+import { CruiseScheduleSheet } from '@/components/mobile/CruiseScheduleSheet'
+import type { CruiseAutoJob } from '@/app/api/cruise/autos/route'
 
-interface CronJob {
-  id: string
-  name: string
-  description: string
-  status: 'green' | 'yellow' | 'red'
-  lastRun: string
-  nextRun: string
-  lastOutput?: string
-  lastDuration?: string
-}
+// Cruise Auto-run management for enry lite. Reads/writes the SAME
+// cruise_repos / cruise_goal_runs state desktop's AutoRunPanel does — no
+// mobile-only scheduler path, no separate schema. See LEARN.md-adjacent
+// contract: /api/cruise/autos (read), /api/cruise/repos/autorun (schedule
+// write), /api/cruise/goal-runs (manual run trigger).
 
-const MOCK_JOBS: CronJob[] = [
-  { id: '1', name: 'Cruise Auto-Scan', description: 'Scheduled scan-and-fix run', status: 'green', lastRun: '12m ago', nextRun: '3h 48m', lastOutput: '3 fixes applied, 0 failures', lastDuration: '2.1s' },
-  { id: '2', name: 'Overnight Reclaim', description: 'Cleanup stale overnight runs', status: 'green', lastRun: '1h ago', nextRun: '23h', lastOutput: '0 stale runs reclaimed', lastDuration: '0.3s' },
-  { id: '3', name: 'Memory Compaction', description: 'Summarize old conversation history', status: 'yellow', lastRun: '2h ago', nextRun: '22h', lastOutput: '215 messages compacted — 3 sessions reached threshold', lastDuration: '4.7s' },
-  { id: '4', name: 'Skill Prompt Review', description: 'Analyze invocation history for prompt improvements', status: 'red', lastRun: '6h ago', nextRun: '18h', lastOutput: 'Failed: LLM timeout after 60s', lastDuration: '60.0s (timeout)' },
-]
-
-const STATUS_ICONS = {
-  green: CheckCircle,
-  yellow: AlertTriangle,
-  red: XCircle,
-}
-
-const STATUS_COLORS = {
-  green: 'text-primary',
-  yellow: 'text-warning',
-  red: 'text-destructive',
-}
+const PULL_THRESHOLD = 70
 
 export default function MobileStatusPage() {
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [jobs, setJobs] = useState<CruiseAutoJob[] | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [scheduleJob, setScheduleJob] = useState<CruiseAutoJob | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const pullStartY = useRef<number | null>(null)
+  const [pullDistance, setPullDistance] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const fetchJobs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/cruise/autos')
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? 'Failed to load'); return }
+      setError(null)
+      setJobs(data.jobs ?? [])
+    } catch {
+      setError('Network error loading Cruise status')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  useEffect(() => { setTimeout(fetchJobs, 0) }, [fetchJobs])
+
+  const runNow = useCallback(async (repo: string) => {
+    const res = await fetch('/api/cruise/goal-runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error ?? 'Run failed to start')
+    // Real state (queued/running, real heartbeat) replaces the card's
+    // optimistic "running…" flip once this lands.
+    setTimeout(() => { fetchJobs() }, 3000)
+  }, [fetchJobs])
+
+  const openSchedule = useCallback((job: CruiseAutoJob) => {
+    setScheduleJob(job)
+    setSheetOpen(true)
+  }, [])
+
+  // Minimal touch-based pull-to-refresh — only engages when the scroll
+  // container is already at the top (so it never fights normal scrolling).
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (scrollRef.current && scrollRef.current.scrollTop <= 0) {
+      pullStartY.current = e.touches[0].clientY
+    }
+  }
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (pullStartY.current == null) return
+    const delta = e.touches[0].clientY - pullStartY.current
+    if (delta > 0) setPullDistance(Math.min(delta, PULL_THRESHOLD * 1.5))
+  }
+  const onTouchEnd = () => {
+    if (pullDistance >= PULL_THRESHOLD) {
+      setRefreshing(true)
+      fetchJobs()
+    }
+    pullStartY.current = null
+    setPullDistance(0)
+  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -43,72 +88,67 @@ export default function MobileStatusPage() {
         className="flex-shrink-0 border-b border-border bg-surface-secondary px-4 py-3"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
       >
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-primary" />
-          <span className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">Status</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-primary" />
+            <span className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">Status</span>
+          </div>
+          <button
+            onClick={() => { setRefreshing(true); fetchJobs() }}
+            className="rounded p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Refresh"
+            style={{ minHeight: 44, minWidth: 44 }}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto scrollbar-hidden px-4 py-4">
-        <div className="space-y-3">
-          {MOCK_JOBS.map((job) => {
-            const Icon = STATUS_ICONS[job.status]
-            const colorClass = STATUS_COLORS[job.status]
-            const expanded = expandedId === job.id
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto scrollbar-hidden px-4 py-4"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {pullDistance > 0 && (
+          <div className="flex items-center justify-center py-2" style={{ opacity: Math.min(pullDistance / PULL_THRESHOLD, 1) }}>
+            <RefreshCw className={`h-4 w-4 text-primary ${pullDistance >= PULL_THRESHOLD ? 'animate-spin' : ''}`} />
+          </div>
+        )}
 
-            return (
-              <motion.button
-                key={job.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                onClick={() => setExpandedId(expanded ? null : job.id)}
-                className="w-full rounded-xl border border-border bg-surface-secondary p-4 text-left transition-colors hover:border-primary/20"
-                style={{ minHeight: 44 }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${colorClass}`} />
-                    <div>
-                      <span className="font-mono text-[11px] font-semibold text-foreground">{job.name}</span>
-                      <p className="text-[11px] text-muted-foreground">{job.description}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 text-right">
-                    <div className="flex flex-col items-end">
-                      <span className="font-mono text-[9px] text-muted-foreground">Last: {job.lastRun}</span>
-                      <span className="font-mono text-[9px] text-muted-foreground/60">Next: {job.nextRun}</span>
-                    </div>
-                    <ChevronDown className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                  </div>
-                </div>
+        {loading && !jobs && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
 
-                {expanded && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="mt-3 space-y-2 overflow-hidden"
-                  >
-                    <div className="rounded border border-border bg-surface-elevated px-3 py-2">
-                      <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Last output</span>
-                      <p className="mt-0.5 font-mono text-[10px] text-foreground">{job.lastOutput}</p>
-                      {job.lastDuration && (
-                        <p className="mt-0.5 font-mono text-[9px] text-muted-foreground">Duration: {job.lastDuration}</p>
-                      )}
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation() }}
-                      className="flex w-full items-center justify-center gap-1.5 rounded border border-primary/30 bg-primary/10 py-2 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20"
-                      style={{ minHeight: 44 }}
-                    >
-                      <Play className="h-3 w-3" /> Run now
-                    </button>
-                  </motion.div>
-                )}
-              </motion.button>
-            )
-          })}
-        </div>
+        {error && (
+          <p className="py-8 text-center font-mono text-[11px] text-destructive">{error}</p>
+        )}
+
+        {!loading && !error && jobs && jobs.length === 0 && (
+          <div className="py-12 text-center">
+            <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground/50">No Cruise repos enabled</p>
+            <p className="mt-2 font-sans text-[12px] text-muted-foreground/40">Enable Cruise for a repo on desktop to manage its auto-run schedule here.</p>
+          </div>
+        )}
+
+        {jobs && jobs.length > 0 && (
+          <div className="space-y-3">
+            {jobs.map((job) => (
+              <CruiseAutoCard key={job.repo} job={job} onRunNow={runNow} onEditSchedule={openSchedule} />
+            ))}
+          </div>
+        )}
       </div>
+
+      <CruiseScheduleSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        job={scheduleJob}
+        onSaved={fetchJobs}
+      />
     </div>
   )
 }
