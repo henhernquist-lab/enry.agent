@@ -1161,13 +1161,13 @@ export function CenterPanel({
               <button
                 type="button"
                 onClick={() => setSessionFocusMenuOpen((o) => !o)}
-                className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-xs font-semibold uppercase tracking-wide transition-colors hover:border-primary/30 hover:text-foreground ${
                   sessionFocus.kind !== 'none' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
                 }`}
-                title={`Session Focus: ${sessionFocus.kind !== 'none' ? sessionFocusLabel(sessionFocus) : 'None — no scoping'}`}
+                title={`Session Focus (Focus Modes): ${sessionFocus.kind !== 'none' ? sessionFocusLabel(sessionFocus) : 'None — no domain scoping'}`}
               >
                 <Globe className="h-3 w-3" />
-                {sessionFocus.kind === 'none' ? 'Session' : sessionFocusLabel(sessionFocus)}
+                {sessionFocus.kind === 'none' ? 'Focus' : sessionFocusLabel(sessionFocus)}
               </button>
               {sessionFocusMenuOpen && (
                 <div className="absolute top-full right-0 z-50 mt-1 w-56 border border-border bg-surface-secondary shadow-xl">
