@@ -892,7 +892,10 @@ export function CenterPanel({
                 <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
               </button>
               {modelOpen && (
-                <div className="absolute top-full left-0 z-50 mt-1 w-80 max-h-[min(28rem,calc(100dvh-12rem))] overflow-y-auto border border-border bg-surface-secondary shadow-xl">
+                // Opens upward: this control sits in the bottom input bar, so
+                // top-full would push a long model list off the bottom of the
+                // viewport with nothing able to scroll it back into view.
+                <div className="absolute bottom-full left-0 z-50 mb-1 w-80 max-h-[50vh] overflow-y-auto border border-border bg-surface-secondary shadow-xl scrollbar-hidden">
                   {MODELS.map((m) => (
                     <button
                       type="button"
@@ -976,7 +979,9 @@ export function CenterPanel({
                 {currentFocus.label}
               </button>
               {focusMenuOpen && (
-                <div className="absolute top-full right-0 z-50 mt-1 w-44 border border-border bg-surface-secondary shadow-xl">
+                // Opens upward — same reasoning as the model dropdown above:
+                // this control lives in the bottom input bar.
+                <div className="absolute bottom-full right-0 z-50 mb-1 w-44 max-h-[50vh] overflow-y-auto border border-border bg-surface-secondary shadow-xl scrollbar-hidden">
                   {FOCUS_MODES.map((f) => (
                     <button
                       type="button"

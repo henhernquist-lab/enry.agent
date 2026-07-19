@@ -293,7 +293,7 @@ export function TerminalChat({ autoFocus = true }: { autoFocus?: boolean }) {
               <ChevronDown className="h-2.5 w-2.5" />
             </button>
             {modelMenuOpen && (
-              <div className="absolute right-0 top-full z-20 mt-1 w-52 rounded border border-border bg-surface-elevated shadow-xl">
+              <div className="absolute right-0 top-full z-20 mt-1 w-52 max-h-[50vh] overflow-y-auto rounded border border-border bg-surface-elevated shadow-xl scrollbar-hidden">
                 {MODELS.map((m) => (
                   <button
                     key={m.id}
