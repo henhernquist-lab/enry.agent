@@ -25,6 +25,28 @@ export async function POST(req: Request) {
     /* empty body is fine */
   }
 
-  const pty = createSession({ cols, rows, cwd })
-  return Response.json({ id: pty.id, cols: pty.cols, rows: pty.rows, cwd: pty.cwd })
+  try {
+    const pty = createSession({ cols, rows, cwd })
+    return Response.json({ id: pty.id, cols: pty.cols, rows: pty.rows, cwd: pty.cwd })
+  } catch (err) {
+    // createSession's node-pty spawn() throws synchronously on failure (bad
+    // shell path, native addon didn't load, resource limits, etc.). Without
+    // this catch, Next's default handler returns a bare 500 with no body —
+    // which is exactly what made this undiagnosable from the client.
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[terminal/pty] createSession failed:', err)
+    // Vercel's serverless functions can't hold a long-lived PTY process — if
+    // this route ever runs there, node-pty's spawn() fails in a way that's
+    // easy to mistake for a generic bug. Detect it and say so plainly instead
+    // of surfacing a raw spawn error. VERCEL is set on every Vercel deploy
+    // (build and runtime); absence of CODESPACES alone isn't a reliable
+    // signal — it would also misfire on a plain local/laptop dev server.
+    if (process.env.VERCEL) {
+      return Response.json(
+        { error: 'Terminal panes require the Codespace environment — real PTY shells cannot run on a serverless deployment.' },
+        { status: 501 },
+      )
+    }
+    return Response.json({ error: `Failed to start terminal: ${message}` }, { status: 500 })
+  }
 }
