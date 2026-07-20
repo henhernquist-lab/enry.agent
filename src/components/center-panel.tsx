@@ -1138,7 +1138,7 @@ export function CenterPanel({
                 {currentFocus.label}
               </button>
               {focusMenuOpen && (
-                <div className="absolute top-full right-0 z-50 mt-1 w-44 border border-border bg-surface-secondary shadow-xl">
+                <div className="absolute top-full right-0 z-50 mt-1 w-44 max-h-[min(28rem,calc(100dvh-12rem))] overflow-y-auto border border-border bg-surface-secondary shadow-xl">
                   {FOCUS_MODES.map((f) => (
                     <button
                       type="button"
@@ -1170,7 +1170,7 @@ export function CenterPanel({
                 {sessionFocus.kind === 'none' ? 'Focus' : sessionFocusLabel(sessionFocus)}
               </button>
               {sessionFocusMenuOpen && (
-                <div className="absolute top-full right-0 z-50 mt-1 w-56 border border-border bg-surface-secondary shadow-xl">
+                <div className="absolute top-full right-0 z-50 mt-1 w-56 max-h-[min(28rem,calc(100dvh-12rem))] overflow-y-auto border border-border bg-surface-secondary shadow-xl">
                   {/* None: opt out of session scoping entirely */}
                   <button
                     type="button"
