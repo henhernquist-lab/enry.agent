@@ -8,9 +8,10 @@ import Link from 'next/link'
 import {
   ArrowLeft, ChevronDown, ChevronRight, Check, X, Send, Loader2,
   GitBranch, Folder, File, Lock, Sliders, Zap, TerminalSquare, Eye, Play,
-  Car, Radar, Swords, FileText, Pencil, Brain, Globe,
+  Car, Radar, Swords, FileText, Pencil, Brain, Globe, Plus,
 } from 'lucide-react'
 import { CruisePanel } from '@/components/agent/cruise-panel'
+import { TerminalPane } from '@/components/terminal/terminal-pane'
 import { SkillFeedbackBar } from '@/components/skill-feedback-bar'
 import { ThinkingTrace } from '@/components/thinking-trace'
 import { CompactionIndicator } from '@/components/compaction-indicator'
@@ -294,6 +295,55 @@ export default function AgentPage() {
   const [enryRulesContent, setEnryRulesContent] = useState('')
   const [enryRulesEditing, setEnryRulesEditing] = useState(false)
   const [enryRulesSaving, setEnryRulesSaving] = useState(false)
+
+  // ─── Terminal panes ──────────────────────────────────────
+  // Drive stays the primary pane; up to MAX_TERMINALS real PTY-backed shells
+  // split the remaining space on the right. Max 4 panes TOTAL (Drive + 3).
+  // See src/lib/terminal/pty-manager.ts for the backend.
+  const MAX_TERMINALS = 3
+  interface DriveTerminalPane { id: string; cwd: string; createdAt: number }
+  const [terminalPanes, setTerminalPanes] = useState<DriveTerminalPane[]>([])
+  const paneIdsRef = useRef<string[]>([])
+  useEffect(() => { paneIdsRef.current = terminalPanes.map((p) => p.id) }, [terminalPanes])
+
+  const addTerminal = useCallback(async () => {
+    if (terminalPanes.length >= MAX_TERMINALS) return
+    try {
+      const res = await fetch('/api/terminal/pty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cols: 80, rows: 24 }),
+      })
+      if (!res.ok) return
+      const data = await res.json() as { id: string; cwd?: string }
+      setTerminalPanes((p) => [...p, { id: data.id, cwd: data.cwd ?? '', createdAt: Date.now() }])
+    } catch {
+      /* network error — ignore */
+    }
+  }, [terminalPanes.length])
+
+  const closeTerminal = useCallback((id: string) => {
+    setTerminalPanes((p) => p.filter((t) => t.id !== id))
+    void fetch(`/api/terminal/pty/${id}`, { method: 'DELETE' }).catch(() => {})
+  }, [])
+
+  // Kill all live PTYs when leaving Drive. Strict Mode's dev double-mount
+  // happens before the user can open any panes, so the snapshot is empty at
+  // that point — real panes only get reaped on actual navigation away.
+  useEffect(() => {
+    return () => {
+      for (const id of paneIdsRef.current) {
+        fetch(`/api/terminal/pty/${id}`, { method: 'DELETE' }).catch(() => {})
+      }
+    }
+  }, [])
+
+  // Drive gets a visibly dominant share of the row; terminals split the rest.
+  // Drive is always >50% width and full height, so it's the biggest pane by
+  // area at every pane count.
+  const terminalCount = terminalPanes.length
+  const driveFlexGrow = terminalCount === 0 ? 1 : terminalCount === 1 ? 62 : terminalCount === 2 ? 60 : 58
+  const terminalsFlexGrow = terminalCount === 0 ? 0 : terminalCount === 1 ? 38 : terminalCount === 2 ? 40 : 42
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -841,6 +891,24 @@ USER REQUEST: ${userText}`
           {hasPendingDiff && (
             <span className="font-mono text-[10px] uppercase tracking-wider text-warning">Pending diff</span>
           )}
+          {/* Add a real PTY-backed terminal pane (Drive + up to 3 terminals). */}
+          <button
+            onClick={addTerminal}
+            disabled={terminalCount >= MAX_TERMINALS}
+            title={
+              terminalCount >= MAX_TERMINALS
+                ? 'Max terminals reached (Drive + 3)'
+                : 'Add a terminal pane — runs a real shell in this Codespace'
+            }
+            className={`flex items-center gap-1 font-mono text-[10px] transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
+              terminalCount > 0
+                ? 'text-primary hover:text-primary/80'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Plus className="h-3 w-3" /> Terminal
+            <span className="text-[9px] tabular-nums text-muted-foreground/60">{terminalCount}/{MAX_TERMINALS}</span>
+          </button>
           <Link href="/resources/terminal" className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground">
             <TerminalSquare className="h-3 w-3" /> Shell
           </Link>
@@ -992,11 +1060,18 @@ USER REQUEST: ${userText}`
           )}
         </aside>
 
-        {/* Cruise replaces the conversation pane when active */}
-        {cruiseMode === 'cruise' && <CruisePanel repo={repo} />}
+        {/* Main content + terminal column split. Drive stays the dominant pane. */}
+        <div className="flex min-h-0 min-w-0 flex-1">
+          {/* Main content area: Drive conversation (or Cruise). */}
+          <div
+            className={`flex min-h-0 min-w-0 flex-col ${terminalCount === 0 ? 'flex-1' : ''}`}
+            style={terminalCount > 0 ? { flexGrow: driveFlexGrow, flexBasis: 0 } : undefined}
+          >
+            {/* Cruise replaces the conversation pane when active */}
+            {cruiseMode === 'cruise' && <CruisePanel repo={repo} />}
 
-        {/* Conversation (Drive) — kept mounted but hidden in Cruise so its state survives a toggle */}
-        <div className={`min-w-0 flex-1 flex-col ${cruiseMode === 'cruise' ? 'hidden' : 'flex'}`}>
+            {/* Conversation (Drive) — kept mounted but hidden in Cruise so its state survives a toggle */}
+            <div className={`min-w-0 flex-col ${cruiseMode === 'cruise' ? 'hidden' : 'flex'} ${terminalCount === 0 ? 'flex-1' : ''}`} style={terminalCount > 0 ? { flexGrow: 1, flexBasis: 0 } : undefined}>
           <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hidden">
             <div className="mx-auto max-w-[720px] px-8 py-6">
               {driveCompaction.isCompacted && (
@@ -1461,6 +1536,18 @@ USER REQUEST: ${userText}`
               </div>
             </div>
           </div>
+        </div>
+          </div>
+          {/* Terminal column — real PTY shells stacked on the right. */}
+          {terminalCount > 0 && (
+            <div className="flex min-h-0 min-w-0 flex-col gap-1.5 border-l border-border bg-[#0a0b0d] p-1.5" style={{ flexGrow: terminalsFlexGrow, flexBasis: 0 }}>
+              {terminalPanes.map((pane) => (
+                <div key={pane.id} className="min-h-0 flex-1" style={{ flexBasis: 0 }}>
+                  <TerminalPane id={pane.id} cwd={pane.cwd} onClose={() => closeTerminal(pane.id)} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
