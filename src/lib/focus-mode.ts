@@ -4,10 +4,10 @@
 // Two orthogonal axes — separate concerns, separate configs, separate state:
 // - `FocusMode`      = *source scope*:    which DRAWERS the agent reads from
 //                                       (memory / web / repo / all)
-// - `SessionFocus`   = *domain scope*:    which TASK/APP the session is about
-//                                       (coding in Drive / Learn / school / custom)
+// - `SessionFocus`   = *stance/posture*:  HOW the agent responds
+//                                       (Brainstorm / Ship / Teacher / Focus)
 //
-// They compose: a session can be "Drive" (domain) + "repo_only" (source).
+// They compose: a session can be "Ship" (posture) + "repo_only" (source).
 // The UI surfaces both as sibling pills in the controls row.
 
 export const ALLOWED_FOCUS_MODES = ['all', 'memory_only', 'web_only', 'repo_only'] as const
@@ -19,21 +19,24 @@ export function normalizeFocusMode(raw: unknown): FocusMode {
     : 'all'
 }
 
-// ─── Session Focus (domain scope) ────────────────────────────────────
+// ─── Session Focus (stance/posture) ──────────────────────────────────
 //
-// A SessionFocus is *what work I'm doing right now*. While active:
-//   - skill suggestions narrow to skills relevant to the domain
-//   - memory retrieval (when domain-tagged) prefers matching memories
-//   - system prompt includes the focus name so the agent self-contextualizes
+// A SessionFocus is *how Enry responds right now* — a behavioral posture
+// adopted for every reply, regardless of topic. While active:
+//   - the system prompt includes the mode directive so the model adopts it
+//   - mid-session switching is live: next POST carries the new posture
 //
-// None is the default — no scoping, behaves like "all domains visible."
-// Seed focuses are pre-defined and surface as quick-pick chips; custom is
+// Stance modes change Enry's default behavior across ANY topic:
+//   Brainstorm — divergent, generative, quantity over quality
+//   Ship — convergent, decisive, picks one path
+//   Teacher — explains the why, not just the what
+//   Focus — suppresses tangents, anti-distraction
+//
+// None is the default — no posture, standard behavior.
+// Seed postures are pre-defined and surface as quick-pick chips; custom is
 // user-named, persists to localStorage; both treat the session identically.
-//
-// Format on the wire: a discriminated union — { kind: 'none' } is the
-// safe default that survives any malformed payload.
 
-export const SEED_FOCUSES = ['drive', 'learn', 'school'] as const
+export const SEED_FOCUSES = ['brainstorm', 'ship', 'teacher', 'focus'] as const
 export type SeedFocus = (typeof SEED_FOCUSES)[number]
 export const SESSION_FOCUS_NONE = 'none'
 
@@ -44,45 +47,74 @@ export type SessionFocus =
 
 export const DEFAULT_SESSION_FOCUS: SessionFocus = { kind: 'none' }
 
-// Display metadata — UI uses this to render pills/chips, and to surface
-// what a focus actually *means* to the user. Not serialized over the wire.
+// Display metadata — UI uses this to render pills/chips. Not serialized.
 export interface SessionFocusMeta {
-  id: SessionFocus['kind'] extends 'seed' | 'custom' ? string : string
+  id: string
   label: string
   shortLabel: string  // for the pill (single word, max ~10 chars)
   description: string // hover/tooltip
-  domains: string[]   // which SkillDefinition domains to surface
 }
 
 export const SESSION_FOCUS_META: Record<string, SessionFocusMeta> = {
   none: {
     id: 'none',
-    label: 'No focus',
+    label: 'No posture',
     shortLabel: 'Focus',
-    description: 'No session scoping — every domain visible.',
-    domains: ['coding', 'general', 'learning'],
+    description: 'Standard behavior — no stance applied.',
   },
-  drive: {
-    id: 'drive',
-    label: 'Drive',
-    shortLabel: 'Drive',
-    description: 'Coding work — narrow to Drive/coding skills.',
-    domains: ['coding'],
+  brainstorm: {
+    id: 'brainstorm',
+    label: 'Brainstorm',
+    shortLabel: 'Brainstorm',
+    description: 'Divergent — generate many options, withhold judgment.',
   },
-  learn: {
-    id: 'learn',
-    label: 'Learn',
-    shortLabel: 'Learn',
-    description: 'Learning work — coding skills hidden; learn skills live in /learn.',
-    domains: [],
+  ship: {
+    id: 'ship',
+    label: 'Ship',
+    shortLabel: 'Ship',
+    description: 'Convergent — pick one path, state the next action.',
   },
-  school: {
-    id: 'school',
-    label: 'School',
-    shortLabel: 'School',
-    description: 'General school work — no narrowing.',
-    domains: ['coding', 'general', 'learning'],
+  teacher: {
+    id: 'teacher',
+    label: 'Teacher',
+    shortLabel: 'Teacher',
+    description: 'Explain why, not just what — surface reasoning.',
   },
+  focus: {
+    id: 'focus',
+    label: 'Focus',
+    shortLabel: 'Focus',
+    description: 'Anti-distraction — answer exactly what is asked.',
+  },
+}
+
+// ─── Injection prompts — each mode's distinct behavioral directive ────
+// Injected into the system prompt via chat/route.ts. These ARE the feature.
+
+export const SESSION_FOCUS_PROMPTS: Record<string, string> = {
+  brainstorm: `MODE: BRAINSTORM — You are in exploratory, divergent mode.
+- Generate many options. Quantity and variety matter more than polish.
+- Do NOT narrow to one answer or declare a winner. Label options clearly (A, B, C...) so the user can reference them.
+- Withhold judgment. Every idea gets air. When you catch yourself evaluating or pruning, stop and generate one more option instead.
+- Stay exploratory until the user explicitly says "pick one," "which is best," or "let's converge."`,
+
+  ship: `MODE: SHIP — You are in execution, convergent mode.
+- Stop exploring. Pick ONE concrete path forward and state it clearly.
+- Give the very next action the user should take — not a menu, not a framework.
+- Do NOT say "here are some approaches" or "you could also..." — commit to one recommendation and explain why it's the right call right now.
+- The user is stuck in analysis-paralysis. Your job is to break them out with a decision, not more possibilities.`,
+
+  teacher: `MODE: TEACHER — You are in teaching mode.
+- Every answer must include the reasoning and mechanism behind it — not just the output.
+- Explain WHY something works, not just WHAT to do. Surface underlying principles.
+- When you give a conclusion, walk backward to show how you arrived at it.
+- Assume the user wants to understand, not just receive. If an answer would normally be one sentence, make it three: what, why, and how.`,
+
+  focus: `MODE: FOCUS — You are in anti-distraction mode.
+- Answer exactly what is asked. Nothing more.
+- Do NOT volunteer new ideas, related topics, or "you might also consider..." tangents.
+- Do NOT scope-creep. Do NOT ask clarifying questions unless the request is genuinely unanswerable without them.
+- The user is heads-down. Brevity over completeness. One clear answer, then stop.`,
 }
 
 export function isSessionFocus(raw: unknown): raw is SessionFocus {
@@ -129,11 +161,6 @@ export function parseSessionFocusId(raw: unknown): SessionFocus {
     return { kind: 'custom', id }
   }
   return DEFAULT_SESSION_FOCUS
-}
-
-export function sessionFocusDomains(focus: SessionFocus): string[] {
-  if (focus.kind === 'none') return SESSION_FOCUS_META.none.domains
-  return SESSION_FOCUS_META[focus.id]?.domains ?? ['coding', 'general', 'learning']
 }
 
 // Human-facing label for the current pill — falls back to the raw id for

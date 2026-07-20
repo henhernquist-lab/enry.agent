@@ -48,7 +48,6 @@ import type { ActivityEvent } from '@/lib/chat-history'
 import {
   parseSessionFocusId,
   serializeSessionFocus,
-  sessionFocusDomains,
   sessionFocusLabel,
   SESSION_FOCUS_META,
   type SessionFocus,
@@ -979,13 +978,13 @@ export function CenterPanel({
                 skills
               </div>
               {(() => {
-                const filtered = filterSkillsByDomain(SKILLS, sessionFocusDomains(sessionFocus)).skills
+                const filtered = filterSkillsByDomain(SKILLS, ['coding', 'general', 'learning']).skills
                 const typed = filtered.filter((s) => {
                   const q = input.trim().replace(/^\/skill\s*/i, '').toLowerCase()
                   return !q || s.slug.includes(q) || s.name.toLowerCase().includes(q)
                 })
                 if (typed.length === 0) {
-                  const filtersAll = sessionFocusDomains(sessionFocus)
+                  const filtersAll = ['coding', 'general', 'learning']
                   if (filtersAll.length === 0) {
                     return (
                       <div className="px-3 py-2 font-mono text-[11px] text-muted-foreground leading-relaxed">
@@ -1187,7 +1186,7 @@ export function CenterPanel({
                   <div className="px-3 pt-1.5 pb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground/60">
                     presets
                   </div>
-                  {(['drive', 'learn', 'school'] as const).map((id) => {
+                  {(['brainstorm', 'ship', 'teacher', 'focus'] as const).map((id) => {
                     const meta = SESSION_FOCUS_META[id]
                     const isActive = sessionFocus.kind === 'seed' && sessionFocus.id === id
                     return (

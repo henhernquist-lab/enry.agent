@@ -9,7 +9,7 @@ import { createBranch, createFile, updateFile, createPR, createRepo } from '@/li
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { supabase } from '@/lib/supabase'
 import { getSkill, getSkills, buildMultiSkillPrompt } from '@/lib/skills/registry'
-import { parseSessionFocusId, sessionFocusDomains, sessionFocusLabel } from '@/lib/focus-mode'
+import { parseSessionFocusId, SESSION_FOCUS_PROMPTS, sessionFocusLabel } from '@/lib/focus-mode'
 import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
@@ -277,13 +277,13 @@ export async function POST(req: Request) {
   // in center-panel via detectSkillInvocation on the typed input — so the
   // server's job here is just labeling the session for the model.)
   const sessionFocus = parseSessionFocusId(body.sessionFocus ?? 'none')
-  const focusDomains = sessionFocusDomains(sessionFocus)
-  // (Local focusLabel / focusDirective — same shape as `focusDirective` above
-  // for source-scope so the agent's system prompt doesn't fence-post the two.)
   const focusLabel = sessionFocusLabel(sessionFocus)
-  const sessionFocusDirective = sessionFocus.kind !== 'none'
-    ? `\n\nSESSION FOCUS: ${focusLabel.toUpperCase()} — the user has scoped this session to ${focusLabel} work. Prefer skills, examples, and tone that fit this domain. Don't pivot into unrelated domains unless the user does.`
-    : ''
+  const focusPrompt = sessionFocus.kind === 'seed' ? SESSION_FOCUS_PROMPTS[sessionFocus.id] : null
+  const sessionFocusDirective = sessionFocus.kind !== 'none' && focusPrompt
+    ? `\n\n${focusPrompt}`
+    : sessionFocus.kind === 'custom'
+      ? `\n\nSESSION FOCUS: ${sessionFocus.id.toUpperCase()} — the user has set a custom posture for this session. Adopt a tone and approach that matches this label.`
+      : ''
 
   const session = await auth()
   const googleId    = (session?.user as { id?: string })?.id
