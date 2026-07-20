@@ -1,5 +1,4 @@
 import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
-import { createOpenAI } from '@ai-sdk/openai'
 import { tavily } from '@tavily/core'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
@@ -13,6 +12,7 @@ import { parseSessionFocusId, SESSION_FOCUS_PROMPTS, sessionFocusLabel } from '@
 import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
+import { nimClientFor } from '@/lib/nim'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { getReceiptsHook } from '@/lib/learn/receipts-hook'
 // Side-effect import: registers enryReceiptsDetector as the active
@@ -22,20 +22,11 @@ import { getReceiptsHook } from '@/lib/learn/receipts-hook'
 import '@/lib/learn/receipts-detector'
 import type { GitHubActionPayload } from '@/lib/resources'
 
-const MODEL_CONFIG = {
-  'deepseek-ai/deepseek-v4-pro':      () => process.env.DEEPSEEK_API_KEY ?? '',
-  'minimaxai/minimax-m3':                () => process.env.MINIMAX_API_KEY ?? '',
-  'qwen/qwen3.5-397b-a17b':           () => process.env.QWEN_API_KEY ?? '',
-  'z-ai/glm-5.2':                     () => process.env.GLM_API_KEY ?? '',
-  'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
-  // Moonshot Kimi K2 Instruct — 6th NIM model. Falls back to NVIDIA_API_KEY
-  // since the same NIM endpoint handles Moonshot-hosted Kimi builds.
-  'moonshotai/kimi-k2-instruct':       () => process.env.MOONSHOT_API_KEY ?? '',
-} as const
+import { listModels } from '@/lib/nim'
 
-type AllowedModel = keyof typeof MODEL_CONFIG
-const ALLOWED_MODELS = Object.keys(MODEL_CONFIG) as AllowedModel[]
-const DEFAULT_MODEL: AllowedModel = 'deepseek-ai/deepseek-v4-pro'
+// Chat-scoped model allowlist — subset of MODEL_LIST that has 'chat' scope.
+const CHAT_MODELS = listModels('chat').map((m) => m.id)
+const DEFAULT_MODEL = CHAT_MODELS[0] ?? 'deepseek-ai/deepseek-v4-pro'
 
 export const maxDuration = 60
 
@@ -255,10 +246,12 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 export async function POST(req: Request) {
   const body = await req.json()
   const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn } = body
-  const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
-  const apiKey = MODEL_CONFIG[selectedModel]()
+  const selectedModel: string = CHAT_MODELS.includes(model) ? model : DEFAULT_MODEL
 
-  if (!apiKey) {
+  let chatClient: ReturnType<typeof nimClientFor>
+  try {
+    chatClient = nimClientFor(selectedModel)
+  } catch {
     return new Response(
       JSON.stringify({ error: `No API key configured for ${selectedModel}` }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
@@ -314,11 +307,6 @@ export async function POST(req: Request) {
         .catch((err) => console.error('[receipts] hook threw:', err))
     }
   }
-
-  const client = createOpenAI({
-    baseURL: 'https://integrate.api.nvidia.com/v1',
-    apiKey,
-  })
 
   const focusDirective = focusMode !== 'all'
     ? `\n\nFOCUS MODE: ${focusMode.replace(/_/g, ' ').toUpperCase()} — you are restricted to only the tools available in this mode. Do not attempt to use tools outside this scope.`
@@ -378,7 +366,7 @@ export async function POST(req: Request) {
     }
 
     const skillResult = streamText({
-      model: client.chat(selectedModel),
+      model: chatClient.chat(selectedModel),
       system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}`,
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
@@ -558,7 +546,7 @@ export async function POST(req: Request) {
   Object.assign(allTools, composioTools)
 
   const result = streamText({
-    model: client.chat(selectedModel),
+    model: chatClient.chat(selectedModel),
     system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.
 
 You exist to move Henry's work forward: shipping features on the enry.agent codebase itself, answering technical questions with real research, running tool-calling loops on his behalf, and remembering context across sessions so he never has to re-explain his stack.
