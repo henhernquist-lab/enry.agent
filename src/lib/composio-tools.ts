@@ -1,22 +1,19 @@
-// AI SDK tool wrappers for the Composio-backed Connectors (Gmail + Google
-// Calendar, v1). Each tool is a hand-rolled Vercel AI SDK `tool()` block — at
+// AI SDK tool wrappers for the Composio-backed Connectors (Gmail + Composio
+// Search, v1). Each tool is a hand-rolled Vercel AI SDK `tool()` block — at
 // v1 we only expose a deliberate read-only allowlist of actions:
 //
 //   Gmail:      GMAIL_FETCH_EMAILS, GMAIL_GET_MESSAGE, GMAIL_SEARCH_EMAILS
-//   Calendar:   GOOGLECALENDAR_LIST_EVENTS, GOOGLECALENDAR_GET_EVENT,
-//               GOOGLECALENDAR_FIND_EVENT
+//   Search:     COMPOSIO_SEARCH_DUCKDUCKGO_SEARCH,
+//               COMPOSIO_SEARCH_FETCH_URL_CONTENT,
+//               COMPOSIO_SEARCH_FINANCE,
+//               COMPOSIO_SEARCH_FLIGHTS,
+//               COMPOSIO_SEARCH_AMAZON
 //
-// Why hard-coded Zod schemas (not SDK-fetched)? Two reasons:
-//   1. Latency — pulling a fresh schema per chat call would cost 200-500ms per
-//      tool on a hot path that already runs 7+ tool-calling steps per turn.
-//   2. Stability — the model always sees the same shape, so hand-tuned
-//      descriptions and parameter docs stay consistent across releases.
-//
-// The execute handler looks up the user's connected_account_id from
-// `composio_connections` and calls Composio's SDK to actually run the action.
-// Composio fully custodies the underlying Google OAuth tokens; we never see
-// them. Tool results are returned to the model exactly as Composio returns
-// them, after a tiny envelope so the model can distinguish success/failure.
+// Why hand-rolled Zod schemas: see the Composio Gmail wrapper comment for the
+// full rationale (latency, stability, hand-tuned descriptions). Same
+// reasoning applies here — every composio_search action uses the same
+// executeTool path, and we choose which actions to expose based on what's
+// genuinely useful vs. what would just add latency/noise to the tool list.
 
 import { tool } from 'ai'
 import { z } from 'zod'
@@ -57,7 +54,7 @@ async function loadConnections(uid: string): Promise<Partial<Record<ComposioTool
 const FOCUS_ALLOWS: Record<string, boolean> = {
   all: true,
   memory_only: true,
-  web_only: false,
+  web_only: true,
   repo_only: false,
 }
 
@@ -66,7 +63,7 @@ const FOCUS_ALLOWS: Record<string, boolean> = {
 // list remains honest (the model doesn't see a tool it can't actually call).
 async function wrapTool(args: {
   slug: string
-  toolkitName: 'Gmail' | 'Google Calendar'
+  toolkitName: 'Gmail' | 'Google Calendar' | 'Composio Search' | 'Firecrawl'
   description: string
   inputSchema: z.ZodTypeAny
   userId: string
@@ -110,7 +107,128 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
   // connect. Pass userId through to executeTool; the per-toolkit connection
   // is just a presence check ("is this user authorized for gmail at all?").
   const hasGmail = Boolean(connections.gmail)
-  const hasGCal = Boolean(connections.googlecalendar)
+  const hasSearch = Boolean(connections.composio_search)
+  const hasFirecrawl = Boolean(connections.firecrawl)
+
+  if (hasFirecrawl) {
+    const firecrawlTools = await Promise.all([
+      wrapTool({
+        slug: 'FIRECRAWL_SCRAPE',
+        toolkitName: 'Firecrawl',
+        description: 'Scrape a single URL and return clean, structured content (markdown, HTML, or raw text). Use this to extract the full content of a specific page — docs, articles, product pages, any URL. Returns clean markdown by default. Prefer this over composio_fetch_url for serious scraping — Firecrawl handles JS-rendered pages, auth walls, and produces cleaner output.',
+        inputSchema: z.object({
+          url: z.string().url().describe('The URL to scrape.'),
+          formats: z.array(z.enum(['markdown', 'html', 'rawHtml', 'screenshot'])).optional().describe('Output formats. Default ["markdown"].'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_scrape',
+      }),
+      wrapTool({
+        slug: 'FIRECRAWL_CRAWL_V2',
+        toolkitName: 'Firecrawl',
+        description: 'Crawl an entire website — follows links within the same domain and returns content from multiple pages. Use this when the user asks "show me everything on site X" or wants to index/understand a whole site. Returns structured crawl results with page content.',
+        inputSchema: z.object({
+          url: z.string().url().describe('The starting URL to crawl.'),
+          max_pages: z.number().int().min(1).max(100).optional().describe('Max pages to crawl. Default 10. Keep low for quick scans.'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_crawl',
+      }),
+      wrapTool({
+        slug: 'FIRECRAWL_EXTRACT',
+        toolkitName: 'Firecrawl',
+        description: 'Extract structured data from a URL using an LLM prompt. Give it a URL and describe what data fields you want (e.g., "extract all product names, prices, and ratings"). Returns JSON matching your requested schema. Use this for targeted data extraction from any page.',
+        inputSchema: z.object({
+          url: z.string().url().describe('The URL to extract data from.'),
+          prompt: z.string().describe('Describe what data to extract. E.g., "Extract all product names, prices, and ratings as a JSON array."'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_extract',
+      }),
+      wrapTool({
+        slug: 'FIRECRAWL_SEARCH',
+        toolkitName: 'Firecrawl',
+        description: 'Web search via Firecrawl. Similar to web_search but may return different/cleaner results for some queries. Use this as an alternative when Tavily or composio_web_search results are insufficient or when the user specifically wants Firecrawl search quality.',
+        inputSchema: z.object({
+          query: z.string().describe('The search query.'),
+          max_results: z.number().int().min(1).max(20).optional().describe('Number of results. Default 5.'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_search',
+      }),
+      wrapTool({
+        slug: 'FIRECRAWL_MAP_MULTIPLE_URLS_BASED_ON_OPTIONS',
+        toolkitName: 'Firecrawl',
+        description: 'Map/discover all URLs on a website. Returns a list of all discoverable pages on the domain without downloading their content. Use this before a crawl to understand site structure, or when the user asks "what pages does this site have?"',
+        inputSchema: z.object({
+          url: z.string().url().describe('The URL to map. All discovered links within the same domain are returned.'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_map',
+      }),
+    ])
+    for (const t of firecrawlTools) if (t) Object.assign(tools, t)
+  }
+
+  if (hasSearch) {
+    const searchTools = await Promise.all([
+      wrapTool({
+        slug: 'COMPOSIO_SEARCH_DUCKDUCKGO_SEARCH',
+        toolkitName: 'Composio Search',
+        description: 'General web search via DuckDuckGo. Returns titles, URLs, and snippets for search results. Use this for broad research, fact-checking, or finding information online — distinct from Tavily web_search which is better for deep research. Prefer this for quick lookups, price checks, and transactional queries.',
+        inputSchema: z.object({
+          query: z.string().describe('The search query.'),
+          max_results: z.number().int().min(1).max(20).optional().describe('Number of results. Default 5.'),
+        }),
+        userId: uid,
+        toolKey: 'composio_web_search',
+      }),
+      wrapTool({
+        slug: 'COMPOSIO_SEARCH_FETCH_URL_CONTENT',
+        toolkitName: 'Composio Search',
+        description: 'Scrape and extract clean markdown content from a specific URL. Use this to read the full text of a page — unlike search snippets, this returns the actual page content. Good for checking prices, availability, or reading docs directly from a source page.',
+        inputSchema: z.object({
+          url: z.string().url().describe('The full URL to scrape.'),
+        }),
+        userId: uid,
+        toolKey: 'composio_fetch_url',
+      }),
+      wrapTool({
+        slug: 'COMPOSIO_SEARCH_FINANCE',
+        toolkitName: 'Composio Search',
+        description: 'Get real-time financial data: stock prices, crypto prices, market indices, and company financials. Use this when the user asks about a stock price, crypto value, or market data — this returns live data, not stale training data.',
+        inputSchema: z.object({
+          query: z.string().describe('The ticker symbol or financial query (e.g. "AAPL", "BTC-USD", "S&P 500").'),
+        }),
+        userId: uid,
+        toolKey: 'composio_finance',
+      }),
+      wrapTool({
+        slug: 'COMPOSIO_SEARCH_FLIGHTS',
+        toolkitName: 'Composio Search',
+        description: 'Search for flight schedules, routes, and pricing. Use this when the user asks about flight availability, prices between cities, or travel options. Returns real flight data, not estimates.',
+        inputSchema: z.object({
+          origin: z.string().describe('Origin airport code or city (e.g. "ATL", "New York").'),
+          destination: z.string().describe('Destination airport code or city (e.g. "LAX", "London").'),
+          date: z.string().optional().describe('Departure date in YYYY-MM-DD format. If omitted, searches soonest.'),
+        }),
+        userId: uid,
+        toolKey: 'composio_flights',
+      }),
+      wrapTool({
+        slug: 'COMPOSIO_SEARCH_AMAZON',
+        toolkitName: 'Composio Search',
+        description: 'Search Amazon product listings worldwide. Returns product names, prices, ratings, and availability. Use this when the user asks about a product, wants to check prices, or is comparison shopping.',
+        inputSchema: z.object({
+          query: z.string().describe('The product to search for (e.g. "mechanical keyboard", "Sony WH-1000XM5").'),
+          max_results: z.number().int().min(1).max(10).optional().describe('Number of results. Default 5.'),
+        }),
+        userId: uid,
+        toolKey: 'composio_amazon',
+      }),
+    ])
+    for (const t of searchTools) if (t) Object.assign(tools, t)
+  }
 
   if (hasGmail) {
     const gmailTools = await Promise.all([
@@ -148,45 +266,6 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
       }),
     ])
     for (const t of gmailTools) if (t) Object.assign(tools, t)
-  }
-
-  if (hasGCal) {
-    const calTools = await Promise.all([
-      wrapTool({
-        slug: 'GOOGLECALENDAR_LIST_EVENTS',
-        toolkitName: 'Google Calendar',
-        description: 'List upcoming events on the user\'s primary Google Calendar within an optional time window. Returns event title, start/end time, attendees, and location.',
-        inputSchema: z.object({
-          max_results: z.number().int().min(1).max(50).optional().describe('Max events. Default 10.'),
-          time_min: z.string().optional().describe('ISO 8601 lower bound, e.g. "2025-07-17T00:00:00Z". Default: now.'),
-          time_max: z.string().optional().describe('ISO 8601 upper bound, e.g. "2025-07-18T00:00:00Z". Default: 7 days from now.'),
-        }),
-        userId: uid,
-        toolKey: 'googlecalendar_list_events',
-      }),
-      wrapTool({
-        slug: 'GOOGLECALENDAR_GET_EVENT',
-        toolkitName: 'Google Calendar',
-        description: 'Fetch a single calendar event by ID. Returns full details including attendees, description, and conference link.',
-        inputSchema: z.object({
-          event_id: z.string().describe('The Google Calendar event ID.'),
-        }),
-        userId: uid,
-        toolKey: 'googlecalendar_get_event',
-      }),
-      wrapTool({
-        slug: 'GOOGLECALENDAR_FIND_EVENT',
-        toolkitName: 'Google Calendar',
-        description: 'Find a calendar event by search query (matches title, description, attendees). Useful for "what meeting do I have with X tomorrow".',
-        inputSchema: z.object({
-          query: z.string().describe('Free-text search query.'),
-          max_results: z.number().int().min(1).max(20).optional().describe('Max events. Default 5.'),
-        }),
-        userId: uid,
-        toolKey: 'googlecalendar_find_event',
-      }),
-    ])
-    for (const t of calTools) if (t) Object.assign(tools, t)
   }
 
   return tools

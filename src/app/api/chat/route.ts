@@ -1,5 +1,4 @@
 import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
-import { createOpenAI } from '@ai-sdk/openai'
 import { tavily } from '@tavily/core'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
@@ -13,6 +12,7 @@ import { parseSessionFocusId, SESSION_FOCUS_PROMPTS, sessionFocusLabel } from '@
 import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
+import { nimClientFor } from '@/lib/nim'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { getReceiptsHook } from '@/lib/learn/receipts-hook'
 // Side-effect import: registers enryReceiptsDetector as the active
@@ -22,20 +22,11 @@ import { getReceiptsHook } from '@/lib/learn/receipts-hook'
 import '@/lib/learn/receipts-detector'
 import type { GitHubActionPayload } from '@/lib/resources'
 
-const MODEL_CONFIG = {
-  'deepseek-ai/deepseek-v4-pro':      () => process.env.DEEPSEEK_API_KEY ?? '',
-  'minimaxai/minimax-m3':                () => process.env.MINIMAX_API_KEY ?? '',
-  'qwen/qwen3.5-397b-a17b':           () => process.env.QWEN_API_KEY ?? '',
-  'z-ai/glm-5.2':                     () => process.env.GLM_API_KEY ?? '',
-  'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
-  // Moonshot Kimi K2 Instruct — 6th NIM model. Falls back to NVIDIA_API_KEY
-  // since the same NIM endpoint handles Moonshot-hosted Kimi builds.
-  'moonshotai/kimi-k2-instruct':       () => process.env.MOONSHOT_API_KEY ?? '',
-} as const
+import { listModels } from '@/lib/nim'
 
-type AllowedModel = keyof typeof MODEL_CONFIG
-const ALLOWED_MODELS = Object.keys(MODEL_CONFIG) as AllowedModel[]
-const DEFAULT_MODEL: AllowedModel = 'deepseek-ai/deepseek-v4-pro'
+// Chat-scoped model allowlist — subset of MODEL_LIST that has 'chat' scope.
+const CHAT_MODELS = listModels('chat').map((m) => m.id)
+const DEFAULT_MODEL = CHAT_MODELS[0] ?? 'deepseek-ai/deepseek-v4-pro'
 
 export const maxDuration = 60
 
@@ -255,10 +246,12 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 export async function POST(req: Request) {
   const body = await req.json()
   const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn } = body
-  const selectedModel: AllowedModel = ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
-  const apiKey = MODEL_CONFIG[selectedModel]()
+  const selectedModel: string = CHAT_MODELS.includes(model) ? model : DEFAULT_MODEL
 
-  if (!apiKey) {
+  let chatClient: ReturnType<typeof nimClientFor>
+  try {
+    chatClient = nimClientFor(selectedModel)
+  } catch {
     return new Response(
       JSON.stringify({ error: `No API key configured for ${selectedModel}` }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
@@ -314,11 +307,6 @@ export async function POST(req: Request) {
         .catch((err) => console.error('[receipts] hook threw:', err))
     }
   }
-
-  const client = createOpenAI({
-    baseURL: 'https://integrate.api.nvidia.com/v1',
-    apiKey,
-  })
 
   const focusDirective = focusMode !== 'all'
     ? `\n\nFOCUS MODE: ${focusMode.replace(/_/g, ' ').toUpperCase()} — you are restricted to only the tools available in this mode. Do not attempt to use tools outside this scope.`
@@ -378,7 +366,7 @@ export async function POST(req: Request) {
     }
 
     const skillResult = streamText({
-      model: client.chat(selectedModel),
+      model: chatClient.chat(selectedModel),
       system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}`,
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
@@ -558,12 +546,12 @@ export async function POST(req: Request) {
   Object.assign(allTools, composioTools)
 
   const result = streamText({
-    model: client.chat(selectedModel),
+    model: chatClient.chat(selectedModel),
     system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.
 
 You exist to move Henry's work forward: shipping features on the enry.agent codebase itself, answering technical questions with real research, running tool-calling loops on his behalf, and remembering context across sessions so he never has to re-explain his stack.
 
-You are built on a Next.js + TypeScript + Supabase + NVIDIA NIM stack, running on Vercel. You have access to a pgvector-backed memory layer with bge-m3 embeddings, a resources table that stores everything Henry saves across 14+ tools, and web search via Tavily. You know this because you ARE this system — not a wrapper on it.
+You are built on a Next.js + TypeScript + Supabase + NVIDIA NIM stack, running on Vercel. You have access to a pgvector-backed memory layer with bge-m3 embeddings, a resources table that stores everything Henry saves across 14+ tools, web search via Tavily (deep research), Composio-powered transactional lookup tools (real-time prices, flights, finance, e-commerce, page scraping), and Firecrawl for advanced web scraping, site crawling, structured data extraction, and site mapping. You know this because you ARE this system — not a wrapper on it.
 
 Henry is a rising 9th grader at North Atlanta High School, a sprinter (200m/400m), and a lifter chasing a 225 bench. He builds software using AI-first workflows — Claude Code + Freebuff in parallel, Codespaces as his dev environment (older iMac limits local dev). He values direct feedback over hedging, realistic pushback over agreement, and shipping over perfection.
 
@@ -640,7 +628,17 @@ If Henry proposes something you think is wrong — technically, strategically, o
 Never end a turn stating intent ("I'll now run X") without actually running X in the same turn.
 
 The following tools are available to you in this session:
-- web_search — real-time queries via Tavily
+- web_search — deep research and general queries via Tavily
+- composio_web_search — transactional lookups (prices, flights, stocks, products, events, maps)
+- composio_fetch_url — scrape and read full page content from a URL
+- composio_finance — real-time stock/crypto/market data
+- composio_flights — flight schedules and pricing
+- composio_amazon — product search and price comparison
+- firecrawl_scrape — advanced single-page scraping (JS-rendered pages, clean markdown)
+- firecrawl_crawl — crawl entire websites (follow links within domain)
+- firecrawl_extract — LLM-powered structured data extraction from any URL
+- firecrawl_search — alternative web search via Firecrawl
+- firecrawl_map — discover all URLs on a website
 - save_memory — persist durable context
 - recall_memory — fetch prior context
 - github_list_repos — enumerate Henry's repos

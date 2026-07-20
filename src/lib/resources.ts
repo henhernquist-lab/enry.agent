@@ -186,6 +186,7 @@ export interface BriefingPayload {
   date: string
   observations: BriefingObservation[]
   suggested_actions: BriefingAction[]
+  email_summary?: { urgent: string[]; grouped: { sender: string; count: number; topics: string[] }[]; low_signal: string[] }
   flag?: BriefingFlag
   generated_at: string
   refresh_count?: number

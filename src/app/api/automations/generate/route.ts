@@ -1,7 +1,11 @@
 import { generateText } from 'ai'
-import { createOpenAI } from '@ai-sdk/openai'
+import { nimClientFor } from '@/lib/nim'
 
 export const maxDuration = 60
+
+// Automations default model — scoped to a fast, capable general-purpose model.
+// Swappable by changing the id here; the client/key config stays in nim.ts.
+const AUTOMATION_MODEL = 'z-ai/glm-5.2'
 
 export async function POST(req: Request) {
   const { prompt, system } = await req.json()
@@ -10,19 +14,16 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Missing prompt' }, { status: 400 })
   }
 
-  const apiKey = process.env.GLM_API_KEY ?? ''
-  if (!apiKey) {
+  let client: ReturnType<typeof nimClientFor>
+  try {
+    client = nimClientFor(AUTOMATION_MODEL)
+  } catch {
     return Response.json({ error: 'No API key configured for automations' }, { status: 500 })
   }
 
-  const client = createOpenAI({
-    baseURL: 'https://integrate.api.nvidia.com/v1',
-    apiKey,
-  })
-
   try {
     const { text } = await generateText({
-      model: client.chat('z-ai/glm-5.2'),
+      model: client.chat(AUTOMATION_MODEL),
       system,
       prompt,
     })

@@ -5,7 +5,7 @@ import { resolveAuthConfigId, type ComposioToolkit } from '@/lib/composio'
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail', 'googlecalendar']
+const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search', 'firecrawl']
 
 // Diagnostic endpoint: exercises the Composio auth config + link creation path
 // using the server's own credentials, and returns the full raw response or
@@ -21,9 +21,7 @@ export async function POST(req: Request) {
   if (!TOOLKITS.includes(toolkit)) return Response.json({ error: 'Invalid toolkit' }, { status: 400 })
 
   const apiKey = process.env.COMPOSIO_API_KEY
-  const envAuthConfigId = toolkit === 'gmail'
-    ? process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID
-    : process.env.COMPOSIO_GOOGLECALENDAR_AUTH_CONFIG_ID
+  const envAuthConfigId = process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID
 
   type Step = { name: string } & Record<string, unknown>
   const report: { toolkit: string; userId: string; apiKeyPresent: boolean; envAuthConfigId: string | undefined; steps: Step[] } = {
