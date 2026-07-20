@@ -1,4 +1,4 @@
-import { spawn, type IPty } from 'node-pty'
+import type { IPty } from 'node-pty'
 import { randomUUID } from 'crypto'
 
 // PTY session manager for Drive's real-shell terminal panes.
@@ -45,15 +45,24 @@ function defaultShell(): { file: string; args: string[] } {
   return { file: shell, args: ['-l', '-i'] }
 }
 
-export function createSession(opts?: {
+export async function createSession(opts?: {
   cols?: number
   rows?: number
   cwd?: string
-}): PTYSession {
+}): Promise<PTYSession> {
   const cols = opts?.cols ?? 80
   const rows = opts?.rows ?? 24
   const cwd = opts?.cwd ?? process.env.HOME ?? process.cwd()
   const { file, args } = defaultShell()
+
+  // Dynamic import (not a top-level static import) so a native-addon load
+  // failure — node-pty is a compiled C++ binding, and this session saw
+  // repeated pnpm add/remove churn on it — rejects this promise instead of
+  // crashing module evaluation for the whole route before the handler's
+  // try/catch ever runs. A static `import { spawn } from 'node-pty'` at the
+  // top of this file would throw at import time, which is NOT catchable by
+  // route.ts's try/catch around this call.
+  const { spawn } = await import('node-pty')
 
   const id = randomUUID()
   const pty = spawn(file, args, {

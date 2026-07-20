@@ -8,7 +8,18 @@ export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
-  const session = await auth()
+  // auth() does real async work (Supabase lookups in the jwt callback for
+  // edge cases like legacy tokens missing googleId) — wrapped so a genuine
+  // auth-layer failure surfaces real detail too, not just a bare 500 that
+  // bypasses the createSession error handling below entirely.
+  let session
+  try {
+    session = await auth()
+  } catch (err) {
+    console.error('[terminal/pty] auth() failed:', err)
+    const message = err instanceof Error ? err.message : String(err)
+    return Response.json({ error: `Auth check failed: ${message}` }, { status: 500 })
+  }
   if (!session?.user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -26,13 +37,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const pty = createSession({ cols, rows, cwd })
+    const pty = await createSession({ cols, rows, cwd })
     return Response.json({ id: pty.id, cols: pty.cols, rows: pty.rows, cwd: pty.cwd })
   } catch (err) {
-    // createSession's node-pty spawn() throws synchronously on failure (bad
-    // shell path, native addon didn't load, resource limits, etc.). Without
-    // this catch, Next's default handler returns a bare 500 with no body —
-    // which is exactly what made this undiagnosable from the client.
+    // createSession rejects on failure (native addon didn't load, node-pty's
+    // spawn() threw, etc.). Without this catch, Next's default handler
+    // returns a bare 500 with no body — which is exactly what made this
+    // undiagnosable from the client.
     const message = err instanceof Error ? err.message : String(err)
     console.error('[terminal/pty] createSession failed:', err)
     // Vercel's serverless functions can't hold a long-lived PTY process — if
