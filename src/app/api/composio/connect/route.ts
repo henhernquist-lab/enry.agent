@@ -5,7 +5,7 @@ import { createConnectionLink, type ComposioToolkit, resolveAuthConfigId, verify
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail', 'googlecalendar']
+const TOOLKITS: ComposioToolkit[] = ['gmail']
 
 // Starts a Composio Connect Link for a toolkit: creates/reuses the toolkit's
 // auth config, creates a connected-account link scoped to this user, upserts a
@@ -62,11 +62,7 @@ export async function POST(req: Request) {
       causeMessage: cause?.message,
       causeBody: cause?.body,
       causeResponse: cause?.response,
-      authConfigIdTried: process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID && toolkit === 'gmail'
-        ? process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID
-        : process.env.COMPOSIO_GOOGLECALENDAR_AUTH_CONFIG_ID && toolkit === 'googlecalendar'
-          ? process.env.COMPOSIO_GOOGLECALENDAR_AUTH_CONFIG_ID
-          : undefined,
+      authConfigIdTried: process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID ?? undefined,
       userId: uid,
       toolkit,
     }

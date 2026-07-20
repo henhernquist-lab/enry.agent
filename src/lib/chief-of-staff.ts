@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import { nimClientFor, DEFAULT_NIM_MODEL, parseJsonLoose } from './nim'
 import { getContextSnapshot, findCrossToolPatterns, snapshotToText } from './synthesis'
 import { todayISO } from './aperture'
+import { executeTool } from './composio'
 import type { AperturePayload, BriefingPayload, BriefingFlag } from './resources'
 
 // Chief of Staff: a morning briefing that cross-references every tool and
@@ -37,19 +38,91 @@ Rules:
 - No fabrication. A claim without data behind it does not go in the briefing.
 - No filler, no praise-padding, no "keep it up!". Direct, factual, brief.
 - Each observation's sources array names the tools it drew from,
-  e.g. ["checkin", "workout"].
+  e.g. ["checkin", "workout"]. When an observation draws from email context,
+  list "gmail" as one of the sources.
 - If the snapshot is thin, produce fewer, smaller observations. Two honest
   observations beat four inflated ones.
+- Email summary: when the prompt includes recent emails, produce an
+  "email_summary" section in the output. Group related messages by sender
+  or thread, flag time-sensitive items (reply needed, meetings, deadlines),
+  and bucket promotional/newsletter noise separately as "low-signal." If no
+  emails are provided or the Gmail note says it's unavailable, skip the
+  email section entirely — never fabricate email content.
 
 Output JSON only:
 { "observations": [{ "text": string, "sources": string[] }],
   "suggested_actions": [{ "text": string, "reason": string }],
+  "email_summary": { "urgent": string[], "grouped": { "sender": string, "count": number, "topics": string[] }[], "low_signal": string[] } | null,
   "flag": { "text": string, "severity": "low" | "medium" | "high" } | null }`
 
 interface GeneratedBriefing {
   observations: { text: string; sources: string[] }[]
   suggested_actions: { text: string; reason: string }[]
+  email_summary?: { urgent: string[]; grouped: { sender: string; count: number; topics: string[] }[]; low_signal: string[] }
   flag: BriefingFlag | null
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Gmail context: fetches the last 24 hours of email via the Composio Gmail
+// connector and returns a compact text summary for the briefing prompt.
+// Returns null if Gmail is not connected, so the briefing degrades gracefully.
+// ─────────────────────────────────────────────────────────────────────────
+
+interface GmailContext {
+  emailCount: number
+  text: string
+}
+
+async function fetchGmailContext(userId: string): Promise<GmailContext | null> {
+  try {
+    // Check if Gmail is connected for this user
+    const { data: connRow } = await supabase
+      .from('composio_connections')
+      .select('status, composio_connected_account_id')
+      .eq('user_id', userId)
+      .eq('toolkit', 'gmail')
+      .maybeSingle()
+
+    if (!connRow || connRow.status !== 'connected' || !connRow.composio_connected_account_id) {
+      return null // Gmail not connected — briefing skips email section gracefully
+    }
+
+    // Fetch recent emails (last 24h). Composio resolves the connected account
+    // internally from the (userId, authConfigId) pair registered during connect.
+    const { data, error } = await executeTool(userId, 'GMAIL_FETCH_EMAILS', {
+      max_results: 30,
+      query: 'newer_than:1d',
+    })
+
+    if (error || !data) {
+      console.error('[chief-of-staff] gmail fetch failed:', error)
+      return { emailCount: 0, text: '(Gmail fetch failed — check Composio connection)' }
+    }
+
+    // Compact render: 150 chars per email max, total 4000 chars cap
+    const raw = data as { messages?: Array<{ subject?: string; from?: string; date?: string; snippet?: string; unread?: boolean }> }
+    const messages = raw.messages ?? []
+    if (messages.length === 0) {
+      return { emailCount: 0, text: '(No new emails in the last 24 hours)' }
+    }
+
+    const lines: string[] = []
+    let total = 0
+    for (const m of messages) {
+      const line = `- ${m.unread ? '[UNREAD] ' : ''}${m.subject ?? '(no subject)'} | from ${m.from ?? 'unknown'} | ${m.date ?? ''}\n  ${(m.snippet ?? '').slice(0, 150)}`
+      if (total + line.length > 4000) break
+      lines.push(line)
+      total += line.length
+    }
+
+    return {
+      emailCount: messages.length,
+      text: lines.join('\n'),
+    }
+  } catch (err) {
+    console.error('[chief-of-staff] gmail context threw:', err)
+    return { emailCount: 0, text: '(Gmail unavailable during briefing generation)' }
+  }
 }
 
 // Generates and persists today's briefing. `mode: 'refresh'` overwrites the
@@ -69,11 +142,18 @@ export async function generateBriefingForUser(
     const stateText = snapshotToText(snapshot, patterns)
     const aperture = await todaysApertureText(userId, date)
 
+    // Fetch Gmail context (last 24h of email). Returns null if Gmail
+    // isn't connected — briefing still generates without it.
+    const gmailContext = await fetchGmailContext(userId)
+    const gmailBlock = gmailContext
+      ? `\n\n## Recent Gmail activity (last 24 hours)\n${gmailContext.emailCount} emails received.\n\n${gmailContext.text}`
+      : '\n\n## Gmail\n(Gmail not connected — no email data available.\nSkip the email_summary section in your output.)'
+
     const client = nimClientFor()
     const { text } = await generateText({
       model: client.chat(DEFAULT_NIM_MODEL),
       system: BRIEFING_SYSTEM_PROMPT,
-      prompt: `${stateText}\n\n## Today's Aperture question\n${aperture}\n\nProduce today's briefing now.`,
+      prompt: `${stateText}\n\n## Today's Aperture question\n${aperture}${gmailBlock}\n\nProduce today's briefing now.`,
       temperature: 0.6,
       maxOutputTokens: 1500,
       // Runs in the same cron route as prompt/article generation (see
@@ -97,6 +177,7 @@ export async function generateBriefingForUser(
 
     const payload: BriefingPayload = {
       date,
+      email_summary: parsed.email_summary,
       observations: parsed.observations
         .filter((o) => o && typeof o.text === 'string')
         .map((o) => ({ text: o.text, sources: Array.isArray(o.sources) ? o.sources.filter((s) => typeof s === 'string') : [] })),

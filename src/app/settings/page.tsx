@@ -3,10 +3,10 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Settings, ArrowLeft, Mail, Calendar, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle } from 'lucide-react'
+import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle } from 'lucide-react'
 import Link from 'next/link'
 
-type ComposioToolkit = 'gmail' | 'googlecalendar'
+type ComposioToolkit = 'gmail'
 type ConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
 
 interface ComposioConnection {
@@ -18,7 +18,6 @@ interface ComposioConnection {
 
 const TOOLKIT_META: Record<ComposioToolkit, { label: string; desc: string; icon: typeof Mail }> = {
   gmail: { label: 'Gmail', desc: 'Read-only: search and read email through chat.', icon: Mail },
-  googlecalendar: { label: 'Google Calendar', desc: 'Read-only: list and look up events through chat.', icon: Calendar },
 }
 
 // Placeholder card for a settings section that's ready for wiring.
@@ -61,7 +60,7 @@ function SettingsSectionCard({
 function ConnectorsSection() {
   const searchParams = useSearchParams()
   const [connections, setConnections] = useState<Record<ComposioToolkit, ComposioConnection | null>>({
-    gmail: null, googlecalendar: null,
+    gmail: null,
   })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<ComposioToolkit | null>(null)
@@ -70,7 +69,7 @@ function ConnectorsSection() {
   const load = useCallback(async () => {
     const res = await fetch('/api/composio/connections')
     const data = await res.json()
-    const map: Record<ComposioToolkit, ComposioConnection | null> = { gmail: null, googlecalendar: null }
+    const map: Record<ComposioToolkit, ComposioConnection | null> = { gmail: null }
     for (const c of (data.connections ?? []) as ComposioConnection[]) map[c.toolkit] = c
     setConnections(map)
     setLoading(false)
@@ -214,7 +213,7 @@ function ConnectorsSection() {
         })}
       </div>
       <p className="mt-3 font-mono text-[9px] leading-relaxed text-muted-foreground/70">
-        Composio hosts the Google consent screen and holds the resulting credential — it never passes through Enry. Read-only for now: no send-email or calendar-write actions.
+        Composio hosts the Google consent screen and holds the resulting credential — it never passes through Enry. Read-only for now: no send-email actions.
       </p>
     </motion.div>
   )
@@ -281,7 +280,7 @@ export default function SettingsPage() {
           <SettingsSectionCard
             icon={Puzzle}
             title="Integrations"
-            description="Composio connectors (Gmail, Google Calendar) and future API integrations."
+            description="Composio connectors (Gmail) and future API integrations."
             delay={0.25}
           />
         </div>

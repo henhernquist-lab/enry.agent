@@ -5,7 +5,7 @@ import { disconnectConnection, type ComposioToolkit } from '@/lib/composio'
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail', 'googlecalendar']
+const TOOLKITS: ComposioToolkit[] = ['gmail']
 
 // Revokes the connected account on Composio's side (which revokes the
 // underlying Gmail/Calendar OAuth token) and marks the row disconnected. A

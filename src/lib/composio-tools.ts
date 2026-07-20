@@ -110,7 +110,6 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
   // connect. Pass userId through to executeTool; the per-toolkit connection
   // is just a presence check ("is this user authorized for gmail at all?").
   const hasGmail = Boolean(connections.gmail)
-  const hasGCal = Boolean(connections.googlecalendar)
 
   if (hasGmail) {
     const gmailTools = await Promise.all([
@@ -148,45 +147,6 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
       }),
     ])
     for (const t of gmailTools) if (t) Object.assign(tools, t)
-  }
-
-  if (hasGCal) {
-    const calTools = await Promise.all([
-      wrapTool({
-        slug: 'GOOGLECALENDAR_LIST_EVENTS',
-        toolkitName: 'Google Calendar',
-        description: 'List upcoming events on the user\'s primary Google Calendar within an optional time window. Returns event title, start/end time, attendees, and location.',
-        inputSchema: z.object({
-          max_results: z.number().int().min(1).max(50).optional().describe('Max events. Default 10.'),
-          time_min: z.string().optional().describe('ISO 8601 lower bound, e.g. "2025-07-17T00:00:00Z". Default: now.'),
-          time_max: z.string().optional().describe('ISO 8601 upper bound, e.g. "2025-07-18T00:00:00Z". Default: 7 days from now.'),
-        }),
-        userId: uid,
-        toolKey: 'googlecalendar_list_events',
-      }),
-      wrapTool({
-        slug: 'GOOGLECALENDAR_GET_EVENT',
-        toolkitName: 'Google Calendar',
-        description: 'Fetch a single calendar event by ID. Returns full details including attendees, description, and conference link.',
-        inputSchema: z.object({
-          event_id: z.string().describe('The Google Calendar event ID.'),
-        }),
-        userId: uid,
-        toolKey: 'googlecalendar_get_event',
-      }),
-      wrapTool({
-        slug: 'GOOGLECALENDAR_FIND_EVENT',
-        toolkitName: 'Google Calendar',
-        description: 'Find a calendar event by search query (matches title, description, attendees). Useful for "what meeting do I have with X tomorrow".',
-        inputSchema: z.object({
-          query: z.string().describe('Free-text search query.'),
-          max_results: z.number().int().min(1).max(20).optional().describe('Max events. Default 5.'),
-        }),
-        userId: uid,
-        toolKey: 'googlecalendar_find_event',
-      }),
-    ])
-    for (const t of calTools) if (t) Object.assign(tools, t)
   }
 
   return tools
