@@ -10,12 +10,12 @@ export const maxDuration = 120
 // Three models used for the evolutionary fan-out. DeepSeek is the default
 // and strongest; MiniMax and Qwen provide alternative solution perspectives.
 const EVOLVE_MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro',    label: 'DeepSeek V4 Pro' },
+  { id: 'deepseek/deepseek-v4-pro',    label: 'DeepSeek V4 Pro' },
   { id: 'minimaxai/minimax-m3',              label: 'MiniMax M3' },
   { id: 'qwen/qwen3.5-397b-a17b',          label: 'Qwen 3.5 397B' },
 ] as const
 
-const SYNTHESIS_MODEL = 'deepseek-ai/deepseek-v4-pro'
+const SYNTHESIS_MODEL = 'deepseek/deepseek-v4-pro'
 const SYNTHESIS_THRESHOLD = 0.85
 const MIN_OUTPUT_LENGTH = 50
 

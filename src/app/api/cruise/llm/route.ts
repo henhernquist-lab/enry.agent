@@ -18,16 +18,24 @@ export const maxDuration = 300
 // courtesy, this is the enforcement. Token-authed like /api/cruise/ingest,
 // scoped to a single goal run.
 
+const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
+const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
+
+// baseURL alongside the key getter — DeepSeek moved off NIM (persistently
+// DEGRADED there) to OpenRouter; see src/lib/nim.ts for the same fix on the
+// user-facing chat path. This route has its own small, self-contained
+// MODEL_CONFIG (duplicated from nim.ts's PROVIDERS, not derived from it) so
+// it needed the same baseURL correction independently.
 const MODEL_CONFIG = {
-  'deepseek-ai/deepseek-v4-pro': () => process.env.DEEPSEEK_API_KEY ?? '',
-  'minimaxai/minimax-m3':           () => process.env.MINIMAX_API_KEY ?? '',
-  'qwen/qwen3.5-397b-a17b':      () => process.env.QWEN_API_KEY ?? '',
-  'z-ai/glm-5.2':                () => process.env.GLM_API_KEY ?? '',
+  'deepseek/deepseek-v4-pro': { baseURL: OPENROUTER_BASE, getApiKey: () => process.env.DEEPSEEK_API_KEY ?? '' },
+  'minimaxai/minimax-m3':           { baseURL: NIM_BASE, getApiKey: () => process.env.MINIMAX_API_KEY ?? '' },
+  'qwen/qwen3.5-397b-a17b':      { baseURL: NIM_BASE, getApiKey: () => process.env.QWEN_API_KEY ?? '' },
+  'z-ai/glm-5.2':                { baseURL: NIM_BASE, getApiKey: () => process.env.GLM_API_KEY ?? '' },
 } as const
 
 type AllowedModel = keyof typeof MODEL_CONFIG
 const ALLOWED_MODELS = Object.keys(MODEL_CONFIG) as AllowedModel[]
-const DEFAULT_MODEL: AllowedModel = 'deepseek-ai/deepseek-v4-pro'
+const DEFAULT_MODEL: AllowedModel = 'deepseek/deepseek-v4-pro'
 
 interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
 
@@ -57,7 +65,8 @@ export async function POST(req: Request) {
   }
 
   const selectedModel: AllowedModel = ALLOWED_MODELS.includes(body.model) ? body.model : DEFAULT_MODEL
-  const apiKey = MODEL_CONFIG[selectedModel]()
+  const { baseURL, getApiKey } = MODEL_CONFIG[selectedModel]
+  const apiKey = getApiKey()
   if (!apiKey) return Response.json({ error: `No API key configured for ${selectedModel}` }, { status: 500 })
 
   // Reserve the slot before calling out — a slow or failing completion still
@@ -66,7 +75,7 @@ export async function POST(req: Request) {
   await supabase.from('cruise_goal_runs').update({ llm_calls_used: nextCalls, heartbeat_at: new Date().toISOString() }).eq('id', run.id)
 
   try {
-    const client = createOpenAI({ baseURL: 'https://integrate.api.nvidia.com/v1', apiKey })
+    const client = createOpenAI({ baseURL, apiKey })
     const result = await generateText({
       model: client.chat(selectedModel),
       messages,

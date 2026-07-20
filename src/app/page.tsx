@@ -41,7 +41,7 @@ export default function EnryAgentPage() {
 
   const [activities, setActivities] = useState<ActivityEvent[]>([])
   const [streamingText, setStreamingText] = useState('')
-  const [currentModel, setCurrentModel] = useState('deepseek-ai/deepseek-v4-pro')
+  const [currentModel, setCurrentModel] = useState('deepseek/deepseek-v4-pro')
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
   const responseStartRef = useRef<number | null>(null)
 

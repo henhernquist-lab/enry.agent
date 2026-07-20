@@ -42,7 +42,7 @@ export async function POST(req: Request) {
         id,
         google_id: googleId,
         title: title ?? 'New chat',
-        model: model ?? 'deepseek-ai/deepseek-v4-pro',
+        model: model ?? 'deepseek/deepseek-v4-pro',
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'id' },

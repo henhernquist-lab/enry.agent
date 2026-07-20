@@ -169,8 +169,8 @@ export function CenterPanel({
   onStreamUpdate,
   onModelChange,
 }: CenterPanelProps) {
-  const [model, setModel] = useState<ModelId>('deepseek-ai/deepseek-v4-pro')
-  const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS['deepseek-ai/deepseek-v4-pro'] ?? 'medium')
+  const [model, setModel] = useState<ModelId>('deepseek/deepseek-v4-pro')
+  const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS['deepseek/deepseek-v4-pro'] ?? 'medium')
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
 
   // Focus mode (source scope) — controls which DRAWERS the agent reads from

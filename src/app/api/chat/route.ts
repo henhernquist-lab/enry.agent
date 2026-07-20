@@ -26,7 +26,7 @@ import { listModels } from '@/lib/nim'
 
 // Chat-scoped model allowlist — subset of MODEL_LIST that has 'chat' scope.
 const CHAT_MODELS = listModels('chat').map((m) => m.id)
-const DEFAULT_MODEL = CHAT_MODELS[0] ?? 'deepseek-ai/deepseek-v4-pro'
+const DEFAULT_MODEL = CHAT_MODELS[0] ?? 'deepseek/deepseek-v4-pro'
 
 export const maxDuration = 60
 
@@ -378,6 +378,14 @@ export async function POST(req: Request) {
       // error surfaces, same root cause as Drive's terminal-exec timeout bug.
       // maxRetries: 0 fails once, cleanly, instead of doubling in the dark.
       maxRetries: 0,
+      // Left unset, the SDK requests the model's full context window as
+      // max_tokens. DeepSeek now routes through OpenRouter on a free-tier
+      // key with a real dollar ceiling per request — an uncapped request
+      // (65536 tokens) exceeds what the account can afford and the call
+      // fails outright before generating anything. 4096 is comfortably
+      // within a normal chat reply and well under the account's affordable
+      // ceiling (~11.5k tokens at last check).
+      maxOutputTokens: 4096,
       onError: ({ error }) => { console.error('streamText multi-skill error:', error) },
       onFinish: async ({ text }) => {
         if (invocationId) {
@@ -674,6 +682,10 @@ ${userProfile ? `\n${userProfile}` : ''}`,
     // 40-50s+ even on a healthy model (confirmed empirically), leaving very
     // little margin before a retry-doubled attempt blows past maxDuration.
     maxRetries: 0,
+    // See the multi-skill call above — an uncapped max_tokens request
+    // exceeds what the free-tier OpenRouter account (DeepSeek's provider)
+    // can afford per call and fails before generating anything.
+    maxOutputTokens: 4096,
     onError: ({ error }) => {
       console.error('streamText error:', error)
     },

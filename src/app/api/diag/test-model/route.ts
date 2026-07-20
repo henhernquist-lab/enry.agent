@@ -86,8 +86,8 @@ async function testSingleModel(id: string): Promise<ModelTestResult> {
 }
 
 function inferEnvVarName(modelId: string): string {
-  if (modelId === 'gemini-3.1-pro') return 'GEMINI_API_KEY'
-  if (modelId === 'gpt-4o') return 'GITHUB_MODELS_TOKEN (or GITHUB_TOKEN)'
+  if (modelId === 'gemini-3.1-pro-preview') return 'GEMINI_API_KEY'
+  if (modelId === 'gpt-4o') return 'GITHUB_MODELS_API_KEY (or GITHUB_TOKEN)'
   if (modelId.startsWith('moonshotai/kimi-k2.7-code') || modelId.includes('kimi-k2.7-code')) return 'OPENROUTER_API_KEY'
   if (modelId.startsWith('deepseek')) return 'DEEPSEEK_API_KEY'
   if (modelId.startsWith('minimax')) return 'MINIMAX_API_KEY'

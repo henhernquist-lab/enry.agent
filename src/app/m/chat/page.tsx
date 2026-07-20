@@ -260,7 +260,7 @@ export default function MobileChatPage() {
           {LITE_MODELS.length === 0 && (
             <div className="px-4 py-6 text-center">
               <p className="font-mono text-xs text-muted-foreground">
-                GPT-4o not currently available — check GITHUB_MODELS_TOKEN.
+                GPT-4o not currently available — check GITHUB_MODELS_API_KEY.
               </p>
             </div>
           )}

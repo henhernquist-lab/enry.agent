@@ -14,7 +14,7 @@ import { DiffView } from '@/components/terminal/diff-view'
 interface RepoOption { full_name: string; default_branch: string; private: boolean }
 
 const MODELS = [
-  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro', hint: 'strongest · complex work' },
+  { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro', hint: 'strongest · complex work' },
   { id: 'minimaxai/minimax-m3',          label: 'MiniMax M3',       hint: 'fast · general' },
   { id: 'qwen/qwen3.5-397b-a17b',      label: 'Qwen 3.5 397B',    hint: 'large · analysis' },
   { id: 'z-ai/glm-5.2',                label: 'GLM 5.2',          hint: 'versatile · instructions' },

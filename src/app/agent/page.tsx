@@ -91,7 +91,7 @@ const EFFORTS = [
 // get reasonable reasoning without the deepest/slowest mode until we have
 // real testing data.
 const MODEL_DEFAULTS: Record<string, EffortId> = {
-  'deepseek-ai/deepseek-v4-pro':      'none',
+  'deepseek/deepseek-v4-pro':      'none',
   'z-ai/glm-5.2':                    'medium',
   'qwen/qwen3.5-397b-a17b':           'low',
   'minimaxai/minimax-m3':               'none',
