@@ -1108,7 +1108,12 @@ export function CenterPanel({
                 {sessionFocus.kind === 'none' ? 'Focus' : sessionFocusLabel(sessionFocus)}
               </button>
               {sessionFocusMenuOpen && (
-                <div className="absolute top-full right-0 z-50 mt-1 w-56 max-h-[min(28rem,calc(100dvh-12rem))] overflow-y-auto border border-border bg-surface-secondary shadow-xl">
+                // Opens upward — same reasoning as the model and Focus Mode
+                // dropdowns above: this control sits in the bottom input bar,
+                // so top-full pushes the stance-mode list (Brainstorm/Ship/
+                // Teacher/Focus + None + custom) off the bottom of the
+                // viewport with no way to scroll it back into view.
+                <div className="absolute bottom-full right-0 z-50 mb-1 w-56 max-h-[50vh] overflow-y-auto border border-border bg-surface-secondary shadow-xl scrollbar-hidden">
                   {/* None: opt out of session scoping entirely */}
                   <button
                     type="button"
