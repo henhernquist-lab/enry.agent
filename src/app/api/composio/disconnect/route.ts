@@ -1,11 +1,11 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
-import { disconnectConnection, type ComposioToolkit } from '@/lib/composio'
+import { disconnectConnection, type ComposioConnectable } from '@/lib/composio'
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search', 'firecrawl']
+const TOOLKITS: ComposioConnectable[] = ['gmail', 'firecrawl']
 
 // Revokes the connected account on Composio's side (which revokes the
 // underlying Gmail/Calendar OAuth token) and marks the row disconnected. A
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
-  const toolkit = String(body.toolkit ?? '') as ComposioToolkit
+  const toolkit = String(body.toolkit ?? '') as ComposioConnectable
   if (!TOOLKITS.includes(toolkit)) return Response.json({ error: 'Invalid toolkit' }, { status: 400 })
 
   const { data: row } = await supabase

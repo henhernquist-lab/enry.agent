@@ -18,7 +18,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
-import { executeTool, type ComposioToolkit } from '@/lib/composio'
+import { executeTool, type ComposioToolkit, type ComposioConnectable } from '@/lib/composio'
 import type { FocusMode } from '@/lib/focus-mode'
 
 type ConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
@@ -32,16 +32,16 @@ interface ComposioRow {
 // Reads composio_connections for this user. Returns the connected_account_id
 // per toolkit where the status is 'connected'. Called once per chat turn
 // (cached for the turn's lifetime by the caller via the closure).
-async function loadConnections(uid: string): Promise<Partial<Record<ComposioToolkit, string>>> {
+async function loadConnections(uid: string): Promise<Partial<Record<ComposioConnectable, string>>> {
   try {
     const { data } = await supabase
       .from('composio_connections')
       .select('toolkit, status, composio_connected_account_id')
       .eq('user_id', uid)
-    const out: Partial<Record<ComposioToolkit, string>> = {}
+    const out: Partial<Record<ComposioConnectable, string>> = {}
     for (const row of (data ?? []) as ComposioRow[]) {
       if (row.status === 'connected' && row.composio_connected_account_id) {
-        out[row.toolkit as ComposioToolkit] = row.composio_connected_account_id
+        out[row.toolkit as ComposioConnectable] = row.composio_connected_account_id
       }
     }
     return out
@@ -107,7 +107,6 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
   // connect. Pass userId through to executeTool; the per-toolkit connection
   // is just a presence check ("is this user authorized for gmail at all?").
   const hasGmail = Boolean(connections.gmail)
-  const hasSearch = Boolean(connections.composio_search)
   const hasFirecrawl = Boolean(connections.firecrawl)
 
   if (hasFirecrawl) {
@@ -170,7 +169,9 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
     for (const t of firecrawlTools) if (t) Object.assign(tools, t)
   }
 
-  if (hasSearch) {
+  // composio_search is a no-auth toolkit — its tools are always available
+  // without any connection step. No OAuth, no API key needed.
+  {
     const searchTools = await Promise.all([
       wrapTool({
         slug: 'COMPOSIO_SEARCH_DUCKDUCKGO_SEARCH',
