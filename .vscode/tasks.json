@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Open Enry Workspace",
+      "detail": "Attach to (or build) the persistent 'enry' tmux session: Drive dev server + 3 free terminals.",
+      "type": "shell",
+      "command": "${workspaceFolder}/.devcontainer/enry-workspace.sh",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": false,
+        "echo": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}

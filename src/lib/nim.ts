@@ -37,7 +37,7 @@ export const MODEL_LIST: ModelMeta[] = [
     supportsReasoning: true,
   },
   {
-    id: 'minimax/minimax-m3',
+    id: 'minimaxai/minimax-m3',
     label: 'MiniMax M3',
     company: 'NVIDIA NIM',
     description: 'Fast and capable. Drive-only.',
@@ -46,7 +46,7 @@ export const MODEL_LIST: ModelMeta[] = [
     supportsVision: true,
   },
   {
-    id: 'qwen/qwen3.5-122b-a10b',
+    id: 'qwen/qwen3.5-397b-a17b',
     label: 'Qwen 3.5',
     company: 'NVIDIA NIM',
     description: 'Great for analysis.',
@@ -120,8 +120,8 @@ const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
 const PROVIDERS: Record<string, ProviderConfig> = {
   // NIM-hosted models share the endpoint + apiKey lookup.
   'deepseek-ai/deepseek-v4-pro':       { baseURL: NIM_BASE, getApiKey: () => process.env.DEEPSEEK_API_KEY ?? '' },
-  'minimax/minimax-m3':                 { baseURL: NIM_BASE, getApiKey: () => process.env.MINIMAX_API_KEY ?? '' },
-  'qwen/qwen3.5-122b-a10b':            { baseURL: NIM_BASE, getApiKey: () => process.env.QWEN_API_KEY ?? '' },
+  'minimaxai/minimax-m3':                 { baseURL: NIM_BASE, getApiKey: () => process.env.MINIMAX_API_KEY ?? '' },
+  'qwen/qwen3.5-397b-a17b':            { baseURL: NIM_BASE, getApiKey: () => process.env.QWEN_API_KEY ?? '' },
   'z-ai/glm-5.2':                      { baseURL: NIM_BASE, getApiKey: () => process.env.GLM_API_KEY ?? '' },
   'nvidia/nemotron-3-ultra-550b-a55b': { baseURL: NIM_BASE, getApiKey: () => process.env.NVIDIA_API_KEY ?? '' },
   'moonshotai/kimi-k2-instruct':        { baseURL: NIM_BASE, getApiKey: () => process.env.MOONSHOT_API_KEY ?? process.env.NVIDIA_API_KEY ?? '' },

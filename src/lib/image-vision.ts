@@ -1,9 +1,9 @@
 import { generateText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 
-// Qwen 3.5 122B — one of only two NIM models with native image input
+// Qwen 3.5 397B — one of only two NIM models with native image input
 // (confirmed against docs/model-selection-guide.md); the other is MiniMax M3.
-const VISION_MODEL = 'qwen/qwen3.5-122b-a10b'
+const VISION_MODEL = 'qwen/qwen3.5-397b-a17b'
 
 export async function describeImage(imageUrl: string, mediaType: string): Promise<{ description: string | null; error: string | null }> {
   try {

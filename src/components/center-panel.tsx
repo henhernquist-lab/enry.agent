@@ -2,7 +2,6 @@
 
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
@@ -312,13 +311,7 @@ export function CenterPanel({
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
   const [uploadResult, setUploadResult] = useState<AttachmentMeta | null>(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
-  // Portal-bound refs — used by the click-outside + scroll/resize effect once
-  // the dropdown has been moved to <body> via createPortal (escapes the
-  // `<main className="overflow-hidden">` ancestor that was clipping the
-  // dropdown against the bottom of the chat panel).
-  const modelTriggerRef = useRef<HTMLButtonElement>(null)
-  const modelDropdownPortalRef = useRef<HTMLDivElement>(null)
-  const [modelDropdownCoords, setModelDropdownCoords] = useState({ top: 0, left: 0 })
+  const modelDropdownRef = useRef<HTMLDivElement>(null)
   const effortDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -369,41 +362,13 @@ export function CenterPanel({
     return () => clearInterval(interval)
   }, [])
 
-  // Model dropdown lives in a portal so click-outside must check BOTH the
-  // trigger button and the portaled content. Scroll/resize close it instead
-  // of repositioning (more reliable for a chat panel where the messages area
-  // scrolls under the input — capture phase so we catch inner-element scrolls
-  // too, but not the dropdown's own scroll because the portaled ref gates that).
   useEffect(() => {
     if (!modelOpen) return
-
-    const handleOutsideClick = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (
-        !modelTriggerRef.current?.contains(target) &&
-        !modelDropdownPortalRef.current?.contains(target)
-      ) {
-        setModelOpen(false)
-      }
+    const handler = (e: MouseEvent) => {
+      if (!modelDropdownRef.current?.contains(e.target as Node)) setModelOpen(false)
     }
-
-    const handleScrollOrResize = (e: Event) => {
-      // If the scroll originated inside the portaled dropdown itself, the
-      // outer handlers still fire (capture phase) — but we don't want to
-      // close on internal scroll. Check the target to distinguish.
-      if (modelDropdownPortalRef.current?.contains(e.target as Node)) return
-      setModelOpen(false)
-    }
-
-    window.addEventListener('scroll', handleScrollOrResize, true)
-    window.addEventListener('resize', handleScrollOrResize)
-    document.addEventListener('mousedown', handleOutsideClick)
-
-    return () => {
-      window.removeEventListener('scroll', handleScrollOrResize, true)
-      window.removeEventListener('resize', handleScrollOrResize)
-      document.removeEventListener('mousedown', handleOutsideClick)
-    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
   }, [modelOpen])
 
   useEffect(() => {
@@ -606,24 +571,6 @@ export function CenterPanel({
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 2000)
   }
-
-  // Open the model dropdown below the trigger. Coordinates are computed at
-  // open-time from getBoundingClientRect (since position:fixed uses viewport
-  // coords, not document coords). The portal escape means the dropdown can
-  // grow to its full max-height without being clipped by <main overflow-hidden>.
-  const toggleModelDropdown = useCallback(() => {
-    if (!modelOpen) {
-      const rect = modelTriggerRef.current?.getBoundingClientRect()
-      if (rect) {
-        setModelDropdownCoords({ top: rect.bottom + 4, left: rect.left })
-      }
-      setModelOpen(true)
-    } else {
-      setModelOpen(false)
-      // Return focus to trigger for keyboard users.
-      modelTriggerRef.current?.focus()
-    }
-  }, [modelOpen])
 
   const currentChatEffort = CHAT_EFFORTS.find((e) => e.id === chatEffort)
   const isStreaming = status === 'streaming' || status === 'submitted'
@@ -1021,11 +968,10 @@ export function CenterPanel({
         <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-1.5 px-4 pt-2">
           {/* Left group: model */}
           <div className="flex items-center gap-1.5">
-            <div className="relative flex-shrink-0">
+            <div ref={modelDropdownRef} className="relative flex-shrink-0">
               <button
-                ref={modelTriggerRef}
                 type="button"
-                onClick={toggleModelDropdown}
+                onClick={() => setModelOpen((o) => !o)}
                 aria-haspopup="listbox"
                 aria-expanded={modelOpen}
                 className="flex h-10 items-center gap-1.5 rounded border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
@@ -1038,26 +984,18 @@ export function CenterPanel({
                 </span>
                 <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
               </button>
-              {modelOpen && typeof document !== 'undefined' && createPortal(
-                <div
-                  ref={modelDropdownPortalRef}
-                  role="listbox"
-                  style={{
-                    position: 'fixed',
-                    top: modelDropdownCoords.top,
-                    left: modelDropdownCoords.left,
-                    width: '20rem', // w-80
-                    maxHeight: 'min(28rem, calc(100dvh - 12rem))',
-                  }}
-                  className="z-50 overflow-y-auto border border-border bg-surface-secondary shadow-xl"
-                >
+              {modelOpen && (
+                // Opens upward: this control sits in the bottom input bar, so
+                // top-full would push a long model list off the bottom of the
+                // viewport with nothing able to scroll it back into view.
+                <div className="absolute bottom-full left-0 z-50 mb-1 w-80 max-h-[50vh] overflow-y-auto border border-border bg-surface-secondary shadow-xl scrollbar-hidden">
                   {MODELS.map((m) => (
                     <button
                       type="button"
                       key={m.id}
                       role="option"
                       aria-selected={model === m.id}
-                      onClick={() => { handleModelSelect(m.id); modelTriggerRef.current?.focus() }}
+                      onClick={() => handleModelSelect(m.id)}
                       className={`flex w-full items-start gap-2 px-3 py-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-elevated ${
                         model === m.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
                       }`}
@@ -1080,8 +1018,7 @@ export function CenterPanel({
                       </span>
                     </button>
                   ))}
-                </div>,
-                document.body
+                </div>
               )}
             </div>
           </div>
@@ -1137,7 +1074,9 @@ export function CenterPanel({
                 {currentFocus.label}
               </button>
               {focusMenuOpen && (
-                <div className="absolute top-full right-0 z-50 mt-1 w-44 max-h-[min(28rem,calc(100dvh-12rem))] overflow-y-auto border border-border bg-surface-secondary shadow-xl">
+                // Opens upward — same reasoning as the model dropdown above:
+                // this control lives in the bottom input bar.
+                <div className="absolute bottom-full right-0 z-50 mb-1 w-44 max-h-[50vh] overflow-y-auto border border-border bg-surface-secondary shadow-xl scrollbar-hidden">
                   {FOCUS_MODES.map((f) => (
                     <button
                       type="button"

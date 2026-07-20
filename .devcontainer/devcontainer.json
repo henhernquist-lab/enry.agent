@@ -1,0 +1,11 @@
+{
+  "name": "enry.agent",
+  "//": "Pins the same default GitHub Codespaces universal image this repo already runs (see /usr/local/etc/vscode-dev-containers/meta.env). Adding this file only changes the container on an explicit Rebuild — it installs tmux and wires up the persistent workspace; nothing else about the base image changes.",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": []
+    }
+  }
+}

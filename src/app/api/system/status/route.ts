@@ -12,8 +12,8 @@ const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
 // renders / polls don't re-hit NIM.
 const MODELS: { id: string; keyEnv: string }[] = [
   { id: 'deepseek-ai/deepseek-v4-pro', keyEnv: 'DEEPSEEK_API_KEY' },
-  { id: 'minimax/minimax-m3',          keyEnv: 'MINIMAX_API_KEY' },
-  { id: 'qwen/qwen3.5-122b-a10b',      keyEnv: 'QWEN_API_KEY' },
+  { id: 'minimaxai/minimax-m3',          keyEnv: 'MINIMAX_API_KEY' },
+  { id: 'qwen/qwen3.5-397b-a17b',      keyEnv: 'QWEN_API_KEY' },
   { id: 'z-ai/glm-5.2',                keyEnv: 'GLM_API_KEY' },
 ]
 

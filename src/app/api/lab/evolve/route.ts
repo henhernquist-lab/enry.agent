@@ -11,8 +11,8 @@ export const maxDuration = 120
 // and strongest; MiniMax and Qwen provide alternative solution perspectives.
 const EVOLVE_MODELS = [
   { id: 'deepseek-ai/deepseek-v4-pro',    label: 'DeepSeek V4 Pro' },
-  { id: 'minimax/minimax-m3',              label: 'MiniMax M3' },
-  { id: 'qwen/qwen3.5-122b-a10b',          label: 'Qwen 3.5 122B' },
+  { id: 'minimaxai/minimax-m3',              label: 'MiniMax M3' },
+  { id: 'qwen/qwen3.5-397b-a17b',          label: 'Qwen 3.5 397B' },
 ] as const
 
 const SYNTHESIS_MODEL = 'deepseek-ai/deepseek-v4-pro'
@@ -155,7 +155,7 @@ Your task:
   "trait_breakdown": {
     "DeepSeek V4 Pro": "specific trait from that candidate",
     "MiniMax M3": "specific trait from that candidate",
-    "Qwen 3.5 122B": "specific trait from that candidate"
+    "Qwen 3.5 397B": "specific trait from that candidate"
   },
   "reasoning": "2-3 sentences explaining the synthesis choices"
 }

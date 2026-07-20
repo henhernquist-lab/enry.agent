@@ -1,0 +1,239 @@
+import { spawn, type IPty } from 'node-pty'
+import { randomUUID } from 'crypto'
+
+// PTY session manager for Drive's real-shell terminal panes.
+//
+// Each terminal pane in the Drive UI is backed by a real PTY (node-pty)
+// running an interactive login bash shell in the Codespace/container. This
+// gives the user a genuine shell where they can run gemini, freebuff,
+// opencode, or any other CLI — not a sandboxed/LLM-mediated pseudo-shell.
+//
+// Sessions live in module-level state for the lifetime of the Node process.
+// A modest scrollback buffer is kept per session so that briefly disconnecting
+// the SSE stream (e.g. React Strict Mode double-mount in dev, or tabbing away
+// and back) doesn't lose output. A reaper kills long-idle orphaned sessions
+// to avoid leaking PTYs when a browser closes without sending DELETE.
+
+export interface PTYSession {
+  id: string
+  pty: IPty
+  cols: number
+  rows: number
+  cwd: string
+  createdAt: number
+  lastWriteAt: number
+  /** Chunked scrollback, trimmed to MAX_SCROLLBACK_BYTES. */
+  scrollback: string[]
+  scrollbackBytes: number
+  /** Live SSE subscribers. */
+  dataListeners: Set<(data: string) => void>
+  exitListeners: Set<(exitCode: number, signal?: number) => void>
+  exited: boolean
+}
+
+const MAX_SCROLLBACK_BYTES = 256 * 1024 // 256 KiB per session
+const SESSION_IDLE_TTL_MS = 30 * 60 * 1000 // kill after 30 min with no listeners + no writes
+const REAPER_INTERVAL_MS = 5 * 60 * 1000
+
+const sessions = new Map<string, PTYSession>()
+
+function defaultShell(): { file: string; args: string[] } {
+  // Interactive login bash — sources the Codespace profiles so PATH includes
+  // nvm/global-installed CLIs (gemini, freebuff, opencode, ...). Matches what
+  // the tmux workspace shells see.
+  const shell = process.env.SHELL || '/bin/bash'
+  return { file: shell, args: ['-l', '-i'] }
+}
+
+export function createSession(opts?: {
+  cols?: number
+  rows?: number
+  cwd?: string
+}): PTYSession {
+  const cols = opts?.cols ?? 80
+  const rows = opts?.rows ?? 24
+  const cwd = opts?.cwd ?? process.env.HOME ?? process.cwd()
+  const { file, args } = defaultShell()
+
+  const id = randomUUID()
+  const pty = spawn(file, args, {
+    name: 'xterm-256color',
+    cols,
+    rows,
+    cwd,
+    env: {
+      ...process.env,
+      // Drive PTYs are explicitly interactive shells.
+      TERM: 'xterm-256color',
+      // Disambiguate from the tmux workspace shells if anyone inspects env.
+      ENRY_PANE: '1',
+    },
+  })
+
+  const session: PTYSession = {
+    id,
+    pty,
+    cols,
+    rows,
+    cwd,
+    createdAt: Date.now(),
+    lastWriteAt: Date.now(),
+    scrollback: [],
+    scrollbackBytes: 0,
+    dataListeners: new Set(),
+    exitListeners: new Set(),
+    exited: false,
+  }
+
+  pty.onData((data) => {
+    session.scrollback.push(data)
+    session.scrollbackBytes += data.length
+    trimScrollback(session)
+    // Snapshot to array — a listener might remove itself during dispatch.
+    const listeners = Array.from(session.dataListeners)
+    for (const fn of listeners) {
+      try {
+        fn(data)
+      } catch {
+        // Listener threw — drop it so one bad subscriber can't kill the PTY.
+        session.dataListeners.delete(fn)
+      }
+    }
+  })
+
+  pty.onExit(({ exitCode, signal }) => {
+    session.exited = true
+    for (const fn of Array.from(session.exitListeners)) {
+      try {
+        fn(exitCode, signal)
+      } catch {
+        /* ignore */
+      }
+    }
+    // Give SSE readers a moment to flush the exit, then reap.
+    setTimeout(() => {
+      try {
+        pty.kill()
+      } catch {
+        /* already gone */
+      }
+      sessions.delete(id)
+    }, 2000)
+  })
+
+  sessions.set(id, session)
+  return session
+}
+
+function trimScrollback(session: PTYSession) {
+  while (session.scrollbackBytes > MAX_SCROLLBACK_BYTES && session.scrollback.length > 1) {
+    const chunk = session.scrollback.shift()!
+    session.scrollbackBytes -= chunk.length
+  }
+}
+
+export function getSession(id: string): PTYSession | undefined {
+  return sessions.get(id)
+}
+
+export function writeInput(id: string, data: string): boolean {
+  const session = sessions.get(id)
+  if (!session || session.exited) return false
+  try {
+    session.pty.write(data)
+    session.lastWriteAt = Date.now()
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function resizeSession(id: string, cols: number, rows: number): boolean {
+  const session = sessions.get(id)
+  if (!session || session.exited) return false
+  // Clamp to sane bounds — xterm.js can emit 0 cols/rows during collapse.
+  const c = Math.max(1, Math.min(400, Math.floor(cols)))
+  const r = Math.max(1, Math.min(200, Math.floor(rows)))
+  if (c === session.cols && r === session.rows) return true
+  try {
+    session.pty.resize(c, r)
+    session.cols = c
+    session.rows = r
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function killSession(id: string): boolean {
+  const session = sessions.get(id)
+  if (!session) return false
+  if (!session.exited) {
+    try {
+      session.pty.kill()
+    } catch {
+      /* ignore */
+    }
+  }
+  sessions.delete(id)
+  return true
+}
+
+/** Subscribe to live PTY output. Returns an unsubscribe fn. */
+export function subscribe(
+  id: string,
+  onData: (data: string) => void,
+  onExit?: (exitCode: number, signal?: number) => void,
+): () => void {
+  const session = sessions.get(id)
+  if (!session) return () => {}
+  session.dataListeners.add(onData)
+  if (onExit) session.exitListeners.add(onExit)
+  return () => {
+    session.dataListeners.delete(onData)
+    if (onExit) session.exitListeners.delete(onExit)
+  }
+}
+
+/** Full scrollback as a single string (replayed on SSE connect). */
+export function getScrollback(id: string): string {
+  const session = sessions.get(id)
+  if (!session) return ''
+  return session.scrollback.join('')
+}
+
+// ─── Reaper ─────────────────────────────────────────────────
+// Kills sessions that have no live listeners AND haven't received input in a
+// while. Guards against orphaned PTYs when a browser closes abruptly.
+
+let reaperTimer: NodeJS.Timeout | null = null
+
+function reap() {
+  const now = Date.now()
+  for (const [id, session] of sessions) {
+    if (session.exited) {
+      sessions.delete(id)
+      continue
+    }
+    const idle = now - session.lastWriteAt
+    if (session.dataListeners.size === 0 && idle > SESSION_IDLE_TTL_MS) {
+      try {
+        session.pty.kill()
+      } catch {
+        /* ignore */
+      }
+      sessions.delete(id)
+    }
+  }
+}
+
+export function ensureReaper(): void {
+  if (reaperTimer) return
+  reaperTimer = setInterval(reap, REAPER_INTERVAL_MS)
+  // Don't keep the process alive just for the reaper.
+  if (reaperTimer && typeof reaperTimer.unref === 'function') {
+    reaperTimer.unref()
+  }
+}
+
+ensureReaper()
