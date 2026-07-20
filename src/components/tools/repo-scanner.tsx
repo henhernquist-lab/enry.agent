@@ -76,10 +76,15 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
         }),
       })
       const data = await res.json()
-      setMessages((prev) => [...prev, { role: 'assistant', text: data.text ?? 'No response.' }])
+      if (data.error) {
+        setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${data.error}` }])
+      } else {
+        setMessages((prev) => [...prev, { role: 'assistant', text: data.text ?? 'No response.' }])
+      }
     } catch (err) {
-      console.error('repo chat failed:', err)
-      setMessages((prev) => [...prev, { role: 'assistant', text: 'Chat failed. Try again.' }])
+      const detail = err instanceof Error ? err.message : String(err)
+      console.error('repo chat failed:', detail)
+      setMessages((prev) => [...prev, { role: 'assistant', text: `Chat failed: ${detail}. Check your network and try again.` }])
     } finally {
       setThinking(false)
     }
