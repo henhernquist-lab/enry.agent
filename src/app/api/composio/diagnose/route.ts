@@ -5,7 +5,7 @@ import { resolveAuthConfigId, type ComposioToolkit } from '@/lib/composio'
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail']
+const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search']
 
 // Diagnostic endpoint: exercises the Composio auth config + link creation path
 // using the server's own credentials, and returns the full raw response or

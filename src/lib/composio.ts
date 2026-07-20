@@ -10,7 +10,7 @@
 
 import { Composio } from '@composio/core'
 
-export type ComposioToolkit = 'gmail'
+export type ComposioToolkit = 'gmail' | 'composio_search'
 
 let _client: Composio | null = null
 
@@ -30,6 +30,7 @@ function client(): Composio {
 // every possible scope. Fallback to list+create only if the env var is unset.
 const AUTH_CONFIG_ENV: Record<ComposioToolkit, string | undefined> = {
   gmail: process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID,
+  composio_search: process.env.COMPOSIO_SEARCH_AUTH_CONFIG_ID,
 }
 
 // Synchronous resolver: env-var wins, no SDK call. Used by the hot connect path

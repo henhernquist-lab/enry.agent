@@ -5,7 +5,7 @@ import { createConnectionLink, type ComposioToolkit, resolveAuthConfigId, verify
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail']
+const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search']
 
 // Starts a Composio Connect Link for a toolkit: creates/reuses the toolkit's
 // auth config, creates a connected-account link scoped to this user, upserts a
