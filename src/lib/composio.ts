@@ -10,7 +10,7 @@
 
 import { Composio } from '@composio/core'
 
-export type ComposioToolkit = 'gmail' | 'composio_search'
+export type ComposioToolkit = 'gmail' | 'composio_search' | 'firecrawl'
 
 let _client: Composio | null = null
 
@@ -31,6 +31,7 @@ function client(): Composio {
 const AUTH_CONFIG_ENV: Record<ComposioToolkit, string | undefined> = {
   gmail: process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID,
   composio_search: process.env.COMPOSIO_SEARCH_AUTH_CONFIG_ID,
+  firecrawl: process.env.COMPOSIO_FIRECRAWL_AUTH_CONFIG_ID,
 }
 
 // Synchronous resolver: env-var wins, no SDK call. Used by the hot connect path

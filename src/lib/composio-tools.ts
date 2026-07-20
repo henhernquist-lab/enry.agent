@@ -63,7 +63,7 @@ const FOCUS_ALLOWS: Record<string, boolean> = {
 // list remains honest (the model doesn't see a tool it can't actually call).
 async function wrapTool(args: {
   slug: string
-  toolkitName: 'Gmail' | 'Google Calendar' | 'Composio Search'
+  toolkitName: 'Gmail' | 'Google Calendar' | 'Composio Search' | 'Firecrawl'
   description: string
   inputSchema: z.ZodTypeAny
   userId: string
@@ -108,6 +108,67 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
   // is just a presence check ("is this user authorized for gmail at all?").
   const hasGmail = Boolean(connections.gmail)
   const hasSearch = Boolean(connections.composio_search)
+  const hasFirecrawl = Boolean(connections.firecrawl)
+
+  if (hasFirecrawl) {
+    const firecrawlTools = await Promise.all([
+      wrapTool({
+        slug: 'FIRECRAWL_SCRAPE',
+        toolkitName: 'Firecrawl',
+        description: 'Scrape a single URL and return clean, structured content (markdown, HTML, or raw text). Use this to extract the full content of a specific page — docs, articles, product pages, any URL. Returns clean markdown by default. Prefer this over composio_fetch_url for serious scraping — Firecrawl handles JS-rendered pages, auth walls, and produces cleaner output.',
+        inputSchema: z.object({
+          url: z.string().url().describe('The URL to scrape.'),
+          formats: z.array(z.enum(['markdown', 'html', 'rawHtml', 'screenshot'])).optional().describe('Output formats. Default ["markdown"].'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_scrape',
+      }),
+      wrapTool({
+        slug: 'FIRECRAWL_CRAWL_V2',
+        toolkitName: 'Firecrawl',
+        description: 'Crawl an entire website — follows links within the same domain and returns content from multiple pages. Use this when the user asks "show me everything on site X" or wants to index/understand a whole site. Returns structured crawl results with page content.',
+        inputSchema: z.object({
+          url: z.string().url().describe('The starting URL to crawl.'),
+          max_pages: z.number().int().min(1).max(100).optional().describe('Max pages to crawl. Default 10. Keep low for quick scans.'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_crawl',
+      }),
+      wrapTool({
+        slug: 'FIRECRAWL_EXTRACT',
+        toolkitName: 'Firecrawl',
+        description: 'Extract structured data from a URL using an LLM prompt. Give it a URL and describe what data fields you want (e.g., "extract all product names, prices, and ratings"). Returns JSON matching your requested schema. Use this for targeted data extraction from any page.',
+        inputSchema: z.object({
+          url: z.string().url().describe('The URL to extract data from.'),
+          prompt: z.string().describe('Describe what data to extract. E.g., "Extract all product names, prices, and ratings as a JSON array."'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_extract',
+      }),
+      wrapTool({
+        slug: 'FIRECRAWL_SEARCH',
+        toolkitName: 'Firecrawl',
+        description: 'Web search via Firecrawl. Similar to web_search but may return different/cleaner results for some queries. Use this as an alternative when Tavily or composio_web_search results are insufficient or when the user specifically wants Firecrawl search quality.',
+        inputSchema: z.object({
+          query: z.string().describe('The search query.'),
+          max_results: z.number().int().min(1).max(20).optional().describe('Number of results. Default 5.'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_search',
+      }),
+      wrapTool({
+        slug: 'FIRECRAWL_MAP_MULTIPLE_URLS_BASED_ON_OPTIONS',
+        toolkitName: 'Firecrawl',
+        description: 'Map/discover all URLs on a website. Returns a list of all discoverable pages on the domain without downloading their content. Use this before a crawl to understand site structure, or when the user asks "what pages does this site have?"',
+        inputSchema: z.object({
+          url: z.string().url().describe('The URL to map. All discovered links within the same domain are returned.'),
+        }),
+        userId: uid,
+        toolKey: 'firecrawl_map',
+      }),
+    ])
+    for (const t of firecrawlTools) if (t) Object.assign(tools, t)
+  }
 
   if (hasSearch) {
     const searchTools = await Promise.all([

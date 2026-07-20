@@ -3,10 +3,10 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search } from 'lucide-react'
+import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search, Globe } from 'lucide-react'
 import Link from 'next/link'
 
-type ComposioToolkit = 'gmail' | 'composio_search'
+type ComposioToolkit = 'gmail' | 'composio_search' | 'firecrawl'
 type ConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
 
 interface ComposioConnection {
@@ -19,6 +19,7 @@ interface ComposioConnection {
 const TOOLKIT_META: Record<ComposioToolkit, { label: string; desc: string; icon: typeof Mail }> = {
   gmail: { label: 'Gmail', desc: 'Read-only: search and read email through chat.', icon: Mail },
   composio_search: { label: 'Web Search', desc: 'Transactional lookups: prices, flights, finance, e-commerce, and page scraping.', icon: Search },
+  firecrawl: { label: 'Firecrawl', desc: 'Advanced web scraping, site crawling, structured data extraction, and site mapping.', icon: Globe },
 }
 
 // Placeholder card for a settings section that's ready for wiring.
@@ -63,6 +64,7 @@ function ConnectorsSection() {
   const [connections, setConnections] = useState<Record<ComposioToolkit, ComposioConnection | null>>({
     gmail: null,
     composio_search: null,
+    firecrawl: null,
   })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<ComposioToolkit | null>(null)
@@ -71,7 +73,7 @@ function ConnectorsSection() {
   const load = useCallback(async () => {
     const res = await fetch('/api/composio/connections')
     const data = await res.json()
-    const map: Record<ComposioToolkit, ComposioConnection | null> = { gmail: null, composio_search: null }
+    const map: Record<ComposioToolkit, ComposioConnection | null> = { gmail: null, composio_search: null, firecrawl: null }
     for (const c of (data.connections ?? []) as ComposioConnection[]) map[c.toolkit] = c
     setConnections(map)
     setLoading(false)

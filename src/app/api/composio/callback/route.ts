@@ -5,7 +5,7 @@ import { getConnectionStatus, type ComposioToolkit } from '@/lib/composio'
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search']
+const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search', 'firecrawl']
 
 // Composio redirects the browser here after the user completes (or abandons)
 // the consent screen. A normal top-level navigation to our own origin, so the
