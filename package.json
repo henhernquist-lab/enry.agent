@@ -6,7 +6,10 @@
     "dev": "next dev -p 8082",
     "build": "next build",
     "start": "next start -p 8082",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.68",

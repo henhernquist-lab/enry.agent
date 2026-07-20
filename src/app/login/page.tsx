@@ -238,6 +238,7 @@ export default function LoginPage() {
                   transition={{ duration: 0.18 }}
                 >
                   <button
+                    data-testid="google-signin-button"
                     onClick={() => signIn('google', { callbackUrl: '/' })}
                     className="group flex w-full items-center justify-center gap-3 rounded-lg border border-primary/20 bg-surface-elevated px-6 py-3 font-mono text-sm text-foreground transition-all duration-200 hover:border-primary/50 hover:bg-surface-elevated/80"
                   >
@@ -259,6 +260,7 @@ export default function LoginPage() {
                   transition={{ duration: 0.18 }}
                 >
                   <button
+                    data-testid="github-signin-button"
                     onClick={() => signIn('github', { callbackUrl: '/' })}
                     className="group flex w-full items-center justify-center gap-3 rounded-lg border border-primary/20 bg-surface-elevated px-6 py-3 font-mono text-sm text-foreground transition-all duration-200 hover:border-primary/50 hover:bg-surface-elevated/80"
                   >
