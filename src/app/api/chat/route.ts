@@ -24,8 +24,8 @@ import type { GitHubActionPayload } from '@/lib/resources'
 
 const MODEL_CONFIG = {
   'deepseek-ai/deepseek-v4-pro':      () => process.env.DEEPSEEK_API_KEY ?? '',
-  'minimax/minimax-m3':                () => process.env.MINIMAX_API_KEY ?? '',
-  'qwen/qwen3.5-122b-a10b':           () => process.env.QWEN_API_KEY ?? '',
+  'minimaxai/minimax-m3':                () => process.env.MINIMAX_API_KEY ?? '',
+  'qwen/qwen3.5-397b-a17b':           () => process.env.QWEN_API_KEY ?? '',
   'z-ai/glm-5.2':                     () => process.env.GLM_API_KEY ?? '',
   'nvidia/nemotron-3-ultra-550b-a55b': () => process.env.NVIDIA_API_KEY ?? '',
   // Moonshot Kimi K2 Instruct — 6th NIM model. Falls back to NVIDIA_API_KEY
@@ -607,7 +607,7 @@ For any question about current facts (versions, APIs, prices, current state of e
 
 Match existing repo conventions: naming, directory structure, styling patterns, framework paradigms. Read neighboring files before writing new ones.
 Trust the repo's actual dependency manifest (package.json, etc.) over training assumptions. Never assume a library is installed — verify.
-Follow the established stack: Next.js 16, TypeScript, pnpm, Supabase with pgvector + RLS, NextAuth v5, NVIDIA NIM (DeepSeek V4 Pro default, MiniMax M3, Qwen 3.5 122B, GLM 5.2), bge-m3 embeddings, Vercel deployment, Tavily search.
+Follow the established stack: Next.js 16, TypeScript, pnpm, Supabase with pgvector + RLS, NextAuth v5, NVIDIA NIM (DeepSeek V4 Pro default, MiniMax M3, Qwen 3.5 397B, GLM 5.2), bge-m3 embeddings, Vercel deployment, Tavily search.
 The \`resources\` table is the single source of truth for saved user content. New tools save here with a type discriminator and jsonb payload, source='user' (or 'daily_auto' / 'featured' for automation).
 user_id in \`resources\` is a UUID that maps to \`profiles.id\`, NOT the raw Google account ID from NextAuth's session. Always resolve via resolveResourceUserId() before inserting. This was a real bug that ate a session; do not repeat it.
 Never introduce a new design token (color, spacing, radius, font) without checking whether one already exists in globals.css / tailwind config. Match the established system.

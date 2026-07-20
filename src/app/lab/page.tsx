@@ -227,7 +227,7 @@ export default function LabPage() {
           <div className="mt-2 flex items-center gap-3 font-mono text-[9px] text-muted-foreground/50">
             <span className="flex items-center gap-1"><Code className="h-2.5 w-2.5" /> DeepSeek V4 Pro</span>
             <span className="flex items-center gap-1"><Code className="h-2.5 w-2.5" /> MiniMax M3</span>
-            <span className="flex items-center gap-1"><Code className="h-2.5 w-2.5" /> Qwen 3.5 122B</span>
+            <span className="flex items-center gap-1"><Code className="h-2.5 w-2.5" /> Qwen 3.5 397B</span>
             <span className="text-muted-foreground/30">→ judge → hybrid</span>
           </div>
 

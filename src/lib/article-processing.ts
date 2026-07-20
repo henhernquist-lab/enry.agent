@@ -103,7 +103,7 @@ export async function processArticleUrl(url: string): Promise<ProcessArticleResu
     })
 
     const { text } = await generateText({
-      model: client.chat('qwen/qwen3.5-122b-a10b'),
+      model: client.chat('qwen/qwen3.5-397b-a17b'),
       prompt: buildPrompt(articleTitle, url, truncated),
       temperature: 0.1,
       maxOutputTokens: 4096,

@@ -39,7 +39,7 @@ export async function generatePrompt(category: PromptCategory): Promise<Generate
     })
 
     const { text } = await generateText({
-      model: client.chat('qwen/qwen3.5-122b-a10b'),
+      model: client.chat('qwen/qwen3.5-397b-a17b'),
       prompt: buildPrompt(category),
       temperature: 0.7,
       maxOutputTokens: 2048,

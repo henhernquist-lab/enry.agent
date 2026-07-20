@@ -93,8 +93,8 @@ const EFFORTS = [
 const MODEL_DEFAULTS: Record<string, EffortId> = {
   'deepseek-ai/deepseek-v4-pro':      'none',
   'z-ai/glm-5.2':                    'medium',
-  'qwen/qwen3.5-122b-a10b':           'low',
-  'minimax/minimax-m3':               'none',
+  'qwen/qwen3.5-397b-a17b':           'low',
+  'minimaxai/minimax-m3':               'none',
   'nvidia/nemotron-3-ultra-550b-a55b': 'medium',
   // Newer/unproven models default to Medium until we have real testing data.
   'moonshotai/kimi-k2-instruct':       'medium',
