@@ -303,24 +303,52 @@ export default function AgentPage() {
   const MAX_TERMINALS = 3
   interface DriveTerminalPane { id: string; cwd: string; createdAt: number }
   const [terminalPanes, setTerminalPanes] = useState<DriveTerminalPane[]>([])
+  // Surfaced when opening a terminal fails, so "clicking does nothing" becomes
+  // a visible, diagnosable error instead of a silent no-op. Cleared on the next
+  // attempt and auto-dismissed after a few seconds.
+  const [terminalError, setTerminalError] = useState<string | null>(null)
   const paneIdsRef = useRef<string[]>([])
   useEffect(() => { paneIdsRef.current = terminalPanes.map((p) => p.id) }, [terminalPanes])
 
   const addTerminal = useCallback(async () => {
     if (terminalPanes.length >= MAX_TERMINALS) return
+    setTerminalError(null)
     try {
       const res = await fetch('/api/terminal/pty', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cols: 80, rows: 24 }),
       })
-      if (!res.ok) return
+      if (!res.ok) {
+        // Read whatever the route sent back (JSON {error} or plain text) so the
+        // real cause is visible — an auth 401, a 500 from the PTY spawn, or a
+        // serverless host that can't run a real shell all landed here silently
+        // before, which is exactly why this looked like "the button is dead".
+        let detail = ''
+        try { detail = ((await res.json()) as { error?: string })?.error ?? '' }
+        catch { detail = (await res.text().catch(() => '')).slice(0, 120) }
+        const msg = res.status === 401
+          ? 'Terminal failed: session expired — reload and sign in again.'
+          : `Terminal failed to open (HTTP ${res.status}${detail ? `: ${detail}` : ''})`
+        console.error('[drive] addTerminal:', res.status, detail || '(no body)')
+        setTerminalError(msg)
+        return
+      }
       const data = await res.json() as { id: string; cwd?: string }
       setTerminalPanes((p) => [...p, { id: data.id, cwd: data.cwd ?? '', createdAt: Date.now() }])
-    } catch {
-      /* network error — ignore */
+    } catch (e) {
+      // Genuine network/transport failure (route unreachable, aborted, etc.).
+      console.error('[drive] addTerminal threw:', e)
+      setTerminalError(`Terminal failed to open: ${e instanceof Error ? e.message : 'network error'}`)
     }
   }, [terminalPanes.length])
+
+  // Auto-dismiss the terminal error a few seconds after it appears.
+  useEffect(() => {
+    if (!terminalError) return
+    const t = setTimeout(() => setTerminalError(null), 6000)
+    return () => clearTimeout(t)
+  }, [terminalError])
 
   const closeTerminal = useCallback((id: string) => {
     setTerminalPanes((p) => p.filter((t) => t.id !== id))
@@ -909,6 +937,14 @@ USER REQUEST: ${userText}`
             <Plus className="h-3 w-3" /> Terminal
             <span className="text-[9px] tabular-nums text-muted-foreground/60">{terminalCount}/{MAX_TERMINALS}</span>
           </button>
+          {terminalError && (
+            <span
+              className="max-w-[280px] truncate font-mono text-[9px] text-destructive"
+              title={terminalError}
+            >
+              {terminalError}
+            </span>
+          )}
           <Link href="/resources/terminal" className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground">
             <TerminalSquare className="h-3 w-3" /> Shell
           </Link>
