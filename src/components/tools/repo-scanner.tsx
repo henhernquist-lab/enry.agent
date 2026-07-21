@@ -4,13 +4,15 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   GitBranch, Send, Loader2, Star, Code2, FileText, X,
-  MessageSquare, CheckCircle, Sparkles, Lightbulb, Puzzle,
+  MessageSquare, CheckCircle, Sparkles, Lightbulb, Puzzle, ScanSearch,
+  ShieldAlert, AlertTriangle, Info, ExternalLink,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ModalShell } from '@/components/automations/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource } from '@/lib/resources'
+import type { RepoReviewPayload, RepoReviewIssue } from '@/lib/resources'
 
 interface RepoInfo {
   name: string
@@ -27,7 +29,7 @@ interface Message {
   text: string
 }
 
-type RepoMode = 'chat' | 'evaluate'
+type RepoMode = 'chat' | 'evaluate' | 'review'
 
 interface RepoScannerProps {
   onClose: () => void
@@ -88,6 +90,11 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
   const [evalResult, setEvalResult] = useState<string | null>(null)
   const [evalError, setEvalError] = useState('')
 
+  const [reviewBranch, setReviewBranch] = useState('')
+  const [reviewRunning, setReviewRunning] = useState(false)
+  const [reviewError, setReviewError] = useState('')
+  const [reviewResult, setReviewResult] = useState<RepoReviewPayload | null>(null)
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, thinking])
@@ -145,6 +152,9 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
     setHasSentCustom(false)
     setEvalResult(null)
     setEvalError('')
+    setReviewResult(null)
+    setReviewError('')
+    setReviewBranch('')
     try {
       const res = await fetch('/api/tools/fetch-repo', {
         method: 'POST',
@@ -200,6 +210,31 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
     }
   }, [useCase, repo])
 
+  const handleReview = useCallback(async () => {
+    if (!repo) return
+    setReviewRunning(true)
+    setReviewError('')
+    setReviewResult(null)
+    try {
+      const parts = repo.name.split('/')
+      const owner = parts[0]
+      const repoName = parts[1] || parts[0]
+      const res = await fetch('/api/tools/repo-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner, repo: repoName, branch: reviewBranch.trim() || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setReviewError(data.error || 'Review failed'); return }
+      setReviewResult(data.resource?.payload as RepoReviewPayload)
+      onSave?.()
+    } catch {
+      setReviewError('Network error — try again')
+    } finally {
+      setReviewRunning(false)
+    }
+  }, [repo, reviewBranch, onSave])
+
   const showPromptChips = repo && repoMode === 'chat' && messages.length === 0 && !thinking && !hasSentCustom
 
   const icon = <GitBranch className="h-4 w-4 text-primary" />
@@ -233,6 +268,8 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
               setHasSentCustom(false)
               setEvalResult(null)
               setEvalError('')
+              setReviewResult(null)
+              setReviewError('')
             }}
             className="rounded p-2 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
           >
@@ -296,6 +333,16 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
             >
               <CheckCircle className="h-3 w-3" />
               Can I use this?
+            </button>
+            <button
+              onClick={() => setRepoMode('review')}
+              className={
+                'flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ' +
+                (repoMode === 'review' ? 'bg-primary/10 text-primary shadow-sm' : 'text-muted-foreground hover:bg-surface-secondary hover:text-foreground')
+              }
+            >
+              <ScanSearch className="h-3 w-3" />
+              Code Review
             </button>
           </div>
 
@@ -484,6 +531,137 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
               )}
             </div>
           )}
+
+          {/* Code Review Mode */}
+          {repoMode === 'review' && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  value={reviewBranch}
+                  onChange={(e) => setReviewBranch(e.target.value)}
+                  disabled={reviewRunning}
+                  placeholder="Branch (default)"
+                  className="flex-1 rounded-lg border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-50"
+                />
+                <button
+                  onClick={handleReview}
+                  disabled={reviewRunning || !repo}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-xs font-medium text-primary transition-all hover:bg-primary/20 active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100"
+                >
+                  {reviewRunning ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reviewing...</> : 'Run Code Review'}
+                </button>
+              </div>
+
+              {reviewRunning && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex items-center gap-2 py-2 text-xs text-muted-foreground"
+                >
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Analyzing code quality, architecture, and issues...
+                </motion.div>
+              )}
+
+              {reviewError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive"
+                >
+                  {reviewError}
+                </motion.div>
+              )}
+
+              {reviewResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="max-h-72 space-y-3 overflow-y-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+                >
+                  <div className="flex items-center justify-between">
+                    <a
+                      href={reviewResult.repo_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+                    >
+                      {reviewResult.repo_full_name} <ExternalLink className="h-3 w-3" />
+                    </a>
+                    <span className="font-mono text-[10px] text-muted-foreground">{reviewResult.branch}</span>
+                  </div>
+
+                  {reviewResult.partial_sample && (
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      Partial sample — reviewed {reviewResult.files_analyzed.length} file{reviewResult.files_analyzed.length !== 1 ? 's' : ''}, selected by priority.
+                    </p>
+                  )}
+
+                  <p className="text-xs leading-relaxed text-foreground">{reviewResult.overview}</p>
+
+                  {reviewResult.strengths.length > 0 && (
+                    <div>
+                      <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Strengths</p>
+                      <ul className="space-y-1">
+                        {reviewResult.strengths.map((s, i) => (
+                          <li key={i} className="text-xs text-muted-foreground">• {s}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {reviewResult.issues.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Issues</p>
+                      {(['high', 'medium', 'low'] as const).map((severity) => {
+                        const items = reviewResult.issues.filter((i) => i.severity === severity)
+                        if (items.length === 0) return null
+                        const styles: Record<string, { badge: string; icon: typeof ShieldAlert }> = {
+                          high: { badge: 'border-destructive/40 bg-destructive/10 text-destructive', icon: ShieldAlert },
+                          medium: { badge: 'border-warning/40 bg-warning/10 text-warning', icon: AlertTriangle },
+                          low: { badge: 'border-border bg-surface-elevated text-muted-foreground', icon: Info },
+                        }
+                        const style = styles[severity]
+                        const Icon = style.icon
+                        return items.map((issue, i) => (
+                          <div key={`${severity}-${i}`} className="rounded border border-border bg-surface-elevated/60 p-2.5 text-xs">
+                            <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                              <span className={`flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider ${style.badge}`}>
+                                <Icon className="h-2.5 w-2.5" />{severity}
+                              </span>
+                              <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">{issue.category}</span>
+                              <span className="font-mono text-[10px] text-muted-foreground">{issue.file}</span>
+                            </div>
+                            <p className="text-foreground">{issue.description}</p>
+                            <p className="mt-1 text-muted-foreground">→ {issue.suggestion}</p>
+                          </div>
+                        ))
+                      })}
+                    </div>
+                  )}
+
+                  {reviewResult.refactor_priorities.length > 0 && (
+                    <div>
+                      <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Do these first</p>
+                      <ol className="space-y-1">
+                        {reviewResult.refactor_priorities.map((r, i) => (
+                          <li key={i} className="flex gap-2 text-xs text-foreground">
+                            <span className="flex-shrink-0 font-mono text-[10px] text-primary">{i + 1}.</span>{r}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {!reviewResult && !reviewRunning && !reviewError && (
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  Run a code review to find strengths, issues, and refactor priorities in this repo.
+                </p>
+              )}
+            </div>
+          )}
         </motion.div>
       )}
 
@@ -503,7 +681,7 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
     return (
       <ToolPanel
         title="Repo Scanner"
-        subtitle="Fetch a GitHub repo and chat about the code"
+        subtitle="Chat, evaluate fit, or run a code review for any GitHub repo"
         icon={icon}
         onClose={onClose}
       >

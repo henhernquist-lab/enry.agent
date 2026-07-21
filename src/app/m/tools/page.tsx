@@ -211,12 +211,8 @@ export default function MobileToolsPage() {
         <div className="divide-y divide-border/40 px-4">
           {[
             { label: 'Flashcard Generator', note: 'Open on desktop' },
-            { label: 'Workout Logger', note: 'Open on desktop' },
-            { label: 'Meal Logger', note: 'Open on desktop' },
             { label: 'Grade Calculator', note: 'Open on desktop' },
-            { label: 'Habit Streaks', note: 'Open on desktop' },
             { label: 'Race Pace Calculator', note: 'Open on desktop' },
-            { label: 'Daily Check-in', note: 'Open on desktop' },
             { label: 'Bell Schedule', note: 'Open on desktop' },
             { label: 'Chief of Staff', note: 'Open on desktop' },
             { label: 'The Aperture', note: 'Open on desktop' },
