@@ -98,6 +98,7 @@ const MODEL_DEFAULTS: Record<string, EffortId> = {
   'nvidia/nemotron-3-ultra-550b-a55b': 'medium',
   // Newer/unproven models default to Medium until we have real testing data.
   'moonshotai/kimi-k2-instruct':       'medium',
+  'tencent/hy3':                       'medium',
 }
 
 type EffortId = typeof EFFORTS[number]['id']

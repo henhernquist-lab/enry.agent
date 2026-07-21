@@ -102,6 +102,15 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['drive'], // ← intentionally NOT in 'chat' or 'lite'
     defaultEffort: 'medium',
   },
+  {
+    id: 'tencent/hy3',
+    label: 'Hunyuan Hy3',
+    company: 'Tencent (OpenRouter)',
+    description: 'Agentic/tool-use specialist. Drive-only.',
+    scopes: ['drive'],
+    defaultEffort: 'medium',
+    supportsReasoning: true,
+  },
 ]
 
 // Default chat model — falls back here if a request supplies an unknown id.
@@ -131,6 +140,8 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   'gpt-4o':                            { baseURL: 'https://models.inference.ai.azure.com',                getApiKey: () => process.env.GITHUB_MODELS_TOKEN ?? process.env.GITHUB_TOKEN ?? '' },
   // Moonshot Kimi K2.7 Code via OpenRouter.
   'moonshotai/kimi-k2.7-code':         { baseURL: 'https://openrouter.ai/api/v1',                      getApiKey: () => process.env.OPENROUTER_API_KEY ?? '' },
+  // Tencent Hunyuan Hy3 via OpenRouter.
+  'tencent/hy3':                       { baseURL: 'https://openrouter.ai/api/v1',                      getApiKey: () => process.env.OPENROUTER_API_KEY ?? '' },
 }
 
 // ─── Lookup helpers (used by pickers + server routes) ──────────────
