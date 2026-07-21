@@ -79,10 +79,16 @@ export const MODEL_LIST: ModelMeta[] = [
   },
   // ─── New models ──────────────────────────────────────────
   {
-    id: 'gemini-3.1-pro-preview',
-    label: 'Gemini 3.1 Pro',
+    // Was gemini-3.1-pro-preview — quota-gated at "limit: 0" for every
+    // metric on this Google Cloud project (Pro tier requires billing
+    // enabled; confirmed via the API's own QuotaFailure detail). Swapped to
+    // 3.5 Flash: the newest Flash generation, stable (no -preview suffix,
+    // unlike 3-flash-preview), and confirmed working at $0 across repeat
+    // calls. Label reflects the real model — do not relabel this "Pro".
+    id: 'gemini-3.5-flash',
+    label: 'Gemini 3.5 Flash',
     company: 'Google',
-    description: 'Multimodal flagship. Broad knowledge.',
+    description: 'Fast multimodal — free-tier quota available (Pro tier requires billing).',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
   },
@@ -134,11 +140,10 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   'nvidia/nemotron-3-ultra-550b-a55b': { baseURL: NIM_BASE, getApiKey: () => process.env.NVIDIA_API_KEY ?? '' },
   'moonshotai/kimi-k2-instruct':        { baseURL: NIM_BASE, getApiKey: () => process.env.MOONSHOT_API_KEY ?? process.env.NVIDIA_API_KEY ?? '' },
   // Google Gemini — OpenAI-compatible endpoint at the v1beta/openai subpath.
-  // "gemini-3.1-pro" (no suffix) doesn't exist in Google's catalog — real id
-  // is "gemini-3.1-pro-preview" (confirmed live against
-  // GET /v1beta/openai/models). The old id 404'd; this one resolves and
-  // returns real completions.
-  'gemini-3.1-pro-preview':            { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', getApiKey: () => process.env.GEMINI_API_KEY ?? '' },
+  // 3.5 Flash, not Pro — Pro tier is quota-gated at 0 on this Cloud project
+  // (needs billing enabled), confirmed via GET /v1beta/openai/models plus a
+  // real completion at $0. Flash-tier models on the same key work fine.
+  'gemini-3.5-flash':                  { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', getApiKey: () => process.env.GEMINI_API_KEY ?? '' },
   // OpenAI gpt-4o via GitHub Models — OpenAI-compatible inference API. The
   // actual env var in .env.local/Vercel is GITHUB_MODELS_API_KEY — this was
   // reading GITHUB_MODELS_TOKEN/GITHUB_TOKEN, neither of which is ever set,

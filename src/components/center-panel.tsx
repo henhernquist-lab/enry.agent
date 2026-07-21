@@ -94,7 +94,7 @@ function getDisplayInfo(message: UIMessage): { attachment: AttachmentMeta | null
 }
 
 // Model registry is the single source of truth — see src/lib/nim.ts.
-// Homepage picker draws from the 'chat' scope: Gemini 3.1 Pro, GPT-4o, and
+// Homepage picker draws from the 'chat' scope: Gemini 3.5 Flash, GPT-4o, and
 // all NIM-hosted models. Kimi K2.7 Code is intentionally NOT listed here
 // because its scope is 'drive' only (coding-agent model).
 const VISION_MODELS = new Set<string>(listModels('chat').filter((m) => m.supportsVision).map((m) => m.id))
