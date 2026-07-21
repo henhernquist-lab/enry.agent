@@ -16,6 +16,7 @@ import { SkillFeedbackBar } from '@/components/skill-feedback-bar'
 import { ThinkingTrace } from '@/components/thinking-trace'
 import { CompactionIndicator } from '@/components/compaction-indicator'
 import { SKILLS as ALL_SKILLS, detectSkillInvocation, detectSkillInvocations, buildMultiSkillPrompt } from '@/lib/skills/registry'
+import { classifyTaskComplexity, autoSelectForComplexity } from '@/lib/drive/auto-select'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ type ChatLine =
   | { kind: 'prompt'; text: string }
   | { kind: 'system'; text: string }
   | { kind: 'thinking'; text: string }
-  | { kind: 'plan'; text: string; targetFile: string; isNewFile: boolean } // manual mode plan
+  | { kind: 'plan'; text: string; targetFile: string; isNewFile: boolean } // plan-first phase 1 plan
   | { kind: 'proposal'; file: string; diff: string; isNewFile: boolean }
   | { kind: 'applied'; text: string }
   | { kind: 'committed'; text: string }
@@ -45,6 +46,18 @@ type ChatLine =
   // gets the distinct effort='deep' treatment.
   | { kind: 'reasoning'; id: string; text: string; targetFile: string; pending: boolean; deep: boolean }
 
+// Manual vs Auto — who decides model, Think, effort, and skill for a request.
+//   Manual: the user's explicit picker/toggle values are used exactly as set.
+//     Nothing gets auto-selected — this includes disabling natural-language
+//     skill auto-detection, which otherwise silently activates a skill.
+//   Auto: Enry classifies the request (see src/lib/drive/auto-select.ts) and
+//     picks model + effort + Think + skill together, before the call starts.
+//     The picks are written into the same state the pickers show (so the
+//     pills reflect exactly what ran) plus a transcript line explaining why.
+// This is intentionally a DIFFERENT axis from `planFirst` below — showing a
+// plan before acting is a review/safety step, not a decision about who
+// picks model/effort/Think/skill. The two used to be the same toggle; they
+// were split apart so each has one clear meaning.
 type Mode = 'auto' | 'manual'
 
 // ─── Model & effort definitions ─────────────────────────────// Drive picker draws from the 'drive' scope of the registry (see
@@ -256,6 +269,15 @@ export default function AgentPage() {
   const [effort, setEffort] = useState<EffortId>(MODEL_DEFAULTS[MODELS[0].id] ?? 'none')
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('auto')
+  // Plan-first review step — was previously bundled into `mode` (manual mode
+  // used to always plan-first; auto mode never did). Split out so it's an
+  // independent choice: show a text plan before generating a diff, whichever
+  // way model/effort/Think/skill got picked. Default false preserves today's
+  // default behavior (mode defaulted to 'auto', which never planned first).
+  const [planFirst, setPlanFirst] = useState(false)
+  // Auto mode's most recent pick, for the transcript line + brief pill
+  // emphasis — cleared once a new request starts.
+  const [lastAutoPick, setLastAutoPick] = useState<string | null>(null)
   // Top-level mode: Drive (interactive, the existing behavior) vs Cruise
   // (autonomous scan). Distinct from `mode` above, which is Drive's auto/manual.
   const [cruiseMode, setCruiseMode] = useState<'drive' | 'cruise'>('drive')
@@ -349,6 +371,17 @@ export default function AgentPage() {
     const t = setTimeout(() => setTerminalError(null), 6000)
     return () => clearTimeout(t)
   }, [terminalError])
+
+  // Auto mode's pick stays in the transcript permanently (the system line in
+  // handleSend) but also gets a brief badge near the toggle — same
+  // auto-dismiss pattern as terminalError above, so the "why" is visible
+  // right where the decision was made without permanently cluttering the
+  // controls row.
+  useEffect(() => {
+    if (!lastAutoPick) return
+    const t = setTimeout(() => setLastAutoPick(null), 8000)
+    return () => clearTimeout(t)
+  }, [lastAutoPick])
 
   const closeTerminal = useCallback((id: string) => {
     setTerminalPanes((p) => p.filter((t) => t.id !== id))
@@ -539,7 +572,18 @@ export default function AgentPage() {
   // file's handlers that reference it; harmless, nothing depends on exec's
   // identity being stable.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  async function exec(command: string, opts?: { proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string; skillSlug?: string; skillSlugs?: string[]; reasoningTrace?: string; reasoningLineId?: string; _chainDepth?: number }) {
+  async function exec(command: string, opts?: {
+    proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string
+    skillSlug?: string; skillSlugs?: string[]; reasoningTrace?: string; reasoningLineId?: string; _chainDepth?: number
+    // Auto mode computes its pick synchronously in handleSend and needs it in
+    // THIS same request — setModel/setEffort/setReasoningDepth are async
+    // (won't have landed in the `model`/`effort`/`reasoningDepth` closures
+    // below by the time exec() runs in the same handler), so the freshly
+    // computed values are passed straight through instead of relying on
+    // state that hasn't re-rendered yet. Manual mode never sets these —
+    // exec() then falls back to whatever the pickers currently hold.
+    modelOverride?: string; effortOverride?: EffortId; reasoningDepthOverride?: ReasoningDepth
+  }) {
       if (!repo) {
         setLines((l) => [...l, { kind: 'system', text: 'select a repository first' }])
         return
@@ -550,11 +594,12 @@ export default function AgentPage() {
       abortRef.current = controller
       try {
         const body: Record<string, unknown> = {
-          repo, command, session_id: sessionId, model,
-          effort,          // FIX #2: send effort to server
-          mode,            // FIX #3: send mode to server
+          repo, command, session_id: sessionId,
+          model: opts?.modelOverride ?? model,
+          effort: opts?.effortOverride ?? effort,
+          plan_first: planFirst,
           focus_mode: focusMode,
-          reasoning_depth: reasoningDepth,
+          reasoning_depth: opts?.reasoningDepthOverride ?? reasoningDepth,
           proceed: opts?.proceed ?? false,
           ...(opts?.skillSlugs && opts.skillSlugs.length > 0 ? { skill_slugs: opts.skillSlugs } : {}),
           ...(opts?.skillSlug && !opts?.skillSlugs ? { skill_slug: opts.skillSlug } : {}),
@@ -598,6 +643,12 @@ export default function AgentPage() {
             isNewFile: data.is_new_file,
             instruction: opts?.instruction ?? command,
             _chainDepth: (opts?._chainDepth ?? 0) + 1,
+            // Carry Auto mode's pick through the chain explicitly — relying
+            // on the setModel/setEffort/setReasoningDepth state updates
+            // having landed by this hop would work in practice (real network
+            // latency gives React plenty of time to re-render) but is a
+            // timing assumption, not a guarantee.
+            modelOverride: opts?.modelOverride, effortOverride: opts?.effortOverride, reasoningDepthOverride: opts?.reasoningDepthOverride,
           })
           return
         }
@@ -622,6 +673,7 @@ export default function AgentPage() {
             reasoningTrace: trace || undefined,
             reasoningLineId: trace ? lineId : undefined,
             _chainDepth: (opts?._chainDepth ?? 0) + 1,
+            modelOverride: opts?.modelOverride, effortOverride: opts?.effortOverride, reasoningDepthOverride: opts?.reasoningDepthOverride,
           })
           return
         }
@@ -641,7 +693,7 @@ export default function AgentPage() {
             .map((o: string) => o.trim())
           setLines((l) => [...l, { kind: 'question', questionText, options }])
         } else if (action === 'plan') {
-          // Manual mode phase 1: a text plan, no diff yet (write-ops.ts's
+          // Plan-first phase 1: a text plan, no diff yet (write-ops.ts's
           // planEdit — the actual plan text is in `reasoning`, NOT `text`,
           // which is just the literal string "Plan for <file>"). dispatch()
           // only includes target_file/is_new_file on the response when
@@ -654,8 +706,8 @@ export default function AgentPage() {
           setLines((l) => [...l, { kind: 'plan', text: reasoning ?? text, targetFile, isNewFile }])
           setPlanContext({ targetFile, isNewFile, instruction: opts?.instruction ?? command })
         } else if (action === 'propose_edit' && data.exit_code === 0) {
-          // The actual diff — from auto-mode's hop-2 generation, or manual
-          // mode's Propose Diff click (handleProceed). Neither dispatch()
+          // The actual diff — from the classify-then-generate chain, or a plan-first
+          // approval's Propose Diff click (handleProceed). Neither dispatch()
           // branch that returns this action sets planTarget, so target_file/
           // is_new_file aren't on the response; the file is instead already
           // known from this exact call's own opts (both callers — the
@@ -708,8 +760,16 @@ export default function AgentPage() {
     // "should I add X" (Build vs Buy vs Skip),
     // "scan the repo for dead code" (Ghost Hunter), etc.
     // Also supports /skill <slug> [topic] explicit commands.
-    let skillToUse = activeSkill
-    let skillsToUse = activeSkills
+    // Manual mode: skill choice is sticky picker state (activeSkill), same
+    // as before — the whole point of Manual is that the picker IS the
+    // source of truth. Auto mode: starts fresh (null) every request. Without
+    // this split, Auto would silently inherit whatever skill Manual mode (or
+    // Auto's own PRIOR pick) last left active, instead of reassessing the
+    // CURRENT request — confirmed live: without this fix, a skill picked
+    // once in Manual mode stuck through every later Auto-mode request
+    // regardless of what that request actually needed.
+    let skillToUse = mode === 'auto' ? null : activeSkill
+    let skillsToUse = mode === 'auto' ? [] : activeSkills
     let userText = text
 
     // (a) /skill <slug1> [slug2] [slug3] [slug4] [topic] — parse multi-skill
@@ -736,28 +796,59 @@ export default function AgentPage() {
       }
     }
 
-    // (b) Natural-language trigger — only if no explicit skill selected yet
-    if (!skillToUse) {
+    // (b) Natural-language trigger — only in Auto mode. Manual mode means
+    // "nothing gets auto-selected," and silently activating a skill from
+    // phrasing alone would violate that even though it predates this
+    // change — Manual-mode skill choice now comes ONLY from the /skill
+    // command above or the skill picker.
+    if (!skillToUse && mode === 'auto') {
       const detected = detectSkillInvocation(text)
       if (detected && DRIVE_SKILLS.some((s) => s.slug === detected.skill.slug)) {
         skillToUse = detected.skill
         skillsToUse = [detected.skill]
         userText = detected.topic || text
-        setActiveSkillSlugs([detected.skill.slug])
       }
+    }
+
+    // ─── Auto mode: classify the request, pick model + effort + Think +
+    // skill together (see src/lib/drive/auto-select.ts), and make every
+    // pick visible — the pills update to the real values this request will
+    // use, plus a transcript line explaining why. Manual mode changes
+    // NOTHING here: whatever the pickers already hold is what's sent.
+    let modelOverride: string | undefined
+    let effortOverride: EffortId | undefined
+    let reasoningDepthOverride: ReasoningDepth | undefined
+    let autoChoiceNote: string | null = null
+    if (mode === 'auto') {
+      const complexity = classifyTaskComplexity(userText, skillToUse)
+      const picked = autoSelectForComplexity(complexity)
+      modelOverride = picked.modelId
+      effortOverride = picked.effort as EffortId
+      reasoningDepthOverride = picked.think
+      setModel(picked.modelId)
+      setEffort(picked.effort as EffortId)
+      setReasoningDepth(picked.think)
+      setActiveSkillSlugs(skillToUse ? [skillToUse.slug] : [])
+      const thinkLabel = picked.think === 'off' ? 'Think Off' : picked.think === 'summary' ? 'Think Brief' : 'Think Full'
+      const effortLabel = EFFORTS.find((e) => e.id === picked.effort)?.label ?? picked.effort
+      autoChoiceNote = `auto → ${picked.modelLabel} · ${effortLabel} · ${thinkLabel}${skillToUse ? ` · ${skillToUse.name}` : ' · no skill'} (assessed: ${complexity})`
+      setLastAutoPick(autoChoiceNote)
     }
 
     // Build instruction — single vs multi-skill
     let instruction: string
     let slugsForServer: string[] | undefined
 
-    // Clarifying-question instruction: only in Auto mode, and only for
-    // requests that would trigger a real action (code edit, diff, skill).
-    // Manual mode already shows a plan before acting (redundant to ask),
-    // and ordinary conversational questions should never trigger a question.
-    const isAuto = mode === 'auto'
+    // Clarifying-question instruction: only when NOT plan-first, and only
+    // for requests that would trigger a real action (code edit, diff,
+    // skill). Plan-first already shows a plan before acting (redundant to
+    // ask), and ordinary conversational questions should never trigger a
+    // question. This used to be gated on Auto/Manual mode — moved to
+    // `planFirst` since it's fundamentally about "does something already
+    // surface intent for review before acting," not about who picked the
+    // model.
     const isLikelyAction = skillsToUse.length > 0 || !/^(how|what|why|explain|tell me|can you|is there|where|which|does|do)\b/i.test(userText)
-    const shouldClarify = isAuto && isLikelyAction
+    const shouldClarify = !planFirst && isLikelyAction
     const CLARIFY_RULE = shouldClarify
       ? `\n\nIf this request is genuinely ambiguous and guessing wrong would waste real effort on a code edit, skill invocation, or diff proposal, ask exactly ONE clarifying question. Format it EXACTLY as:\n[CLARIFY] Your question? Options: A) option one, B) option two, C) option three\n\nOnly do this for genuinely ambiguous code-change requests (e.g. "clean up this file", "make this faster", "add auth"). Do NOT ask for well-specified requests where a reasonable default is obvious. Do NOT ask for conversational questions that don't lead to code changes.`
       : ''
@@ -792,10 +883,17 @@ USER REQUEST: ${userText}`
       instruction = userText + CLARIFY_RULE
     }
 
-    setLines((l) => [...l, { kind: 'prompt', text }])
+    setLines((l) => [
+      ...l,
+      { kind: 'prompt', text },
+      ...(autoChoiceNote ? [{ kind: 'system' as const, text: autoChoiceNote }] : []),
+    ])
     setInput('')
-    exec(instruction, { skillSlugs: slugsForServer ?? (skillToUse ? [skillToUse.slug] : undefined) })
-  }, [input, running, exec, activeSkill, activeSkills, setActiveSkillSlugs, mode])
+    exec(instruction, {
+      skillSlugs: slugsForServer ?? (skillToUse ? [skillToUse.slug] : undefined),
+      modelOverride, effortOverride, reasoningDepthOverride,
+    })
+  }, [input, running, exec, activeSkill, activeSkills, setActiveSkillSlugs, mode, planFirst])
 
   const handleQuickAction = (action: string) => {
     if (running) return
@@ -1245,7 +1343,7 @@ USER REQUEST: ${userText}`
                   )
                 }
 
-                // FIX #3: Plan response (manual mode phase 1)
+                // Plan response (plan-first phase 1)
                 if (line.kind === 'plan') {
                   return (
                     <motion.div key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="mb-5">
@@ -1532,19 +1630,47 @@ USER REQUEST: ${userText}`
                   </AnimatePresence>
                 </div>
 
-                {/* FIX #3: Auto/Manual mode toggle — green when active */}
+                {/* Plan first — independent of Auto/Manual. Shows a text plan
+                    before generating a diff, whichever mode picked the
+                    model/effort/Think/skill for this request. */}
+                <button onClick={() => setPlanFirst((p) => !p)} disabled={running}
+                  className={`flex-shrink-0 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors disabled:opacity-40 ${
+                    planFirst
+                      ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
+                      : 'border-border bg-surface-secondary text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                  }`}
+                  title={planFirst ? 'Plan first: shows a plan before generating a diff, you approve before it proceeds' : 'Plan first off: proposes the diff immediately'}>
+                  {planFirst ? 'Plan first' : 'Plan first: off'}
+                </button>
+
+                {/* Auto/Manual — who picks model, Think, effort, and skill.
+                    Manual: exactly what the pickers show, nothing inferred.
+                    Auto: classifies the request and picks all four together
+                    (src/lib/drive/auto-select.ts), writing the pick into the
+                    same pickers so it's visible, not a black box. */}
                 <button onClick={() => setMode(mode === 'auto' ? 'manual' : 'auto')} disabled={running}
                   className={`flex-shrink-0 rounded border px-2.5 py-1.5 font-mono text-[10px] transition-colors disabled:opacity-40 ${
                     mode === 'manual'
                       ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
                       : 'border-border bg-surface-secondary text-muted-foreground hover:border-primary/30 hover:text-foreground'
                   }`}
-                  title={mode === 'manual' ? 'Manual: agent plans first, you approve before diff' : 'Auto: agent proposes diff immediately'}>
+                  title={mode === 'manual'
+                    ? 'Manual: you choose model, Think, effort, and skill — nothing auto-selected'
+                    : 'Auto: Enry picks model, Think, effort, and skill based on the request'}>
                   {mode === 'manual' ? 'Manual' : 'Auto'}
                 </button>
               </div>
             </div>
 
+            {/* Auto mode's pick, right where the decision was made — fades
+                after 8s (see the lastAutoPick effect above). The transcript
+                system-line is the permanent record; this is the "even
+                briefly, right here" surface. */}
+            {lastAutoPick && (
+              <div className="mx-auto max-w-3xl px-4 pb-1">
+                <span className="font-mono text-[9px] text-primary/70">{lastAutoPick}</span>
+              </div>
+            )}
 
               {/* Row 2: textarea + send button — textarea is the dominant element */}
               <div className="flex items-end gap-2">

@@ -40,13 +40,16 @@ export interface WriteOpsContext {
   // temperature / token-budget / prompt-strategy tier.
   model?: string
   effort?: EffortLevel
-  // Mode: 'auto' = propose diff directly (current behavior); 'manual' =
-  // generate a plan first, return to client for approval, then the client
-  // sends a second request with proceed:true to generate the actual diff.
-  mode?: 'auto' | 'manual'
+  // Plan-first review step (was called `mode: 'auto'|'manual'` — renamed to
+  // decouple from Drive's Auto/Manual toggle, which now means something
+  // else entirely: who picks model/effort/Think/skill, not whether a plan
+  // is shown first). false = propose diff directly (current behavior);
+  // true = generate a plan first, return to client for approval, then the
+  // client sends a second request with proceed:true for the actual diff.
+  planFirst?: boolean
   proceed?: boolean
-  // Already-resolved target (set by dispatch when proceed:true in manual mode
-  // — skips the resolveNLEditTarget step).
+  // Already-resolved target (set by dispatch when proceed:true after a
+  // plan-first approval — skips the resolveNLEditTarget step).
   resolvedFile?: string
   resolvedIsNew?: boolean
   resolvedInstruction?: string
@@ -508,7 +511,7 @@ export async function discardEdit(ctx: WriteOpsContext): Promise<WriteOpsResult>
   return { output: `discarded proposed change to ${payload.pending_diff.file}`, exitCode: 0 }
 }
 
-// ── plan (manual-mode phase 1) ───────────────────────────────────────────────
+// ── plan (plan-first phase 1) ────────────────────────────────────────────────
 // Generates a reasoning plan for the change without producing a diff. The client
 // shows this plan to the user, who can then refine their instruction or click
 // Proceed to trigger the actual proposeEdit call.

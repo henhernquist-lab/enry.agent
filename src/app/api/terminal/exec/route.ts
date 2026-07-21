@@ -67,7 +67,11 @@ export async function POST(req: Request) {
   const requestedSessionId: string | null = body.session_id ?? null
   const model = typeof body.model === 'string' ? body.model : undefined
   const effort = ['low', 'medium', 'high', 'none', 'deep'].includes(body.effort) ? body.effort : undefined
-  const mode = body.mode === 'manual' ? 'manual' as const : 'auto' as const
+  // plan_first: was derived from `mode` — now its own field, decoupled from
+  // Drive's Auto/Manual toggle (which is client-side only now: it decides
+  // model/effort/Think/skill before this request is even sent, so the server
+  // never needs to know "who picked those").
+  const planFirst = body.plan_first === true
   const focusMode = ['all','memory_only','web_only','repo_only'].includes(body.focus_mode) ? body.focus_mode as string : undefined
   const reasoningDepth: ReasoningDepth = ['off','summary','full'].includes(body.reasoning_depth) ? body.reasoning_depth : 'off'
   const proceed = body.proceed === true
@@ -123,7 +127,7 @@ export async function POST(req: Request) {
       pristineSnapshotDir: GENERATION_HOP_ROOT, // unused by proposeEdit
       model,
       effort,
-      mode,
+      planFirst,
       proceed,
       resolvedFile,
       resolvedIsNew,
@@ -150,7 +154,7 @@ export async function POST(req: Request) {
       pristineSnapshotDir: snap.dir,
       model,
       effort,
-      mode,
+      planFirst,
       proceed,
       resolvedFile,
       resolvedIsNew,
@@ -159,7 +163,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const { result, action, planTarget, invocationId, reasoningTrace } = await dispatch(command, writeCtx, headSha, mode, proceed ?? false, skillSlug, skillSlugs, reasoningDepth)
+  const { result, action, planTarget, invocationId, reasoningTrace } = await dispatch(command, writeCtx, headSha, planFirst, proceed ?? false, skillSlug, skillSlugs, reasoningDepth)
 
   // Check for .enryrules and include its existence in the response so the
   // client can show/hide the editor UI. Shares write-ops.ts's cached
@@ -229,7 +233,7 @@ interface DispatchResult {
 //    run before the NL classifier so that natural-language skill triggers
 //    ("should I add X?") don't get rejected as non-code-edit requests.
 // 2. Meta-command → read-only allowlist → natural language (code edit).
-async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, mode: 'auto' | 'manual' = 'auto', proceed = false, skillSlug?: string, skillSlugs?: string[], reasoningDepth?: ReasoningDepth): Promise<DispatchResult> {
+async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, planFirst = false, proceed = false, skillSlug?: string, skillSlugs?: string[], reasoningDepth?: ReasoningDepth): Promise<DispatchResult> {
   // ── Multi-skill response path (read-only, text analysis) ──
   if (skillSlugs && skillSlugs.length > 1) {
     const skillResult = await runMultiSkillResponse(ctx, skillSlugs, command, reasoningDepth)
@@ -245,7 +249,7 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
 
   // ── Generation hop (already-resolved target) ─────────────────
   // A resolved target already in hand — hop 2 of the auto-mode chain, or
-  // manual-mode proceed — goes straight to proposeEdit, skipping both the NL
+  // a plan-first proceed — goes straight to proposeEdit, skipping both the NL
   // classifier (already ran in hop 1) AND the meta/command parsing below. That
   // parsing assumes a real downloaded snapshot (runCommand reads over it); this
   // path uses only the GitHub API + a pure-string confinePath, so the route
@@ -335,13 +339,13 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
     return { result: { output: nl.error, exitCode: 1 } }
   }
 
-  if (ctx.mode === 'manual') {
-    // Manual mode, phase 1: generate a plan, no diff yet.
+  if (ctx.planFirst) {
+    // Plan-first phase 1: generate a plan, no diff yet.
     const planResult = await planEdit(ctx, nl.target.file, command, nl.target.isNewFile)
     return { result: planResult, action: 'plan', planTarget: nl.target }
   }
 
-  // Auto mode: do NOT generate the diff in this same invocation. Classifying
+  // Not plan-first: do NOT generate the diff in this same invocation. Classifying
   // the target (up to 20s) and generating a full file rewrite (up to 45s) are
   // two independent LLM calls; chained in one request they can together
   // exceed this route's maxDuration (60s — already the ceiling on this
@@ -463,7 +467,7 @@ async function runSkillResponse(
       output_text: '',
       model_used: ctx.model ?? DEFAULT_NIM_MODEL,
       effort_used: ctx.effort ?? 'none',
-      mode: ctx.mode ?? null,
+      mode: ctx.planFirst ? 'manual' : 'auto', // DB column predates the Auto/Manual split; preserves its old plan-first semantics
       source: 'drive',
       explicit_feedback: null,
       implicit_score: 0,
@@ -568,7 +572,7 @@ async function runMultiSkillResponse(
       output_text: '',
       model_used: ctx.model ?? DEFAULT_NIM_MODEL,
       effort_used: ctx.effort ?? 'none',
-      mode: ctx.mode ?? null,
+      mode: ctx.planFirst ? 'manual' : 'auto', // DB column predates the Auto/Manual split; preserves its old plan-first semantics
       source: 'drive',
       explicit_feedback: null,
       implicit_score: 0,
