@@ -39,6 +39,7 @@ import { setAgentBusy } from '@/lib/agent-presence'
 import { SkillBanner } from './skill-banner'
 import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
+import { ChatToolSteps } from './chat-tool-steps'
 import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS, filterSkillsByDomain } from '@/lib/skills/registry'
 import { listModels } from '@/lib/nim'
@@ -777,6 +778,10 @@ export function CenterPanel({
                     {isAssistant && rawTrace && (
                       <ThinkingTrace reasoning={rawTrace} depth={reasoningDepth} isLive={isCurrentStream && isThinking} />
                     )}
+                    {/* Clean live tool-call steps — the model's web_search /
+                        github / composio calls, which were previously invisible
+                        (getTextContent drops tool parts). */}
+                    {isAssistant && <ChatToolSteps parts={message.parts} />}
                     <div
                       className={`rounded border px-4 py-3 transition-colors duration-300 ${
                         message.role === 'assistant'
