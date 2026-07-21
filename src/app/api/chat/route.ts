@@ -14,6 +14,7 @@ import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { nimClientFor } from '@/lib/nim'
 import { buildComposioTools } from '@/lib/composio-tools'
+import { monidDiscover, monidRun } from '@/lib/monid'
 import { getReceiptsHook } from '@/lib/learn/receipts-hook'
 // Side-effect import: registers enryReceiptsDetector as the active
 // ReceiptsHook at module-load time, before this route's first
@@ -545,6 +546,32 @@ export async function POST(req: Request) {
   const composioTools = await buildComposioTools(uid, focusMode)
   Object.assign(allTools, composioTools)
 
+  // Monid — general-purpose API discovery/execution fallback. Always available
+  // regardless of focus mode. The model should reach for this LAST, after
+  // Tavily, Composio search, and Firecrawl have been considered.
+  allTools.monid_api = tool({
+    description: 'FALLBACK — discover and call third-party APIs for needs not covered by other tools. Use ONLY when Tavily (web_search), Composio search tools (composio_web_search, composio_finance, composio_flights, composio_amazon), Composio fetch (composio_fetch_url), and Firecrawl (firecrawl_scrape, firecrawl_crawl, firecrawl_extract, firecrawl_search, firecrawl_map) do NOT cover the specific API you need. Give it a natural-language description of what API/endpoint you want, and Monid discovers and executes the right one at runtime.',
+    inputSchema: z.object({
+      query: z.string().describe('Natural language description of the API call you need, e.g. "get the current Bitcoin price from CoinGecko", "search for JavaScript jobs on an obscure job board", "look up a statute on a legal database"'),
+    }),
+    execute: async ({ query }: { query: string }) => {
+      const discovered = await monidDiscover(query)
+      if (discovered.error) return { success: false, error: discovered.error }
+      if (discovered.results.length === 0) return { success: false, error: `Monid found no APIs matching: ${query}` }
+
+      const best = discovered.results[0]
+      const runResult = await monidRun(best.provider, best.endpoint, {})
+      return {
+        success: runResult.status === 'COMPLETED',
+        provider: best.provider,
+        endpoint: best.endpoint,
+        description: best.description,
+        output: runResult.output,
+        error: runResult.error,
+      }
+    },
+  })
+
   const result = streamText({
     model: chatClient.chat(selectedModel),
     system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.
@@ -639,6 +666,7 @@ The following tools are available to you in this session:
 - firecrawl_extract — LLM-powered structured data extraction from any URL
 - firecrawl_search — alternative web search via Firecrawl
 - firecrawl_map — discover all URLs on a website
+- monid_api — FALLBACK: discover and call any third-party API by describing what you need (use only when Composio/Firecrawl don't cover it)
 - save_memory — persist durable context
 - recall_memory — fetch prior context
 - github_list_repos — enumerate Henry's repos
