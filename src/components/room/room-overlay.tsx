@@ -1,15 +1,17 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { RotateCcw, Monitor, Eye, ArrowLeft } from 'lucide-react'
+import { RotateCcw, Monitor, Eye, ArrowLeft, Activity as ActivityIcon } from 'lucide-react'
 import Link from 'next/link'
-import type { RoomDefinition, FocusTarget } from './types'
+import type { RoomDefinition, FocusTarget, Activity } from './types'
+import { ACTIVITY_CONFIG } from './constants'
 
 interface RoomOverlayProps {
   room: RoomDefinition
   focusedTarget: string | null
   onReset: () => void
   onFocus: (target: FocusTarget) => void
+  activityLabel?: Activity
 }
 
 /**
@@ -17,7 +19,7 @@ interface RoomOverlayProps {
  * the container, pointer-events: auto on interactive elements). Provides
  * room context, focus shortcuts, and camera reset.
  */
-export function RoomOverlay({ room, focusedTarget, onReset, onFocus }: RoomOverlayProps) {
+export function RoomOverlay({ room, focusedTarget, onReset, onFocus, activityLabel }: RoomOverlayProps) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-6">
       {/* Top bar — room name + back link */}
@@ -36,6 +38,12 @@ export function RoomOverlay({ room, focusedTarget, onReset, onFocus }: RoomOverl
             <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_6px_rgba(58,158,96,0.6)]" />
           </span>
           <span className="font-mono text-xs font-medium text-foreground">{room.name}</span>
+          {activityLabel && activityLabel !== 'idle' && (
+            <span className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-wider text-primary/70">
+              <ActivityIcon className="h-2.5 w-2.5" />
+              {ACTIVITY_CONFIG[activityLabel].label}
+            </span>
+          )}
           <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground/60">
             {room.description}
           </span>

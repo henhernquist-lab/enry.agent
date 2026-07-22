@@ -1,14 +1,18 @@
 'use client'
 
 import { Suspense, useRef, useState, useCallback } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { AdaptiveDpr, AdaptiveEvents, PerformanceMonitor } from '@react-three/drei'
 import { Lighting } from './lighting'
 import { CameraRig, type CameraHandle } from './camera'
 import { Furniture } from './furniture'
-import { Character } from './character'
+import { CharacterController } from './character'
 import { LoadingScreen } from './loading-screen'
 import { RoomOverlay } from './room-overlay'
+import { EnvironmentLife } from './environment-life'
+import { useRoomState } from './room-state'
+import { useActivityManager } from './activity-manager'
+import { useWalkingController } from './walking-controller'
 import { OFFICE_ROOM } from './constants'
 import type { FocusTarget } from './types'
 
@@ -16,23 +20,36 @@ import type { FocusTarget } from './types'
  * Scene — the 3D scene assembled inside a Canvas.
  *
  * Architecture:
- *   <Canvas>              — R3F WebGL context + render loop
- *     <PerformanceMonitor> — auto-adjusts DPR to maintain 60 FPS
- *     <Lighting>           — ambient + directional + accent lights
- *     <CameraRig>          — OrbitControls + smooth focus/reset
- *     <Furniture>          — floor, walls, desk, chair, monitor
- *     <Character>          — stylized worker with idle animations
+ *   <Canvas>               — R3F WebGL context + render loop
+ *     <PerformanceMonitor>  — auto-adjusts DPR to maintain 60 FPS
+ *     <Lighting>            — ambient + directional + accent + lamp lights
+ *     <CameraRig>           — OrbitControls + smooth focus/reset + idle sway
+ *     <Furniture>           — floor, walls, desk, chair, monitor, whiteboard, coffee, window
+ *     <EnvironmentLife>     — dust particles, ambient effects
+ *     <CharacterController> — worker driven by ActivityManager + WalkingController
  *
- * The camera ref is held at this level so the HTML overlay (RoomOverlay)
- * can call reset() and focusOn() imperatively.
+ * Systems (non-visual, drive the character):
+ *   - RoomState: central store, no re-renders
+ *   - ActivityManager: event→activity mapping + mocked timeline
+ *   - WalkingController: reusable movement system
+ *
+ * The camera ref is held at this level so the HTML overlay can call
+ * reset() and focusOn() imperatively.
  */
 export function Scene() {
   const cameraRef = useRef<CameraHandle>(null)
   const [focusedTarget, setFocusedTarget] = useState<string | null>(null)
   const [dpr, setDpr] = useState(1.5)
 
+  // ── Core systems ──────────────────────────────────────────────
+  const store = useRoomState()
+  const walker = useWalkingController()
+  const activityManager = useActivityManager(store, walker)
+
+  // ── Camera controls ───────────────────────────────────────────
   const handleReset = useCallback(() => {
     cameraRef.current?.reset()
+    cameraRef.current?.followTarget(null)
     setFocusedTarget(null)
   }, [])
 
@@ -41,6 +58,8 @@ export function Scene() {
     setFocusedTarget(target.id)
   }, [])
 
+  // ── Per-frame tick for the activity manager ───────────────────
+  // We use a lightweight component inside the Canvas to drive ticks
   return (
     <div className="relative h-screen w-full">
       <Canvas
@@ -76,7 +95,15 @@ export function Scene() {
             target={OFFICE_ROOM.cameraTarget}
           />
           <Furniture />
-          <Character spawnPosition={OFFICE_ROOM.characterSpawn} />
+          <EnvironmentLife />
+          <CharacterController
+            store={store}
+            walker={walker}
+            spawnPosition={OFFICE_ROOM.characterSpawn}
+          />
+
+          {/* Activity manager tick — drives the character's behavior */}
+          <ActivityTicker activityManager={activityManager} />
 
           {/* Invisible click targets for desk focus — double-click to focus */}
           {OFFICE_ROOM.focusTargets.map((target) => (
@@ -95,6 +122,7 @@ export function Scene() {
         focusedTarget={focusedTarget}
         onReset={handleReset}
         onFocus={handleFocus}
+        activityLabel={store.getActivity()}
       />
 
       {/* Loading screen — Suspense fallback for the Canvas */}
@@ -103,6 +131,16 @@ export function Scene() {
       </Suspense>
     </div>
   )
+}
+
+/** Drives the activity manager tick inside the Canvas's render loop. */
+function ActivityTicker({ activityManager }: { activityManager: ReturnType<typeof useActivityManager> }) {
+  // useFrame is only available inside Canvas — this component exists
+  // solely to call activityManager.tick() each frame
+  useFrame((state) => {
+    activityManager.tick(state.clock.getDelta())
+  })
+  return null
 }
 
 /** Invisible mesh that captures double-clicks to focus the camera. */

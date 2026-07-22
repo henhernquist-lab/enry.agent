@@ -10,8 +10,10 @@ interface LightingProps {
 
 /**
  * Premium lighting rig — ambient base + warm directional key + green accent
- * point light + cool monitor light. Subtle intensity drift on the accent
- * and monitor lights keeps the room feeling alive without being distracting.
+ * point light + cool monitor light + warm desk lamp glow.
+ *
+ * Subtle intensity drift on the accent and monitor lights keeps the
+ * room feeling alive without being distracting.
  */
 export function Lighting({ room }: LightingProps) {
   const accentRef = useRef<PointLight>(null)
@@ -77,6 +79,24 @@ export function Lighting({ room }: LightingProps) {
         intensity={0.8}
         distance={5}
         color={COLORS.monitorLightColor}
+      />
+
+      {/* Window light — cool daylight from the right wall */}
+      <pointLight
+        position={[5.5, 2.5, 0]}
+        intensity={ANIM.windowLightIntensity * 2}
+        distance={6}
+        color={ANIM.windowLightColor}
+      />
+
+      {/* Desk lamp light — warm glow from the desk area.
+          The lamp itself also has a point light in furniture.tsx,
+          but this one is a softer ambient fill. */}
+      <pointLight
+        position={[-1.2, 1.5, -0.8]}
+        intensity={0.15}
+        distance={2.5}
+        color={COLORS.lampLightColor}
       />
     </>
   )
