@@ -12,17 +12,10 @@ import {
   Loader2,
   BookOpen,
   Calculator,
-  Dumbbell,
-  Utensils,
   GitBranch,
-  Target,
   BookMarked,
-  Library,
-  Circle,
   Timer,
   ScanSearch,
-  Hourglass,
-  SmilePlus,
   StickyNote,
   Bell,
   Aperture,
@@ -50,17 +43,14 @@ interface ToolDef {
 // migration). Flashcards now live in the `learn` verb (paste notes → claims);
 // Article Notes + Reading List are folded into Learn's Sources tab. Their route
 // pages remain in the repo but are intentionally unlinked from this grid.
+//
+// Retired: workout, meal, habits, checkin, countdown, and repo-review are no
+// longer linked here. Repo Reviewer/Analyzer are merged into Repo Scanner.
 const TOOLS: ToolDef[] = [
   { slug: 'grade-calculator', type: 'grade_calc',   name: 'Grade Calculator',    desc: 'What do you need on finals for target GPA?',          icon: Calculator },
-  { slug: 'workout',          type: 'workout',       name: 'Workout Logger',      desc: 'Track sets, reps, and weight over time',             icon: Dumbbell },
-  { slug: 'meal',             type: 'meal',          name: 'Meal Logger',         desc: 'Plain-English logging with macro estimation',        icon: Utensils },
-  { slug: 'repo-scanner',     type: 'repo_scan',     name: 'Repo Scanner',        desc: 'Fetch a GitHub repo and chat about the code',        icon: GitBranch },
-  { slug: 'habits',           type: 'habit_streak',  name: 'Habit Streaks',       desc: 'Daily check-ins with streak tracking',              icon: Target },
+  { slug: 'repo-scanner',     type: 'repo_scan',     name: 'Repo Scanner',        desc: 'Chat, evaluate fit, or run a code review for any GitHub repo', icon: GitBranch },
   { slug: 'prompts',          type: 'prompt',        name: 'Prompt Library',      desc: 'Browse and save reusable AI prompts',               icon: BookMarked },
   { slug: 'race-pace',        type: 'race_pace',       name: 'Race Pace Calculator', desc: 'Split targets and PR tracking',                     icon: Timer },
-  { slug: 'repo-review',      type: 'repo_review',     name: 'Repo Reviewer',       desc: 'AI code review for your GitHub repos',              icon: ScanSearch },
-  { slug: 'countdown',        type: 'countdown',       name: 'Meet/Game Countdown', desc: 'Upcoming events with live day counts',              icon: Hourglass },
-  { slug: 'checkin',          type: 'checkin',         name: 'Daily Check-in',      desc: 'Rate your day, track the trend',                    icon: SmilePlus },
   { slug: 'notes',            type: 'note',            name: 'Quick Notes',         desc: 'Fast capture, no fuss',                             icon: StickyNote },
   { slug: 'schedule',         type: 'bell_schedule',   name: 'Bell Schedule',       desc: 'Current period and countdown to the next',          icon: Bell },
   { slug: 'briefing',         type: 'briefing',        name: 'Chief of Staff',      desc: 'Daily cross-tool briefing and suggested actions',   icon: Briefcase },

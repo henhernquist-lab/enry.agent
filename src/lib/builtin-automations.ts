@@ -2,8 +2,6 @@ export type BuiltinAutomationId =
   | 'dailyBriefing'
   | 'urlWatcher'
   | 'studyTimer'
-  | 'workoutLogger'
-  | 'nutritionTracker'
 
 export type BuiltinAutomationToggles = Record<BuiltinAutomationId, boolean>
 
@@ -13,8 +11,6 @@ const DEFAULT_TOGGLES: BuiltinAutomationToggles = {
   dailyBriefing: true,
   urlWatcher: true,
   studyTimer: true,
-  workoutLogger: true,
-  nutritionTracker: true,
 }
 
 export function loadToggles(): BuiltinAutomationToggles {

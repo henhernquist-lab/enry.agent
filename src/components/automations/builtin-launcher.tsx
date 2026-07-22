@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Globe, Timer, Dumbbell, Apple, ToggleLeft, ToggleRight, Zap } from 'lucide-react'
+import { Globe, Timer, ToggleLeft, ToggleRight, Zap } from 'lucide-react'
 import { DailyBriefingPanel } from './daily-briefing-panel'
 import { UrlWatcherPanel } from './url-watcher-panel'
 import { StudyTimerPanel } from './study-timer-panel'
-import { WorkoutLoggerPanel } from './workout-logger-panel'
-import { NutritionTrackerPanel } from './nutrition-tracker-panel'
 import { loadToggles, setToggle, type BuiltinAutomationId, type BuiltinAutomationToggles } from '@/lib/builtin-automations'
 import { loadWatchedUrls, checkUrl } from '@/lib/url-watcher'
 
@@ -17,8 +15,6 @@ const ITEMS: { id: BuiltinAutomationId; label: string; icon: typeof Zap }[] = [
   { id: 'dailyBriefing', label: 'Daily Briefing', icon: Zap },
   { id: 'urlWatcher', label: 'URL Watcher', icon: Globe },
   { id: 'studyTimer', label: 'Smart Study Timer', icon: Timer },
-  { id: 'workoutLogger', label: 'Workout Logger', icon: Dumbbell },
-  { id: 'nutritionTracker', label: 'Nutrition Tracker', icon: Apple },
 ]
 
 export function BuiltinAutomationsLauncher() {
@@ -78,8 +74,7 @@ export function BuiltinAutomationsLauncher() {
       {openPanel === 'dailyBriefing' && <DailyBriefingPanel onClose={() => setOpenPanel(null)} />}
       {openPanel === 'urlWatcher' && <UrlWatcherPanel onClose={() => setOpenPanel(null)} />}
       {openPanel === 'studyTimer' && <StudyTimerPanel onClose={() => setOpenPanel(null)} />}
-      {openPanel === 'workoutLogger' && <WorkoutLoggerPanel onClose={() => setOpenPanel(null)} />}
-      {openPanel === 'nutritionTracker' && <NutritionTrackerPanel onClose={() => setOpenPanel(null)} />}
+
     </>
   )
 }

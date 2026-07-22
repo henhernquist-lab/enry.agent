@@ -13,10 +13,7 @@ import {
   Trash2,
   BookOpen,
   Calculator,
-  Dumbbell,
-  Utensils,
   GitBranch,
-  Target,
   BookMarked,
   Newspaper,
   Check,
@@ -25,23 +22,14 @@ import {
   ShieldAlert,
   Info,
   ExternalLink,
-  Hourglass,
-  SmilePlus,
   StickyNote,
   Bell,
-  Star,
 } from 'lucide-react'
 import { FlashcardGenerator } from '@/components/tools/flashcard-generator'
 import { GradeCalculator } from '@/components/tools/grade-calculator'
-import { WorkoutLoggerTool } from '@/components/tools/workout-logger'
-import { MealLogger } from '@/components/tools/meal-logger'
 import { RepoScanner } from '@/components/tools/repo-scanner'
-import { HabitStreaks } from '@/components/tools/habit-streaks'
 import { ArticleNotes, ArticleNotesSavedList } from '@/components/tools/article-notes'
 import { RacePaceCalculator } from '@/components/tools/race-pace-calculator'
-import { RepoReviewer } from '@/components/tools/repo-reviewer'
-import { CountdownTracker } from '@/components/tools/countdown-tracker'
-import { DailyCheckin } from '@/components/tools/daily-checkin'
 import { QuickNotes } from '@/components/tools/quick-notes'
 import { BellSchedule } from '@/components/tools/bell-schedule'
 import {
@@ -49,16 +37,11 @@ import {
   type ResourceType,
   type FlashcardsPayload,
   type GradeCalcPayload,
-  type WorkoutPayload,
-  type MealPayload,
   type RepoScanPayload,
-  type HabitStreakPayload,
   type PromptPayload,
   type ArticleNotePayload,
   type RepoReviewPayload,
   type RepoReviewIssue,
-  type CountdownPayload,
-  type CheckinPayload,
   type NotePayload,
   type BellSchedulePayload,
   loadResources,
@@ -72,16 +55,10 @@ import type { ResourceSource } from '@/lib/resource-source'
 const SLUG_MAP: Record<string, ResourceType> = {
   'flashcards':       'flashcards',
   'grade-calculator': 'grade_calc',
-  'workout':          'workout',
-  'meal':             'meal',
   'repo-scanner':     'repo_scan',
-  'habits':           'habit_streak',
   'prompts':          'prompt',
   'articles':         'article_note',
   'race-pace':        'race_pace',
-  'repo-review':      'repo_review',
-  'countdown':        'countdown',
-  'checkin':          'checkin',
   'notes':            'note',
   'schedule':         'bell_schedule',
 }
@@ -89,16 +66,10 @@ const SLUG_MAP: Record<string, ResourceType> = {
 const SLUG_LABELS: Record<string, { name: string; icon: typeof BookOpen; desc: string }> = {
   'flashcards':       { name: 'Flashcard Generator', icon: BookOpen, desc: 'Paste notes → AI-generated Anki cards' },
   'grade-calculator': { name: 'Grade Calculator',    icon: Calculator, desc: 'What do you need on finals for target GPA?' },
-  'workout':          { name: 'Workout Logger',      icon: Dumbbell, desc: 'Track sets, reps, and weight over time' },
-  'meal':             { name: 'Meal Logger',         icon: Utensils, desc: 'Plain-English logging with macro estimation' },
-  'repo-scanner':     { name: 'Repo Scanner',        icon: GitBranch, desc: 'Fetch a GitHub repo and chat about the code' },
-  'habits':           { name: 'Habit Streaks',       icon: Target, desc: 'Daily check-ins with streak tracking' },
+  'repo-scanner':     { name: 'Repository Intelligence', icon: GitBranch, desc: 'Scan, chat, evaluate, and review any GitHub repo' },
   'prompts':          { name: 'Prompt Library',      icon: BookMarked, desc: 'Browse and save reusable AI prompts' },
   'articles':         { name: 'Article Notes',       icon: Newspaper, desc: 'Save articles with AI summaries and flashcards' },
   'race-pace':        { name: 'Race Pace Calculator', icon: Timer, desc: 'Split targets and PR tracking' },
-  'repo-review':      { name: 'Repo Reviewer',       icon: ScanSearch, desc: 'AI code review for your GitHub repos' },
-  'countdown':        { name: 'Meet/Game Countdown', icon: Hourglass, desc: 'Upcoming events with live day counts' },
-  'checkin':          { name: 'Daily Check-in',      icon: SmilePlus, desc: 'Rate your day, track the trend' },
   'notes':            { name: 'Quick Notes',         icon: StickyNote, desc: 'Fast capture, no fuss' },
   'schedule':         { name: 'Bell Schedule',       icon: Bell, desc: 'Current period and countdown to the next' },
 }
@@ -195,36 +166,6 @@ function PayloadView({ resource }: { resource: Resource }) {
         </div>
       )
     }
-    case 'workout': {
-      const wp = p as unknown as WorkoutPayload
-      return (
-        <div className="space-y-2">
-          <p className="font-mono text-sm font-semibold text-foreground">{wp.exercise}</p>
-          {wp.sets?.map((s, i) => (
-            <div key={i} className="flex items-center justify-between rounded border border-border/50 bg-surface-elevated/50 px-2.5 py-1.5 text-xs">
-              <span className="text-muted-foreground">Set {i + 1}</span>
-              <span className="font-mono text-foreground">{s.reps} reps × {s.weight} lbs</span>
-            </div>
-          ))}
-        </div>
-      )
-    }
-    case 'meal': {
-      const mp = p as unknown as MealPayload
-      return (
-        <div className="space-y-3">
-          <p className="text-sm text-foreground">{mp.description}</p>
-          <div className="grid grid-cols-4 gap-2">
-            {[['Calories', mp.calories], ['Protein', `${mp.protein}g`], ['Carbs', `${mp.carbs}g`], ['Fat', `${mp.fat}g`]].map(([l, v]) => (
-              <div key={l as string} className="rounded border border-border bg-surface-elevated px-2 py-2 text-center">
-                <p className="font-mono text-sm font-semibold text-foreground">{v}</p>
-                <p className="text-[10px] text-muted-foreground">{l}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )
-    }
     case 'repo_scan': {
       const rp = p as unknown as RepoScanPayload
       return (
@@ -233,18 +174,6 @@ function PayloadView({ resource }: { resource: Resource }) {
           {rp.description && <p className="text-xs text-muted-foreground">{rp.description}</p>}
           <div className="flex gap-3 text-xs text-muted-foreground">
             <span>{rp.language}</span><span>{rp.stars} ★</span><span>{rp.fileTree?.length} files</span>
-          </div>
-        </div>
-      )
-    }
-    case 'habit_streak': {
-      const hp = p as unknown as HabitStreakPayload
-      return (
-        <div className="space-y-2">
-          <p className="text-sm text-foreground">{hp.habit_name}</p>
-          <div className="flex gap-3 text-xs">
-            <span className="text-muted-foreground">Checked on {hp.checked_on}</span>
-            {hp.streak > 0 && <span className="font-mono text-warning">{hp.streak}d streak</span>}
           </div>
         </div>
       )
@@ -362,29 +291,6 @@ function PayloadView({ resource }: { resource: Resource }) {
     case 'note': {
       const np = p as unknown as NotePayload
       return <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{np.content}</p>
-    }
-    case 'countdown': {
-      const cp = p as unknown as CountdownPayload
-      return (
-        <div className="space-y-1.5 text-xs">
-          <p className="text-foreground">{cp.event_date} · {cp.event_type.replace('_', ' ')}</p>
-          {cp.location && <p className="text-muted-foreground">{cp.location}</p>}
-          {cp.notes && <p className="text-muted-foreground">{cp.notes}</p>}
-        </div>
-      )
-    }
-    case 'checkin': {
-      const cp = p as unknown as CheckinPayload
-      return (
-        <div className="space-y-1.5">
-          <div className="flex gap-0.5">
-            {([1, 2, 3, 4, 5] as const).map((n) => (
-              <Star key={n} className={`h-3.5 w-3.5 ${n <= cp.rating ? 'fill-current text-primary' : 'text-border'}`} />
-            ))}
-          </div>
-          {cp.note && <p className="text-xs text-muted-foreground">{cp.note}</p>}
-        </div>
-      )
     }
     case 'bell_schedule': {
       const bp = p as unknown as BellSchedulePayload
@@ -638,16 +544,10 @@ function ToolPageContent() {
         {/* Tool launcher */}
         {resourceType === 'flashcards'   && <FlashcardGenerator onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'grade_calc'   && <GradeCalculator    onClose={() => {}} mode="page" onSave={handleSave} />}
-        {resourceType === 'workout'      && <WorkoutLoggerTool  onClose={() => {}} mode="page" onSave={handleSave} />}
-        {resourceType === 'meal'         && <MealLogger         onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'repo_scan'    && <RepoScanner        onClose={() => {}} mode="page" onSave={handleSave} />}
-        {resourceType === 'habit_streak' && <HabitStreaks       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'article_note' && <ArticleNotes       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'race_pace'    && <RacePaceCalculator onClose={() => {}} mode="page" onSave={handleSave} />}
-        {resourceType === 'repo_review'  && <RepoReviewer       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'prompt'       && <PromptLibraryLauncher onSave={handleSave} />}
-        {resourceType === 'countdown'    && <CountdownTracker   onClose={() => {}} mode="page" onSave={handleSave} />}
-        {resourceType === 'checkin'      && <DailyCheckin       onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'note'         && <QuickNotes         onClose={() => {}} mode="page" onSave={handleSave} />}
         {resourceType === 'bell_schedule' && <BellSchedule      onClose={() => {}} mode="page" onSave={handleSave} />}
 
