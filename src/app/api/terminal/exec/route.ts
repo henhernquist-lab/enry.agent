@@ -8,7 +8,8 @@ import { runCommand } from '@/lib/terminal/exec'
 import { runGit } from '@/lib/terminal/git-api'
 import { resolveExecutionDir } from '@/lib/terminal/working-copy'
 import { proposeEdit, applyEdit, discardEdit, createBranch, commitChanges, openPullRequest, planEdit, generateReasoningTrace, loadEnryRules, buildEnryRulesBlock, casUpdateSessionPayload, type WriteOpsContext } from '@/lib/terminal/write-ops'
-import { resolveNLEditTarget } from '@/lib/terminal/nl-edit'
+import { resolveNLEditTarget, type NLHistoryTurn, type NLStep } from '@/lib/terminal/nl-edit'
+import { loadSessionPayload } from '@/lib/session-cas'
 import { FILE_COMMANDS, BLOCKED_BINARIES, RATE_LIMIT_PER_MINUTE } from '@/lib/terminal/allowlist'
 import { getSkill, SKILLS, buildMultiSkillPrompt } from '@/lib/skills/registry'
 import { getSkillWithOverride } from '@/lib/skills/loader'
@@ -324,17 +325,34 @@ async function dispatch(command: string, ctx: WriteOpsContext, headSha: string, 
   // Genuinely unrecognized input -> treat as a natural-language coding
   // request. resolveNLEditTarget enforces the coding-only scope boundary
   // itself (refuses non-code requests) before any file is touched.
-  const nl = await resolveNLEditTarget(ctx, command)
+  //
+  // Pass the session's recent command history so the classifier can recognise
+  // a follow-up ("do multiple files", "yes go ahead", "two instead") as a
+  // CONTINUATION of the previous request. Without this it sees every message
+  // in isolation and used to misread such follow-ups as Drive UI commentary —
+  // see nl-edit.ts's SCOPE_SYSTEM_PROMPT for the contract.
+  const history = await loadNLHistory(ctx.userId, ctx.sessionId)
+  const nl = await resolveNLEditTarget(ctx, command, history)
   if (!nl.ok) {
     // Ambiguous-but-plausible requests (can't tell which file) get the same
     // [CLARIFY]/exit_code:0 wire format the skill-invocation path already
     // uses — see agent/page.tsx's clarifyMatch parser — instead of the
-    // exitCode:1 hard-refuse path, which that parser deliberately excludes.
+    // exit_code:1 hard-refuse path, which that parser deliberately excludes.
     if (nl.clarify) {
       const optionsText = nl.clarify.options.length > 0
         ? nl.clarify.options.map((o, i) => `${String.fromCharCode(65 + i)}) ${o}`).join(', ')
         : 'A) point me to the file, B) describe it more specifically'
       return { result: { output: `[CLARIFY] ${nl.clarify.question} Options: ${optionsText}`, exitCode: 0 } }
+    }
+    // Multi-file feature requests get the same [CLARIFY]/exit_code:0
+    // treatment so they surface as a chooser in the cockpit — each step is
+    // a single-file edit the user can click through one at a time, then run
+    // `commit` once to land all of them. This replaces what used to be a
+    // dead-end refuse ("can't be done as a single-file edit") with an
+    // actionable, honest step breakdown that respects Drive's per-step
+    // model instead of pretending the request was never a code change.
+    if (nl.multiFile) {
+      return { result: { output: formatMultiFileClarify(nl.multiFile.summary, nl.multiFile.steps), exitCode: 0 } }
     }
     return { result: { output: nl.error, exitCode: 1 } }
   }
@@ -641,4 +659,82 @@ async function appendCommand(uid: string, sessionId: string, entry: TerminalComm
   } catch (e) {
     console.error('[terminal] append failed:', e)
   }
+}
+
+// Build the recent-turns context the NL classifier uses to recognise
+// follow-up messages as continuations rather than Drive UI commentary.
+// Reads the session's commands[] log — already persisted by
+// appendCommand above — and folds each prior input into a single short
+// line annotated with the result it produced (resolved, refused, multi_file,
+// …) so the classifier can see "user just got refused for the same request"
+// and treat a short follow-up as continuation, not a new standalone statement.
+async function loadNLHistory(uid: string, sessionId: string): Promise<NLHistoryTurn[]> {
+  try {
+    const payload = await loadSessionPayload<TerminalSessionPayload>(sessionId, uid)
+    const commands = payload?.commands ?? []
+    return commands
+      .filter((c) => typeof c.cmd === 'string' && c.cmd.trim().length > 0)
+      // Skip explicit meta commands (edit <file>, apply, branch "x") — those
+      // wouldn't itself be classified as NL edits and add noise to the
+      // conversation continuity signal. We want the natural-language
+      // back-and-forth visible to the classifier, not the toolbar clicks.
+      .filter((c) => !looksLikeMetaCommand(c.cmd))
+      .map((c) => ({
+        input: c.cmd,
+        result: resultLabelForCommand(c),
+        resultDetail: c.output?.split('\n')[0]?.slice(0, 200),
+      }))
+      // Tail of the log ≈ most recent turns; classifier wants the last few
+      // to recognise a continuation. nl-edit.ts caps at MAX_HISTORY_TURNS
+      // and per-turn chars itself; this slice just keeps the lookup cheap.
+      .slice(-20)
+  } catch (e) {
+    console.error('[terminal] loadNLHistory failed (continuing without history):', e)
+    return []
+  }
+}
+
+function resultLabelForCommand(c: TerminalCommand): NLHistoryTurn['result'] {
+  // action is set by dispatch() for write-mode steps; absence = read-only or
+  // a refused NL path. We don't need perfect fidelity here — just enough
+  // signal for the classifier to know "the previous pass was a refusal of a
+  // similar request" vs "the previous pass landed".
+  if (c.action === 'propose_edit' || c.action === 'apply') return 'resolved'
+  if (c.action === 'target_resolved' || c.action === 'plan' || c.action === 'reasoning_ready') return 'resolved'
+  if (/^\[CLARIFY\]/i.test(c.output)) {
+    // Distinguish the multi_file step-breakdown clarifies (we add a specific
+    // marker, see formatMultiFileClarify) from regular ambiguity clarifies,
+    // so the classifier can tell "previously got a step breakdown" apart
+    // from "previously got asked which file."
+    return /\[MULTI_FILE_STEPS\]/.test(c.output) ? 'multi_file' : 'clarified'
+  }
+  if (c.exit_code !== 0) return 'refused'
+  return 'other'
+}
+
+// Render a multi-file step breakdown in the existing [CLARIFY] wire format
+// so agent/page.tsx's clarifyMatch parser picks it up unchanged. Each step
+// becomes a labeled option (A) <create|edit> <path> — <instruction>, B) …)
+// the user can click to start at step 1 — Drive then runs normal propose/apply
+// for that one file, then `commit` lands all of them together once done.
+// A hidden marker ([MULTI_FILE_STEPS]) records the prior step-breakdown
+// result so subsequent turns label the continue-request correctly via
+// loadNLHistory's resultLabelForCommand, even after a page refresh.
+//
+// Option labels are intentionally file-centric (no "Step N:" prefix) so when
+// the user clicks one, it goes back through the NL classifier as a plain
+// single-file edit request and routes cleanly to `resolve` — instead of
+// re-triggering another multi_file pass on the broader feature description.
+function formatMultiFileClarify(summary: string, steps: NLStep[]): string {
+  const optionsText = steps.map((s, i) => {
+    const verb = s.isNewFile ? 'create' : 'edit'
+    // Keep each option on a single line — the clarifyMatch regex splits
+    // options on commas, so we strip commas that would otherwise break the
+    // parser. Newlines in the instruction likewise become spaces.
+    const instr = s.instruction.replace(/[\n,]/g, ' ').replace(/\s+/g, ' ').trim()
+    const label = `${verb} ${s.file} — ${instr}`.slice(0, 200)
+    return `${String.fromCharCode(65 + i)}) ${label}`
+  }).join(', ')
+  const stepsPrefix = steps.length === 1 ? 'one single-file step' : `${steps.length} single-file steps — pick one to start`
+  return `[CLARIFY] [MULTI_FILE_STEPS] ${summary} (${stepsPrefix}; Drive edits one file per step, then you commit them together). Options: ${optionsText}`
 }
