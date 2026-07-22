@@ -21,6 +21,13 @@ const Scene = dynamic(
   },
 )
 
-export function Room() {
-  return <Scene />
+export interface RoomProps {
+  /** Which surface opened The Room (drive | cruise | learn | chat). */
+  from?: string
+  /** Whether that surface had an active run when it opened The Room. */
+  state?: 'working' | 'idle'
+}
+
+export function Room({ from, state }: RoomProps) {
+  return <Scene from={from} state={state} />
 }

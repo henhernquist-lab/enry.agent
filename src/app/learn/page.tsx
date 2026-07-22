@@ -10,6 +10,7 @@ import {
   Archive,
   Brain,
   BookOpen,
+  Eye,
   GraduationCap,
   Layers,
   Loader2,
@@ -356,9 +357,17 @@ function LearnPageContent() {
         )}
         {/* Ambient Mode — a background layer; its settings live here in Learn,
             opened from this header (not a tab, not the global app settings). */}
+        {/* See Enry — opens The Room reflecting whether Learn is mid-run */}
+        <Link
+          href={`/room?from=learn&state=${running ? 'working' : 'idle'}`}
+          title="Watch Enry work in The Room"
+          className="ml-auto flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50 transition-colors hover:text-primary"
+        >
+          <Eye className="h-3 w-3" /> See Enry
+        </Link>
         <button
           onClick={() => setAmbientOpen(true)}
-          className="ml-auto flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50 transition-colors hover:text-foreground"
+          className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50 transition-colors hover:text-foreground"
           title="Ambient Mode settings"
         >
           <Radio className="h-3 w-3" /> Ambient

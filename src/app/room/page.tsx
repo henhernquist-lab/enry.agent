@@ -7,6 +7,14 @@ export const metadata = {
 
 export const dynamic = 'force-dynamic'
 
-export default function RoomPage() {
-  return <Room />
+export default async function RoomPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; state?: string }>
+}) {
+  // "See Enry" entry points (Drive/Cruise/Learn) pass which surface opened
+  // The Room and whether that surface is mid-run — the scene seeds the
+  // worker's activity from this instead of the mocked timeline.
+  const { from, state } = await searchParams
+  return <Room from={from} state={state === 'working' ? 'working' : 'idle'} />
 }

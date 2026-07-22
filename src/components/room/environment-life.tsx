@@ -62,9 +62,9 @@ export function DustParticles() {
       <meshStandardMaterial
         color={COLORS.primaryGlow}
         emissive={COLORS.primaryGlow}
-        emissiveIntensity={0.08}
+        emissiveIntensity={0.5}
         transparent
-        opacity={0.35}
+        opacity={0.3}
         roughness={1}
         metalness={0}
       />
