@@ -22,7 +22,6 @@ import {
 } from '@/lib/automations'
 import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
 import { ActivityChart } from '@/components/home/activity-chart'
-import { TodayBand } from '@/components/home/today-band'
 import { TerminalLauncher } from '@/components/home/terminal-launcher'
 import { AgentLauncher } from '@/components/home/agent-launcher'
 import { UsageAlerts } from '@/components/usage/usage-alerts'
@@ -197,7 +196,6 @@ export default function EnryAgentPage() {
           onDeleteConversation={handleDeleteConversation}
           onAutomationsChange={handleAutomationsChange}
         />          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {sessionStatus === 'authenticated' && <TodayBand />}
           <CenterPanel
             key={activeId}
             agentStatus={agentStatus}
