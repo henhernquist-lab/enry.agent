@@ -21,12 +21,15 @@ import {
   type AutomationRun,
 } from '@/lib/automations'
 import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
-import { SystemStatusStrip } from '@/components/home/system-status-strip'
 import { ActivityChart } from '@/components/home/activity-chart'
 import { TodayBand } from '@/components/home/today-band'
 import { TerminalLauncher } from '@/components/home/terminal-launcher'
 import { AgentLauncher } from '@/components/home/agent-launcher'
 import { UsageAlerts } from '@/components/usage/usage-alerts'
+import { TopBar } from '@/components/top-bar'
+import { QuickStartCard } from '@/components/quick-start-card'
+import { ProviderTopology } from '@/components/provider-topology'
+import { Card } from '@/components/card'
 
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
@@ -178,10 +181,8 @@ export default function EnryAgentPage() {
       <CornerAccents />
 
       <div className="relative z-10 flex h-full w-full flex-col">
-        <SystemStatusStrip />
-        {/* Inline usage alerts — dismissible, no browser alerts. Renders
-            nothing when there are no alerts (component returns null), so it
-            is invisible on the home screen until a quota threshold is hit. */}
+        <TopBar />
+        {/* Inline usage alerts — dismissible, no browser alerts. */}
         <div className="px-4 pt-2">
           <UsageAlerts compact className="space-y-1.5" />
         </div>
@@ -217,16 +218,24 @@ export default function EnryAgentPage() {
           streamingText={streamingText}
           currentModel={currentModel}
         >
-          <QuickNotesWidget />
-          <div className="mt-3">
+          <Card padding="lg">
+            <QuickStartCard />
+          </Card>
+          <Card padding="lg">
+            <ProviderTopology />
+          </Card>
+          <Card padding="md">
+            <QuickNotesWidget />
+          </Card>
+          <Card padding="sm">
             <AgentLauncher />
-          </div>
-          <div className="mt-2">
+          </Card>
+          <Card padding="sm">
             <TerminalLauncher />
-          </div>
-          <div className="mt-4 border-t border-border pt-4">
+          </Card>
+          <Card padding="md">
             <ActivityChart />
-          </div>
+          </Card>
         </RightPanel>
         </div>
       </div>

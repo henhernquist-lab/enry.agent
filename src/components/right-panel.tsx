@@ -40,7 +40,7 @@ export function RightPanel({ agentStatus, activities, streamingText, currentMode
   return (
     <aside className="flex h-full w-[320px] flex-col border-l border-border bg-surface-secondary">
       {children && (
-        <div className="border-b border-border p-4">
+        <div className="flex flex-col gap-4 border-b border-border p-4">
           {children}
         </div>
       )}
