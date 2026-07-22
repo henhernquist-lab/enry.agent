@@ -17,6 +17,8 @@ export async function POST(req: Request) {
   const target = typeof body?.target === 'string' ? body.target : ''
   if (!target.trim()) return Response.json({ error: 'target required' }, { status: 400 })
 
-  const diff = await computeKnowledgeDiff(uid, rawUserId ?? undefined, target, typeof body?.model === 'string' ? body.model : undefined)
+  const isRecovery = body?.recovery === true
+  const partialContent = typeof body?.partial_content === 'string' ? body.partial_content : undefined
+  const diff = await computeKnowledgeDiff(uid, rawUserId ?? undefined, target, typeof body?.model === 'string' ? body.model : undefined, isRecovery, partialContent)
   return Response.json(diff)
 }

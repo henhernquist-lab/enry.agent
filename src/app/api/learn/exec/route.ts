@@ -25,6 +25,8 @@ export async function POST(req: Request) {
   const input = String(body.input ?? '')
   const requestedSessionId: string | null = body.session_id ?? null
   const model = typeof body.model === 'string' ? body.model : undefined
+  const isRecovery = body.recovery === true
+  const partialContent = typeof body.partial_content === 'string' ? body.partial_content : undefined
 
   if (!(LEARN_VERBS as readonly string[]).includes(verbRaw)) {
     return Response.json({ error: `Unknown verb "${verbRaw}". One of: ${LEARN_VERBS.join(', ')}` }, { status: 400 })
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
   // profiles.id in newer ones per resolveResourceUserId's own comment) —
   // searchMemories keys on whatever that raw value is, same as chat/route.ts
   // already does. uid (profiles.id) is what claims.user_id actually FKs to.
-  const ctx: LearnOpsContext = { userId: uid, googleId: rawUserId ?? undefined, sessionId, model }
+  const ctx: LearnOpsContext = { userId: uid, googleId: rawUserId ?? undefined, sessionId, model, isRecovery, partialContent }
   const result = await dispatchLearn(verb, input, ctx)
 
   const entry: LearnCommand = {

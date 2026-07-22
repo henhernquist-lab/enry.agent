@@ -79,6 +79,8 @@ export async function POST(req: Request) {
   const resolvedIsNew = body.is_new_file === true
   const resolvedInstruction = typeof body.instruction === 'string' ? body.instruction : undefined
   const resolvedReasoningTrace = typeof body.reasoning_trace === 'string' ? body.reasoning_trace : undefined
+  const isRecovery = body.recovery === true
+  const partialContent = typeof body.partial_content === 'string' ? body.partial_content : undefined
   const skillSlug = typeof body.skill_slug === 'string' ? body.skill_slug : undefined
   const skillSlugs: string[] | undefined = Array.isArray(body.skill_slugs) ? body.skill_slugs.filter((s: unknown) => typeof s === 'string') : undefined
 
@@ -100,6 +102,16 @@ export async function POST(req: Request) {
   if (!sessionId) return Response.json({ error: 'Could not start terminal session' }, { status: 500 })
 
   const [owner, name] = repo.split('/')
+
+  // Recovery mode: when the frontend detects an interrupted stream, it sends
+  // the partial content so the model can continue exactly where it left off.
+  // For Drive this only affects the natural-language generation paths (skill
+  // responses, plan generation, and diff generation). We append a continuation
+  // prompt to the user's command so every downstream generator sees it.
+  let recoveryPrompt = ''
+  if (isRecovery && partialContent && partialContent.length > 0) {
+    recoveryPrompt = `\n\nCONTINUATION REQUEST: Your previous response was interrupted unexpectedly. Continue exactly where you left off. Do NOT restart, summarize, or repeat any previous content. Do NOT apologize or acknowledge the interruption. The last content sent before the interruption was:\n\n${partialContent.slice(-500)}\n\nContinue from the exact point this was cut off.`
+  }
 
   // The generation hop (a resolved NL-edit target coming back for diff
   // generation via proposeEdit — auto hop-2 or manual proceed) reads the
@@ -163,7 +175,10 @@ export async function POST(req: Request) {
     }
   }
 
-  const { result, action, planTarget, invocationId, reasoningTrace } = await dispatch(command, writeCtx, headSha, planFirst, proceed ?? false, skillSlug, skillSlugs, reasoningDepth)
+  // Append recovery continuation prompt to the command if this is a recovery request.
+  const commandWithRecovery = isRecovery && recoveryPrompt ? command + recoveryPrompt : command
+
+  const { result, action, planTarget, invocationId, reasoningTrace } = await dispatch(commandWithRecovery, writeCtx, headSha, planFirst, proceed ?? false, skillSlug, skillSlugs, reasoningDepth)
 
   // Check for .enryrules and include its existence in the response so the
   // client can show/hide the editor UI. Shares write-ops.ts's cached

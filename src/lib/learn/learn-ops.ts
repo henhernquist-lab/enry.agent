@@ -19,6 +19,10 @@ export interface LearnOpsContext {
   googleId?: string      // raw session id — memories table keys on this, not profiles.id
   sessionId: string
   model?: string
+  /** Recovery mode — the previous LLM call was interrupted and we are retrying. */
+  isRecovery?: boolean
+  /** Partial content from the interrupted stream, used to build a continuation prompt. */
+  partialContent?: string
 }
 
 export const LEARN_VERBS = ['learn', 'probe', 'gap', 'defend', 'teach', 'retire'] as const
@@ -54,6 +58,11 @@ export async function dispatchLearn(verb: LearnVerb, args: string, ctx: LearnOps
 // ── learn "<topic>" ───────────────────────────────────────────────────────
 // Breaks a topic (or a pasted source, if the input is long enough to look
 // like one) into atomic claims and persists each with a real embedding.
+function buildRecoveryContinuation(partialContent?: string): string {
+  if (!partialContent || partialContent.length === 0) return ''
+  return `\n\nCONTINUATION REQUEST: Your previous response was interrupted unexpectedly. Continue exactly where you left off. Do NOT restart, summarize, or repeat any previous content. Do NOT apologize or acknowledge the interruption. The last content sent before the interruption was:\n\n${partialContent.slice(-500)}\n\nContinue from the exact point this was cut off.`
+}
+
 const CLAIM_EXTRACTION_SYSTEM_PROMPT = `You are enry's learning agent, breaking a topic or source text into atomic claims — single, standalone things a learner should come to know or believe, each independently provable true or false.
 
 Rules:
@@ -93,7 +102,7 @@ export async function learnTopic(ctx: LearnOpsContext, input: string): Promise<L
     const { text } = await generateText({
       model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
       system: CLAIM_EXTRACTION_SYSTEM_PROMPT,
-      prompt: `${isSourceText ? 'Source text' : 'Topic'}: ${trimmed}${memoryContext}\n\nExtract the claims now.`,
+      prompt: `${isSourceText ? 'Source text' : 'Topic'}: ${trimmed}${memoryContext}\n\nExtract the claims now.${ctx.isRecovery ? buildRecoveryContinuation(ctx.partialContent) : ''}`,
       temperature: 0.3,
       maxOutputTokens: 2000,
       timeout: 40_000,
@@ -449,7 +458,7 @@ async function defendClaim(ctx: LearnOpsContext, arg: string): Promise<LearnOpsR
     const { text } = await generateText({
       model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
       system: DEFEND_SYSTEM_PROMPT,
-      prompt: `Claim: ${claim.content}\n\nGive your strongest counterargument.`,
+      prompt: `Claim: ${claim.content}\n\nGive your strongest counterargument.${ctx.isRecovery ? buildRecoveryContinuation(ctx.partialContent) : ''}`,
       temperature: 0.7,
       maxOutputTokens: 500,
       timeout: 40_000,
@@ -565,7 +574,7 @@ async function gradeExplanation(
     const { text } = await generateText({
       model: client.chat(ctx.model ?? DEFAULT_NIM_MODEL),
       system: TEACH_GRADING_RUBRIC,
-      prompt: `Claim (the actual, correct content): ${pending.claim_content}\n\nLearner's explanation: ${explanation}\n\nGrade it.`,
+      prompt: `Claim (the actual, correct content): ${pending.claim_content}\n\nLearner's explanation: ${explanation}\n\nGrade it.${ctx.isRecovery ? buildRecoveryContinuation(ctx.partialContent) : ''}`,
       temperature: 0.2,
       maxOutputTokens: 400,
       timeout: 40_000,

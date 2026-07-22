@@ -59,11 +59,18 @@ interface ClaimVec {
   embedding: number[]
 }
 
+function buildRecoveryContinuation(partialContent?: string): string {
+  if (!partialContent || partialContent.length === 0) return ''
+  return `\n\nCONTINUATION REQUEST: Your previous response was interrupted unexpectedly. Continue exactly where you left off. Do NOT restart, summarize, or repeat any previous content. Do NOT apologize or acknowledge the interruption. The last content sent before the interruption was:\n\n${partialContent.slice(-500)}\n\nContinue from the exact point this was cut off.`
+}
+
 export async function computeKnowledgeDiff(
   userId: string,
   googleId: string | undefined,
   target: string,
   model?: string,
+  isRecovery?: boolean,
+  partialContent?: string,
 ): Promise<KnowledgeDiff> {
   const trimmed = target.trim()
   const now = new Date().toISOString()
@@ -79,7 +86,7 @@ export async function computeKnowledgeDiff(
     const { text } = await generateText({
       model: client.chat(model ?? DEFAULT_NIM_MODEL),
       system: SURFACE_SYSTEM_PROMPT,
-      prompt: `Topic: ${trimmed}\n\nMap its essential facets now.`,
+      prompt: `Topic: ${trimmed}\n\nMap its essential facets now.${isRecovery ? buildRecoveryContinuation(partialContent) : ''}`,
       temperature: 0.3, maxOutputTokens: 1200, timeout: 45_000, maxRetries: 0,
     })
     const parsed = parseJsonLoose<{ facets: { facet: string; why: string }[] }>(text)
