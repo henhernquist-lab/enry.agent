@@ -13,6 +13,7 @@ import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOver
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { nimClientFor } from '@/lib/nim'
+import { logUsage } from '@/lib/usage/log'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { monidDiscover, monidRun } from '@/lib/monid'
 import { getReceiptsHook } from '@/lib/learn/receipts-hook'
@@ -366,6 +367,7 @@ export async function POST(req: Request) {
       }
     }
 
+    const skillStartedAt = Date.now()
     const skillResult = streamText({
       model: chatClient.chat(selectedModel),
       system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}`,
@@ -388,11 +390,23 @@ export async function POST(req: Request) {
       // ceiling (~11.5k tokens at last check).
       maxOutputTokens: 4096,
       onError: ({ error }) => { console.error('streamText multi-skill error:', error) },
-      onFinish: async ({ text }) => {
+      onFinish: async ({ text, usage }) => {
         if (invocationId) {
           await updateSkillInvocationOutput(invocationId, text).catch((err) => {
             console.error('[chat/route] failed to update skill invocation output:', err)
           })
+        }
+        // Usage observability — resilient, never breaks the response.
+        if (uid) {
+          logUsage({
+            userId: uid,
+            modelId: selectedModel,
+            mode: 'chat',
+            promptTokens: usage?.inputTokens,
+            completionTokens: usage?.outputTokens,
+            totalTokens: usage?.totalTokens,
+            latencyMs: Date.now() - skillStartedAt,
+          }).catch(() => {})
         }
       },
     })
@@ -580,6 +594,7 @@ export async function POST(req: Request) {
     },
   })
 
+  const chatStartedAt = Date.now()
   const result = streamText({
     model: chatClient.chat(selectedModel),
     system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.
@@ -716,6 +731,22 @@ ${userProfile ? `\n${userProfile}` : ''}`,
     maxOutputTokens: 4096,
     onError: ({ error }) => {
       console.error('streamText error:', error)
+    },
+    onFinish: async ({ usage }) => {
+      // Usage observability — resilient, never breaks the response. Runs
+      // after the full multi-step stream completes; usage is accumulated
+      // across tool-calling steps by the SDK.
+      if (uid) {
+        logUsage({
+          userId: uid,
+          modelId: selectedModel,
+          mode: 'chat',
+          promptTokens: usage?.inputTokens,
+          completionTokens: usage?.outputTokens,
+          totalTokens: usage?.totalTokens,
+          latencyMs: Date.now() - chatStartedAt,
+        }).catch(() => {})
+      }
     },
   })
 

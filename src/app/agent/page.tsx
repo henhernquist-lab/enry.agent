@@ -18,6 +18,9 @@ import { CompactionIndicator } from '@/components/compaction-indicator'
 import { SKILLS as ALL_SKILLS, detectSkillInvocation, detectSkillInvocations, buildMultiSkillPrompt } from '@/lib/skills/registry'
 import { classifyTaskComplexity, autoSelectForComplexity } from '@/lib/drive/auto-select'
 import { DriveSteps, type DriveStep } from '@/components/drive-steps'
+import { RouterExplanation } from '@/components/router/router-explanation'
+import { buildRoutingDecision } from '@/lib/router/explain'
+import type { RoutingDecision } from '@/lib/router/types'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -283,6 +286,12 @@ export default function AgentPage() {
   // Auto mode's most recent pick, for the transcript line + brief pill
   // emphasis — cleared once a new request starts.
   const [lastAutoPick, setLastAutoPick] = useState<string | null>(null)
+  // Structured routing decision for the "Why this route?" explanation — the
+  // auto-select pick relabeled into the profile vocabulary (see
+  // src/lib/router/explain.ts). Replaces the plain lastAutoPick one-liner in
+  // the transient UI; the transcript system-line remains the permanent record.
+  const [lastRoutingDecision, setLastRoutingDecision] = useState<RoutingDecision | null>(null)
+  const [routerExpanded, setRouterExpanded] = useState(false)
   // Top-level mode: Drive (interactive, the existing behavior) vs Cruise
   // (autonomous scan). Distinct from `mode` above, which is Drive's auto/manual.
   const [cruiseMode, setCruiseMode] = useState<'drive' | 'cruise'>('drive')
@@ -331,15 +340,17 @@ export default function AgentPage() {
   interface DriveTerminalPane { id: string; cwd: string; createdAt: number }
   const [terminalPanes, setTerminalPanes] = useState<DriveTerminalPane[]>([])
   // Surfaced when opening a terminal fails, so "clicking does nothing" becomes
-  // a visible, diagnosable error instead of a silent no-op. Cleared on the next
-  // attempt and auto-dismissed after a few seconds.
-  const [terminalError, setTerminalError] = useState<string | null>(null)
+  // a visible, diagnosable message instead of a silent no-op. Cleared on the
+  // next attempt and auto-dismissed after a few seconds. `tone` distinguishes
+  // a real failure (red) from an expected environment limitation (muted) —
+  // e.g. a 501 on the Vercel deploy, where PTY panes simply can't run.
+  const [terminalNotice, setTerminalNotice] = useState<{ text: string; tone: 'error' | 'info' } | null>(null)
   const paneIdsRef = useRef<string[]>([])
   useEffect(() => { paneIdsRef.current = terminalPanes.map((p) => p.id) }, [terminalPanes])
 
   const addTerminal = useCallback(async () => {
     if (terminalPanes.length >= MAX_TERMINALS) return
-    setTerminalError(null)
+    setTerminalNotice(null)
     try {
       const res = await fetch('/api/terminal/pty', {
         method: 'POST',
@@ -353,12 +364,17 @@ export default function AgentPage() {
         // before, which is exactly why this looked like "the button is dead".
         let detail = ''
         try { detail = ((await res.json()) as { error?: string })?.error ?? '' }
-        catch { detail = (await res.text().catch(() => '')).slice(0, 120) }
-        const msg = res.status === 401
-          ? 'Terminal failed: session expired — reload and sign in again.'
-          : `Terminal failed to open (HTTP ${res.status}${detail ? `: ${detail}` : ''})`
+        catch { detail = (await res.text().catch(() => '')).slice(0, 160) }
         console.error('[drive] addTerminal:', res.status, detail || '(no body)')
-        setTerminalError(msg)
+        if (res.status === 501) {
+          // Expected environment limitation (the Vercel serverless guard) —
+          // not a failure. Show the server's plain message, muted.
+          setTerminalNotice({ text: detail || 'Terminal panes only run in the Codespace, not on the deployed app.', tone: 'info' })
+        } else if (res.status === 401) {
+          setTerminalNotice({ text: 'Terminal failed: session expired — reload and sign in again.', tone: 'error' })
+        } else {
+          setTerminalNotice({ text: `Terminal failed to open (HTTP ${res.status}${detail ? `: ${detail}` : ''})`, tone: 'error' })
+        }
         return
       }
       const data = await res.json() as { id: string; cwd?: string }
@@ -366,27 +382,34 @@ export default function AgentPage() {
     } catch (e) {
       // Genuine network/transport failure (route unreachable, aborted, etc.).
       console.error('[drive] addTerminal threw:', e)
-      setTerminalError(`Terminal failed to open: ${e instanceof Error ? e.message : 'network error'}`)
+      setTerminalNotice({ text: `Terminal failed to open: ${e instanceof Error ? e.message : 'network error'}`, tone: 'error' })
     }
   }, [terminalPanes.length])
 
-  // Auto-dismiss the terminal error a few seconds after it appears.
+  // Auto-dismiss the terminal notice after a few seconds (a touch longer for
+  // the informational one so it's readable).
   useEffect(() => {
-    if (!terminalError) return
-    const t = setTimeout(() => setTerminalError(null), 6000)
+    if (!terminalNotice) return
+    const t = setTimeout(() => setTerminalNotice(null), terminalNotice.tone === 'info' ? 9000 : 6000)
     return () => clearTimeout(t)
-  }, [terminalError])
+  }, [terminalNotice])
 
   // Auto mode's pick stays in the transcript permanently (the system line in
   // handleSend) but also gets a brief badge near the toggle — same
-  // auto-dismiss pattern as terminalError above, so the "why" is visible
+  // auto-dismiss pattern as terminalNotice above, so the "why" is visible
   // right where the decision was made without permanently cluttering the
   // controls row.
   useEffect(() => {
     if (!lastAutoPick) return
-    const t = setTimeout(() => setLastAutoPick(null), 8000)
+    // Keep the explanation visible while it's expanded (the user is reading
+    // the full "why this route?" detail) — auto-clear resumes once collapsed.
+    if (routerExpanded) return
+    const t = setTimeout(() => {
+      setLastAutoPick(null)
+      setLastRoutingDecision(null)
+    }, 8000)
     return () => clearTimeout(t)
-  }, [lastAutoPick])
+  }, [lastAutoPick, routerExpanded])
 
   const closeTerminal = useCallback((id: string) => {
     setTerminalPanes((p) => p.filter((t) => t.id !== id))
@@ -914,6 +937,14 @@ export default function AgentPage() {
       const effortLabel = EFFORTS.find((e) => e.id === picked.effort)?.label ?? picked.effort
       autoChoiceNote = `auto → ${picked.modelLabel} · ${effortLabel} · ${thinkLabel}${skillToUse ? ` · ${skillToUse.name}` : ' · no skill'} (assessed: ${complexity})`
       setLastAutoPick(autoChoiceNote)
+      setRouterExpanded(false)
+      setLastRoutingDecision(buildRoutingDecision({
+        complexity: picked.complexity,
+        modelId: picked.modelId,
+        modelLabel: picked.modelLabel,
+        effort: effortLabel,
+        think: thinkLabel,
+      }))
     }
 
     // Build instruction — single vs multi-skill
@@ -1122,12 +1153,12 @@ USER REQUEST: ${userText}`
             <Plus className="h-3 w-3" /> Terminal
             <span className="text-[9px] tabular-nums text-muted-foreground/60">{terminalCount}/{MAX_TERMINALS}</span>
           </button>
-          {terminalError && (
+          {terminalNotice && (
             <span
-              className="max-w-[280px] truncate font-mono text-[9px] text-destructive"
-              title={terminalError}
+              className={`max-w-[340px] truncate font-mono text-[9px] ${terminalNotice.tone === 'info' ? 'text-muted-foreground' : 'text-destructive'}`}
+              title={terminalNotice.text}
             >
-              {terminalError}
+              {terminalNotice.text}
             </span>
           )}
           <Link href="/resources/terminal" className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground">
@@ -1753,13 +1784,20 @@ USER REQUEST: ${userText}`
               </div>
             </div>
 
-            {/* Auto mode's pick, right where the decision was made — fades
-                after 8s (see the lastAutoPick effect above). The transcript
+            {/* Auto mode's pick, right where the decision was made — a
+                collapsible "Why this route?" explanation (ChatGPT
+                reasoning-disclosure style). Fades after 8s unless expanded
+                (see the lastAutoPick effect above). The transcript
                 system-line is the permanent record; this is the "even
                 briefly, right here" surface. */}
-            {lastAutoPick && (
+            {lastAutoPick && lastRoutingDecision && (
               <div className="mx-auto max-w-3xl px-4 pb-1">
-                <span className="font-mono text-[9px] text-primary/70">{lastAutoPick}</span>
+                <RouterExplanation
+                  decision={lastRoutingDecision}
+                  expanded={routerExpanded}
+                  onExpandedChange={setRouterExpanded}
+                  onDismiss={() => { setLastAutoPick(null); setLastRoutingDecision(null) }}
+                />
               </div>
             )}
 

@@ -26,6 +26,7 @@ import { ActivityChart } from '@/components/home/activity-chart'
 import { TodayBand } from '@/components/home/today-band'
 import { TerminalLauncher } from '@/components/home/terminal-launcher'
 import { AgentLauncher } from '@/components/home/agent-launcher'
+import { UsageAlerts } from '@/components/usage/usage-alerts'
 
 export default function EnryAgentPage() {
   const { data: session, status: sessionStatus } = useSession()
@@ -178,6 +179,12 @@ export default function EnryAgentPage() {
 
       <div className="relative z-10 flex h-full w-full flex-col">
         <SystemStatusStrip />
+        {/* Inline usage alerts — dismissible, no browser alerts. Renders
+            nothing when there are no alerts (component returns null), so it
+            is invisible on the home screen until a quota threshold is hit. */}
+        <div className="px-4 pt-2">
+          <UsageAlerts compact className="space-y-1.5" />
+        </div>
 
         <div className="flex min-h-0 w-full flex-1">
         <LeftSidebar

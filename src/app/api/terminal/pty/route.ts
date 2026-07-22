@@ -53,8 +53,11 @@ export async function POST(req: Request) {
     // (build and runtime); absence of CODESPACES alone isn't a reliable
     // signal — it would also misfire on a plain local/laptop dev server.
     if (process.env.VERCEL) {
+      // Not an error — an environment limitation. Real PTY shells need a
+      // long-lived process, which Vercel's serverless functions don't provide.
+      // The client renders this as a muted notice, not a red failure.
       return Response.json(
-        { error: 'Terminal panes require the Codespace environment — real PTY shells cannot run on a serverless deployment.' },
+        { error: 'Terminal panes only run in the Codespace dev environment — not on the deployed app.' },
         { status: 501 },
       )
     }
