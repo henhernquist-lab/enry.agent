@@ -17,6 +17,7 @@ import { ThinkingTrace } from '@/components/thinking-trace'
 import { CompactionIndicator } from '@/components/compaction-indicator'
 import { SKILLS as ALL_SKILLS, detectSkillInvocation, detectSkillInvocations, buildMultiSkillPrompt } from '@/lib/skills/registry'
 import { classifyTaskComplexity, autoSelectForComplexity } from '@/lib/drive/auto-select'
+import { DriveSteps, type DriveStep } from '@/components/drive-steps'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -45,6 +46,10 @@ type ChatLine =
   // line exists — only the diff that comes after is still pending). `deep`
   // gets the distinct effort='deep' treatment.
   | { kind: 'reasoning'; id: string; text: string; targetFile: string; pending: boolean; deep: boolean }
+  // Compact live progress tracker for the current turn — one line, updated in
+  // place as Drive advances (classify -> reason -> write -> propose, or
+  // apply/commit/PR). See src/components/drive-steps.tsx.
+  | { kind: 'steps'; id: string; steps: DriveStep[] }
 
 // Manual vs Auto — who decides model, Think, effort, and skill for a request.
 //   Manual: the user's explicit picker/toggle values are used exactly as set.
@@ -566,6 +571,57 @@ export default function AgentPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [repo, sessionId])
 
+  // \u2500\u2500\u2500 Live step tracker \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // A single 'steps' ChatLine per turn, updated in place as Drive advances.
+  // stepsLineIdRef points at the current turn's line so the exec chain (which
+  // recurses across hops) can keep mutating the same tracker.
+  const stepsLineIdRef = useRef<string | null>(null)
+
+  const beginSteps = useCallback((first: DriveStep) => {
+    const id = `steps-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    stepsLineIdRef.current = id
+    setLines((l) => [...l, { kind: 'steps', id, steps: [first] }])
+  }, [])
+
+  // Mark the current active step done (optionally relabel it) and, if given,
+  // append the next active step. No-op if no tracker is active.
+  const advanceSteps = useCallback((opts: { doneLabel?: string; next?: DriveStep }) => {
+    const id = stepsLineIdRef.current
+    if (!id) return
+    setLines((l) => l.map((line) => {
+      if (line.kind !== 'steps' || line.id !== id) return line
+      const steps = line.steps.map((s) =>
+        s.state === 'active' ? { ...s, state: 'done' as const, label: opts.doneLabel ?? s.label } : s,
+      )
+      if (opts.next) steps.push(opts.next)
+      return { ...line, steps }
+    }))
+  }, [])
+
+  // Mark the current active step as failed and stop tracking this turn.
+  const failSteps = useCallback(() => {
+    const id = stepsLineIdRef.current
+    if (!id) return
+    setLines((l) => l.map((line) =>
+      line.kind === 'steps' && line.id === id
+        ? { ...line, steps: line.steps.map((s) => s.state === 'active' ? { ...s, state: 'error' as const } : s) }
+        : line,
+    ))
+    stepsLineIdRef.current = null
+  }, [])
+
+  // Settle the final active step to done and stop tracking this turn.
+  const finishSteps = useCallback((doneLabel?: string) => {
+    const id = stepsLineIdRef.current
+    if (!id) return
+    setLines((l) => l.map((line) =>
+      line.kind === 'steps' && line.id === id
+        ? { ...line, steps: line.steps.map((s) => s.state === 'active' ? { ...s, state: 'done' as const, label: doneLabel ?? s.label } : s) }
+        : line,
+    ))
+    stepsLineIdRef.current = null
+  }, [])
+
   // A plain function declaration (not useCallback) \u2014 the auto-chain hop below
   // calls exec recursively, which would be a TDZ hazard against a `const`
   // bound via useCallback. Recreated every render like the rest of this
@@ -620,6 +676,7 @@ export default function AgentPage() {
           let parsed: { error?: string } | null = null
           try { parsed = JSON.parse(detail) } catch { /* not JSON */ }
           setLines((l) => [...l, { kind: 'error', text: parsed?.error || `Request failed (HTTP ${res.status})` }])
+          failSteps()
           return
         }
         const data = await res.json()
@@ -637,6 +694,17 @@ export default function AgentPage() {
         // two (target_resolved -> propose_edit) since the server only ever
         // returns reasoning_ready when reasoningDepth !== 'off'.
         if (data.action === 'target_resolved' && (opts?._chainDepth ?? 0) < 2) {
+          // File located — settle "Analyzing" and queue the next phase. With
+          // Think on, reasoning runs as its own hop next; otherwise the diff
+          // generation is next.
+          const willReason = (opts?.reasoningDepthOverride ?? reasoningDepth) !== 'off'
+          const tf = String(data.target_file ?? 'file')
+          advanceSteps({
+            doneLabel: `Located · ${tf}`,
+            next: willReason
+              ? { key: 'reason', label: 'Reasoning', icon: 'reason', state: 'active' }
+              : { key: 'write', label: `Writing changes · ${tf}`, icon: 'write', state: 'active' },
+          })
           await exec(command, {
             proceed: true,
             targetFile: data.target_file,
@@ -665,6 +733,8 @@ export default function AgentPage() {
           if (trace) {
             setLines((l) => [...l, { kind: 'reasoning', id: lineId, text: trace, targetFile: opts?.targetFile ?? 'unknown', pending: true, deep: isDeep }])
           }
+          // Reasoning done — now generating the actual diff.
+          advanceSteps({ next: { key: 'write', label: `Writing changes · ${opts?.targetFile ?? 'file'}`, icon: 'write', state: 'active' } })
           await exec(command, {
             proceed: true,
             targetFile: opts?.targetFile,
@@ -692,6 +762,7 @@ export default function AgentPage() {
             .filter(Boolean)
             .map((o: string) => o.trim())
           setLines((l) => [...l, { kind: 'question', questionText, options }])
+          finishSteps('Awaiting your answer')
         } else if (action === 'plan') {
           // Plan-first phase 1: a text plan, no diff yet (write-ops.ts's
           // planEdit — the actual plan text is in `reasoning`, NOT `text`,
@@ -705,6 +776,7 @@ export default function AgentPage() {
           const isNewFile = !!data.is_new_file
           setLines((l) => [...l, { kind: 'plan', text: reasoning ?? text, targetFile, isNewFile }])
           setPlanContext({ targetFile, isNewFile, instruction: opts?.instruction ?? command })
+          finishSteps(`Plan ready · ${targetFile}`)
         } else if (action === 'propose_edit' && data.exit_code === 0) {
           // The actual diff — from the classify-then-generate chain, or a plan-first
           // approval's Propose Diff click (handleProceed). Neither dispatch()
@@ -724,26 +796,35 @@ export default function AgentPage() {
             return [...withResolvedReasoning, { kind: 'proposal', file, diff: text, isNewFile }]
           })
           setPlanContext(null)
+          finishSteps(`Proposed diff · ${file}`)
         } else if (action === 'apply' && data.exit_code === 0) {
           setLines((l) => [...l, { kind: 'applied', text: text || 'Changes applied to working copy' }])
+          finishSteps('Applied changes')
         } else if (action === 'commit' && data.exit_code === 0) {
           setLines((l) => [...l, { kind: 'committed', text: text }])
           setHasPendingDiff(false)
+          finishSteps('Committed')
         } else if (action === 'pr' && data.exit_code === 0) {
           setLines((l) => [...l, { kind: 'pr', text: text }])
+          finishSteps('Opened pull request')
         } else if (data.exit_code !== 0) {
           setLines((l) => [...l, { kind: 'error', text: text || 'command failed' }])
+          failSteps()
         } else if (data.invocation_id) {
           setLines((l) => [...l, { kind: 'skill', text: text || '(done)', invocationId: data.invocation_id, skillName: activeSkill?.name ?? activeSkills.map((s) => s.name).join(' + '), reasoningTrace: data.reasoning_trace ?? null }])
+          finishSteps('Analysis ready')
         } else {
           setLines((l) => [...l, { kind: 'system', text: text || '(done)' }])
+          finishSteps()
         }
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
           setLines((l) => [...l, { kind: 'system', text: 'Cancelled' }])
+          failSteps()
         } else {
           console.error('[agent] exec request failed:', e)
           setLines((l) => [...l, { kind: 'error', text: 'Request failed or timed out \u2014 retry' }])
+          failSteps()
         }
       } finally {
         setRunning(false)
@@ -889,20 +970,26 @@ USER REQUEST: ${userText}`
       ...(autoChoiceNote ? [{ kind: 'system' as const, text: autoChoiceNote }] : []),
     ])
     setInput('')
+    beginSteps({ key: 'analyze', label: 'Analyzing request', icon: 'analyze', state: 'active' })
     exec(instruction, {
       skillSlugs: slugsForServer ?? (skillToUse ? [skillToUse.slug] : undefined),
       modelOverride, effortOverride, reasoningDepthOverride,
     })
-  }, [input, running, exec, activeSkill, activeSkills, setActiveSkillSlugs, mode, planFirst])
+  }, [input, running, exec, activeSkill, activeSkills, setActiveSkillSlugs, mode, planFirst, beginSteps])
 
   const handleQuickAction = (action: string) => {
     if (running) return
+    const verb = action.split(/\s/)[0]
+    if (verb === 'apply') beginSteps({ key: 'apply', label: 'Applying changes', icon: 'apply', state: 'active' })
+    else if (verb === 'commit') beginSteps({ key: 'commit', label: 'Committing', icon: 'commit', state: 'active' })
+    else if (verb === 'pr') beginSteps({ key: 'pr', label: 'Opening pull request', icon: 'pr', state: 'active' })
     exec(action)
   }
 
   const handleProceed = () => {
     if (!planContext || running) return
     setLines((l) => [...l, { kind: 'system', text: 'proceeding with plan...' }])
+    beginSteps({ key: 'write', label: `Writing changes · ${planContext.targetFile}`, icon: 'write', state: 'active' })
     exec(planContext.instruction, {
       proceed: true,
       targetFile: planContext.targetFile,
@@ -1220,6 +1307,10 @@ USER REQUEST: ${userText}`
               {(compactionExpanded ? lines : driveCompaction.visibleLines).map((line, i) => {
                 if (line.kind === 'system') {
                   return <div key={i} className="mb-3"><p className="font-mono text-[11px] leading-relaxed text-muted-foreground/60">{line.text}</p></div>
+                }
+
+                if (line.kind === 'steps') {
+                  return <div key={i}><DriveSteps steps={line.steps} /></div>
                 }
 
                 if (line.kind === 'prompt') {
