@@ -13,7 +13,7 @@ import { ApertureCard } from './aperture-card'
 // costs a single row once Henry has processed the morning and chat reclaims
 // the viewport.
 export function TodayBand() {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const { status } = useSession()
   const [pendingRegrets, setPendingRegrets] = useState(0)
 

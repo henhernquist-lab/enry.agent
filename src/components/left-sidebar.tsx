@@ -1,13 +1,30 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import {
+  MessageSquarePlus,
+  MessageSquare,
+  Trash2,
+  Wrench,
+  BookMarked,
+  Swords,
+  FlaskConical,
+  Brain,
+  GraduationCap,
+  Settings,
+  BarChart3,
+  Cpu,
+  Box,
+  Home,
+  type LucideIcon,
+} from 'lucide-react'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
 import { AutomationsSection } from './automations-section'
 import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
-import Link from 'next/link'
-import { MessageSquarePlus, MessageSquare, Trash2, Download, X, Wrench, BookMarked, Swords, FlaskConical, Brain, GraduationCap, Settings, BarChart3 } from 'lucide-react'
 
 interface LeftSidebarProps {
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
@@ -19,6 +36,45 @@ interface LeftSidebarProps {
   onAutomationsChange?: () => void
 }
 
+interface NavItem {
+  href: string
+  icon: LucideIcon
+  label: string
+  desc: string
+}
+
+const SECTIONS: { title: string; items: NavItem[] }[] = [
+  {
+    title: 'Platform',
+    items: [
+      { href: '/', icon: Home, label: 'Chat', desc: 'Ask Enry anything' },
+      { href: '/models', icon: Cpu, label: 'Model Intelligence', desc: 'Benchmark model performance' },
+      { href: '/usage', icon: BarChart3, label: 'Usage', desc: 'Track tokens, cost, and alerts' },
+    ],
+  },
+  {
+    title: 'Workspace',
+    items: [
+      { href: '/agent', icon: Swords, label: 'Drive', desc: 'Autonomous coding agent' },
+      { href: '/learn', icon: GraduationCap, label: 'Learn', desc: 'Tutorials and skills' },
+      { href: '/lab', icon: FlaskConical, label: 'Lab', desc: 'Experiments and overnight runs' },
+    ],
+  },
+  {
+    title: 'Library',
+    items: [
+      { href: '/resources', icon: Wrench, label: 'Tools', desc: 'Built-in tools and resources' },
+      { href: '/prompts', icon: BookMarked, label: 'Prompts', desc: 'Saved prompts and recipes' },
+      { href: '/resources/memory', icon: Brain, label: 'Memory', desc: 'Saved facts and context' },
+      { href: '/room', icon: Box, label: 'The Room', desc: '3D headquarters view' },
+    ],
+  },
+  {
+    title: 'System',
+    items: [{ href: '/settings', icon: Settings, label: 'Settings', desc: 'Account and integrations' }],
+  },
+]
+
 function formatRelativeTime(ts: number): string {
   const diffMs = Date.now() - ts
   const minutes = Math.floor(diffMs / 60000)
@@ -29,7 +85,6 @@ function formatRelativeTime(ts: number): string {
   const days = Math.floor(hours / 24)
   return `${days}d ago`
 }
-// Note: automations-section.tsx has its own formatRelativeTime with second-level granularity.
 
 export function LeftSidebar({
   agentStatus,
@@ -40,141 +95,123 @@ export function LeftSidebar({
   onDeleteConversation,
   onAutomationsChange,
 }: LeftSidebarProps) {
+  const pathname = usePathname()
+
   return (
-    <aside className="flex h-full w-[280px] flex-col border-r border-border bg-surface-secondary">
-      <div className="border-b border-border p-4">
+    <aside className="flex h-full w-[260px] flex-col border-r border-border bg-surface-secondary">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b border-border p-4">
         <EnryLogo size="sm" />
-        <div className="mt-3">
-          <StatusIndicator status={agentStatus} />
-        </div>
+        <StatusIndicator status={agentStatus} />
       </div>
 
-      <div className="p-4">
+      {/* New Chat */}
+      <div className="p-3">
         <button
           onClick={onNewChat}
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
         >
           <MessageSquarePlus className="h-4 w-4" />
           New Chat
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 scrollbar-hidden">
-        <BuiltinAutomationsLauncher />
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4 scrollbar-hidden">
+        {/* Automation launchers */}
+        <div className="space-y-2">
+          <BuiltinAutomationsLauncher />
+          <AutomationsSection onAutomationsChange={onAutomationsChange} />
+        </div>
 
-        <div className="my-3 border-t border-border" />
+        <div className="border-t border-border" />
 
-        <AutomationsSection onAutomationsChange={onAutomationsChange} />
+        {/* Nav sections */}
+        <nav className="space-y-5">
+          {SECTIONS.map((section) => (
+            <div key={section.title}>
+              <h3 className="mb-2 px-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {section.title}
+              </h3>
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const isActive = pathname === item.href
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`group flex items-start gap-3 rounded-md px-2 py-2 transition-colors ${
+                        isActive
+                          ? 'bg-surface-elevated text-foreground'
+                          : 'text-muted-foreground hover:bg-surface-elevated/60 hover:text-foreground'
+                      }`}
+                    >
+                      <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground'}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium">{item.label}</span>
+                          {isActive && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                        </div>
+                        <p className="truncate text-[10px] text-muted-foreground/70">{item.desc}</p>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
 
-        <div className="my-3 border-t border-border" />
+        <div className="border-t border-border" />
 
-        <h3 className="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Chat History
-        </h3>
-        {conversations.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No saved chats yet.</p>
-        ) : (
-          <div className="space-y-1">
-            <AnimatePresence>
-              {conversations.map((conv, index) => (
-                <motion.div
-                  key={conv.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ delay: Math.min(index * 0.03, 0.3) }}
-                  className={`group flex items-center gap-2 rounded px-2 py-2 cursor-pointer ${
-                    conv.id === activeId ? 'bg-surface-elevated' : 'hover:bg-surface-elevated/60'
-                  }`}
-                  onClick={() => onSelectConversation(conv.id)}
-                >
-                  <MessageSquare
-                    className={`h-3.5 w-3.5 flex-shrink-0 ${conv.id === activeId ? 'text-primary' : 'text-muted-foreground'}`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className={`truncate text-xs ${conv.id === activeId ? 'text-foreground' : 'text-muted-foreground'}`}>
-                      {conv.title}
-                    </p>
-                    <p className="font-mono text-[10px] text-muted-foreground">
-                      {formatRelativeTime(conv.updatedAt)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDeleteConversation(conv.id)
-                    }}
-                    className="rounded p-1 opacity-0 transition-opacity hover:bg-surface-secondary group-hover:opacity-100"
+        {/* Chat History */}
+        <div>
+          <h3 className="mb-2 px-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Chat History
+          </h3>
+          {conversations.length === 0 ? (
+            <p className="px-2 text-xs text-muted-foreground">No saved chats yet.</p>
+          ) : (
+            <div className="space-y-0.5">
+              <AnimatePresence>
+                {conversations.map((conv, index) => (
+                  <motion.div
+                    key={conv.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ delay: Math.min(index * 0.03, 0.3) }}
+                    className={`group flex items-center gap-2 rounded-md px-2 py-2 cursor-pointer ${
+                      conv.id === activeId ? 'bg-surface-elevated' : 'hover:bg-surface-elevated/60'
+                    }`}
+                    onClick={() => onSelectConversation(conv.id)}
                   >
-                    <Trash2 className="h-3 w-3 text-muted-foreground" />
-                  </button>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
-      </div>
-
-      {/* Section buttons share one consistent green-border accent treatment
-          — Enry Drive / Enry Learn / Tools / Prompt Library / Enry Lab / Memory.
-          Reading List was folded into Enry Learn's Sources tab (tool migration). */}
-      <div className="border-t border-border p-4 space-y-2">
-        <Link
-          href="/agent"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <Swords className="h-4 w-4" />
-          Enry Drive
-        </Link>
-        <Link
-          href="/learn"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <GraduationCap className="h-4 w-4" />
-          Enry Learn
-        </Link>
-        <Link
-          href="/resources"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <Wrench className="h-4 w-4" />
-          Tools &amp; Resources
-        </Link>
-        <Link
-          href="/prompts"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <BookMarked className="h-4 w-4" />
-          Prompt Library
-        </Link>
-        <Link
-          href="/lab"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <FlaskConical className="h-4 w-4" />
-          Enry Lab
-        </Link>
-        <Link
-          href="/usage"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <BarChart3 className="h-4 w-4" />
-          Usage
-        </Link>
-        <Link
-          href="/resources/memory"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <Brain className="h-4 w-4" />
-          Memory
-        </Link>
-        <Link
-          href="/settings"
-          className="flex w-full items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-        >
-          <Settings className="h-4 w-4" />
-          Settings
-        </Link>
+                    <MessageSquare
+                      className={`h-3.5 w-3.5 flex-shrink-0 ${conv.id === activeId ? 'text-primary' : 'text-muted-foreground'}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-xs ${conv.id === activeId ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {conv.title}
+                      </p>
+                      <p className="font-mono text-[10px] text-muted-foreground">
+                        {formatRelativeTime(conv.updatedAt)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteConversation(conv.id)
+                      }}
+                      className="rounded p-1 opacity-0 transition-opacity hover:bg-surface-secondary group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   )

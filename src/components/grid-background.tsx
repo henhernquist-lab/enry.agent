@@ -11,7 +11,7 @@ export function GridBackground() {
       <div
         className="absolute inset-0"
         style={{
-          background: 'radial-gradient(ellipse at center, transparent 0%, rgba(8,8,8,0.4) 100%)',
+          background: 'radial-gradient(ellipse at center, transparent 0%, color-mix(in srgb, var(--surface-base) 40%, transparent) 100%)',
         }}
       />
       <DataTraces />
@@ -58,25 +58,25 @@ export function CornerAccents() {
     <>
       <div className="pointer-events-none fixed left-0 top-0 z-50">
         <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-          <path d="M0 0 L40 0 L40 2 L2 2 L2 40 L0 40 Z" fill="#262626" />
+          <path d="M0 0 L40 0 L40 2 L2 2 L2 40 L0 40 Z" style={{ fill: 'var(--border)' }} />
           <path d="M0 0 L12 0 L12 1 L1 1 L1 12 L0 12 Z" className="fill-primary/50" />
         </svg>
       </div>
       <div className="pointer-events-none fixed right-0 top-0 z-50">
         <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-          <path d="M40 0 L0 0 L0 2 L38 2 L38 40 L40 40 Z" fill="#262626" />
+          <path d="M40 0 L0 0 L0 2 L38 2 L38 40 L40 40 Z" style={{ fill: 'var(--border)' }} />
           <path d="M40 0 L28 0 L28 1 L39 1 L39 12 L40 12 Z" className="fill-primary/50" />
         </svg>
       </div>
       <div className="pointer-events-none fixed bottom-0 left-0 z-50">
         <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-          <path d="M0 40 L40 40 L40 38 L2 38 L2 0 L0 0 Z" fill="#262626" />
+          <path d="M0 40 L40 40 L40 38 L2 38 L2 0 L0 0 Z" style={{ fill: 'var(--border)' }} />
           <path d="M0 40 L12 40 L12 39 L1 39 L1 28 L0 28 Z" className="fill-primary/50" />
         </svg>
       </div>
       <div className="pointer-events-none fixed bottom-0 right-0 z-50">
         <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-          <path d="M40 40 L0 40 L0 38 L38 38 L38 0 L40 0 Z" fill="#262626" />
+          <path d="M40 40 L0 40 L0 38 L38 38 L38 0 L40 0 Z" style={{ fill: 'var(--border)' }} />
           <path d="M40 40 L28 40 L28 39 L39 39 L39 28 L40 28 Z" className="fill-primary/50" />
         </svg>
       </div>

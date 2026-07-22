@@ -1,10 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageCircle,
   AlertCircle,
   ChevronRight,
+  ChevronDown,
+  LayoutGrid,
 } from 'lucide-react'
 import type { ActivityEvent } from '@/lib/chat-history'
 
@@ -36,12 +39,33 @@ function formatTime(ts: number): string {
 
 export function RightPanel({ agentStatus, activities, streamingText, currentModel, children }: RightPanelProps) {
   const isActive = agentStatus === 'thinking' || agentStatus === 'streaming'
+  const [widgetsCollapsed, setWidgetsCollapsed] = useState(true)
 
   return (
     <aside className="flex h-full w-[320px] flex-col border-l border-border bg-surface-secondary">
       {children && (
-        <div className="border-b border-border p-4">
-          {children}
+        <div className="border-b border-border">
+          <button
+            type="button"
+            onClick={() => setWidgetsCollapsed((c) => !c)}
+            className="flex w-full items-center justify-between px-4 py-3 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <div className="flex items-center gap-2">
+              <LayoutGrid className="h-3.5 w-3.5 text-primary" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em]">Widgets</span>
+            </div>
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${widgetsCollapsed ? '-rotate-90' : ''}`} />
+          </button>
+          {!widgetsCollapsed && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex flex-col gap-4 overflow-hidden px-4 pb-4"
+            >
+              {children}
+            </motion.div>
+          )}
         </div>
       )}
 

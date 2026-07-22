@@ -43,7 +43,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#080808',
+  themeColor: '#0b1221',
   width: 'device-width',
   initialScale: 1,
 }
@@ -57,6 +57,18 @@ export default async function RootLayout({
 
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${ibmPlexMono.variable} bg-background`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try {
+              const theme = localStorage.getItem('enry-theme');
+              if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+              else if (theme === 'midnight') document.documentElement.setAttribute('data-theme', 'midnight');
+              else document.documentElement.removeAttribute('data-theme');
+            } catch (e) {}`,
+          }}
+        />
+      </head>
       <body className="font-sans antialiased">
         <AmbientBackground />
         <SessionProvider session={session}>
