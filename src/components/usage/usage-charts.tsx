@@ -69,7 +69,7 @@ function TimeseriesArea({
   )
 }
 
-function ChartHeader({ icon: Icon, title, color }: { icon: React.ElementType; title: string; color: string }) {
+function ChartHeader({ icon: Icon, title, color }: { icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; title: string; color: string }) {
   return (
     <div className="mb-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
       <Icon className="h-3.5 w-3.5" style={{ color }} />
