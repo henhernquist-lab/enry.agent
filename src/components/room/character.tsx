@@ -56,10 +56,12 @@ export function CharacterController({
   // Initial position comes from the <group position={spawnPosition}> prop —
   // no ref sync needed (and refs are null during the first render anyway).
 
-  useFrame((state) => {
+  // R3F's delta argument, not clock.getDelta() — getDelta() measures since
+  // the LAST getDelta() call anywhere, and several useFrame callbacks share
+  // the clock, so each caller saw a near-zero slice (walking barely moved).
+  useFrame((state, delta) => {
     if (!groupRef.current) return
     const t = state.clock.elapsedTime
-    const delta = state.clock.getDelta()
 
     // ── Walking ──────────────────────────────────────────────────
     const isWalking = walker.tick(delta, groupRef.current)

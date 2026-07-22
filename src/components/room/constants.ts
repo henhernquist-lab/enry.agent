@@ -1,4 +1,4 @@
-import type { RoomDefinition, RoomRegistry, Position, Activity, ActivityConfig, Station } from './types'
+import type { RoomDefinition, RoomRegistry, Position, Activity, ActivityConfig, Station, RoomEventType } from './types'
 
 // ───────────────────────────────────────────────────────────────────
 // The Room — constants
@@ -150,6 +150,18 @@ export const EVENT_ACTIVITY_MAP: Record<string, { activity: Activity; station?: 
   'lab.evolving': { activity: 'thinking', station: 'whiteboard' },
   'memory.storing': { activity: 'celebrating', station: 'desk' },
   'system.idle': { activity: 'idle', station: 'desk' },
+}
+
+/**
+ * Maps an opening surface ("See Enry" entry points) to the event dispatched
+ * on arrival — working if the surface had an active run, idle otherwise.
+ * Keys match the `from` query param on /room.
+ */
+export const SURFACE_ENTRY_EVENTS: Record<string, { working: RoomEventType; idle: RoomEventType }> = {
+  drive: { working: 'drive.editing', idle: 'drive.idle' },
+  cruise: { working: 'cruise.scanning', idle: 'system.idle' },
+  learn: { working: 'lab.evolving', idle: 'system.idle' },
+  chat: { working: 'chat.responding', idle: 'system.idle' },
 }
 
 /** Idle behavior timing (seconds for each state before cycling). */

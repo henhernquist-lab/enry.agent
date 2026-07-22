@@ -1126,6 +1126,15 @@ USER REQUEST: ${userText}`
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          {/* See Enry — opens The Room with this surface's live context:
+              which mode is active (drive/cruise) and whether a run is going */}
+          <Link
+            href={`/room?from=${cruiseMode}&state=${running ? 'working' : 'idle'}`}
+            title="Watch Enry work in The Room"
+            className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-primary"
+          >
+            <Eye className="h-3 w-3" /> See Enry
+          </Link>
           {currentBranch && (
             <span className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
               <GitBranch className="h-3 w-3" />{currentBranch}

@@ -140,10 +140,9 @@ export function Monitor() {
   const matRef = useRef<MeshStandardMaterial>(null)
   const flickerRef = useRef<{ active: boolean; elapsed: number }>({ active: false, elapsed: 0 })
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (!matRef.current) return
     const t = state.clock.elapsedTime
-    const delta = state.clock.getDelta()
 
     // Random flicker
     if (flickerRef.current.active) {

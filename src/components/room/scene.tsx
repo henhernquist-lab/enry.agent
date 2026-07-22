@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useRef, useState, useCallback } from 'react'
+import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { AdaptiveDpr, AdaptiveEvents, PerformanceMonitor } from '@react-three/drei'
 import { Lighting } from './lighting'
@@ -13,7 +13,7 @@ import { EnvironmentLife } from './environment-life'
 import { useRoomState } from './room-state'
 import { useActivityManager } from './activity-manager'
 import { useWalkingController } from './walking-controller'
-import { OFFICE_ROOM } from './constants'
+import { OFFICE_ROOM, SURFACE_ENTRY_EVENTS } from './constants'
 import type { FocusTarget } from './types'
 
 /**
@@ -36,7 +36,14 @@ import type { FocusTarget } from './types'
  * The camera ref is held at this level so the HTML overlay can call
  * reset() and focusOn() imperatively.
  */
-export function Scene() {
+interface SceneProps {
+  /** Which surface opened The Room (drive | cruise | learn | chat). */
+  from?: string
+  /** Whether that surface had an active run when it opened The Room. */
+  state?: 'working' | 'idle'
+}
+
+export function Scene({ from, state }: SceneProps) {
   const cameraRef = useRef<CameraHandle>(null)
   const [focusedTarget, setFocusedTarget] = useState<string | null>(null)
   const [dpr, setDpr] = useState(1.5)
@@ -45,6 +52,21 @@ export function Scene() {
   const store = useRoomState()
   const walker = useWalkingController()
   const activityManager = useActivityManager(store, walker)
+
+  // ── Entry context — opened via a "See Enry" button ────────────
+  // When a surface opened The Room, the worker reflects that surface's
+  // state instead of the mocked ambient timeline: stop the mock and
+  // dispatch the surface's event through the existing state machine.
+  // Direct visits (no `from`) keep the ambient timeline as before.
+  useEffect(() => {
+    if (!from) return
+    const entry = SURFACE_ENTRY_EVENTS[from]
+    if (!entry) return
+    activityManager.stopMockTimeline()
+    activityManager.dispatch(state === 'working' ? entry.working : entry.idle)
+    // activityManager is stable per mount; re-dispatch only if the URL context changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, state])
 
   // ── Camera controls ───────────────────────────────────────────
   const handleReset = useCallback(() => {
@@ -142,8 +164,8 @@ export function Scene() {
 function ActivityTicker({ activityManager }: { activityManager: ReturnType<typeof useActivityManager> }) {
   // useFrame is only available inside Canvas — this component exists
   // solely to call activityManager.tick() each frame
-  useFrame((state) => {
-    activityManager.tick(state.clock.getDelta())
+  useFrame((_, delta) => {
+    activityManager.tick(delta)
   })
   return null
 }
