@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown, GitCompare, Loader2 } from 'lucide-react'
+import { ChevronDown, GitCompare, Loader2, Play, CheckCircle2, AlertCircle } from 'lucide-react'
 import { BenchmarkCard } from '@/components/models/benchmark-card'
 import { ComparisonTable } from '@/components/models/comparison-table'
 import {
@@ -10,6 +10,7 @@ import {
   type BenchmarkSortKey,
   type ModelBenchmark,
 } from '@/lib/model-intelligence'
+import { MODEL_LIST } from '@/lib/nim'
 
 export default function BenchmarkPage() {
   const [benchmarks, setBenchmarks] = useState<ModelBenchmark[]>([])
@@ -17,6 +18,9 @@ export default function BenchmarkPage() {
   const [sortKey, setSortKey] = useState<BenchmarkSortKey['id']>('overall')
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [runModelId, setRunModelId] = useState<string>(MODEL_LIST[0]?.id ?? '')
+  const [runState, setRunState] = useState<'idle' | 'starting' | 'started' | 'error'>('idle')
+  const [runMessage, setRunMessage] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -70,6 +74,30 @@ export default function BenchmarkPage() {
   const selectedBenchmarks = benchmarks.filter((b) => selectedIds.has(b.modelId))
   const currentSort = SORT_OPTIONS.find((s) => s.id === sortKey)
 
+  const handleRunBenchmark = async () => {
+    if (!runModelId) return
+    setRunState('starting')
+    setRunMessage(null)
+    try {
+      const res = await fetch('/api/models/benchmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId: runModelId }),
+      })
+      if (res.ok) {
+        setRunState('started')
+        setRunMessage(`Benchmark started for ${runModelId}. Refresh to see updated scores.`)
+      } else {
+        const data = await res.json().catch(() => ({ error: 'Unknown error' }))
+        setRunState('error')
+        setRunMessage(data.error ?? `Failed to start benchmark`)
+      }
+    } catch {
+      setRunState('error')
+      setRunMessage('Network error while starting benchmark')
+    }
+  }
+
   return (
     <div>
       {/* Controls bar */}
@@ -88,6 +116,33 @@ export default function BenchmarkPage() {
               <span className="font-mono text-[10px] text-primary">{selectedIds.size} selected</span>
             </div>
           )}
+
+          {/* Run benchmark */}
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-elevated p-1">
+            <select
+              value={runModelId}
+              onChange={(e) => setRunModelId(e.target.value)}
+              className="h-7 max-w-[160px] appearance-none border-none bg-transparent pl-2 pr-6 font-mono text-[11px] text-foreground outline-none focus:ring-0"
+            >
+              {MODEL_LIST.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleRunBenchmark}
+              disabled={runState === 'starting'}
+              className="flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 font-mono text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {runState === 'starting' ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Play className="h-3 w-3" />
+              )}
+              Run
+            </button>
+          </div>
 
           {/* Sort dropdown */}
           <div id="sort-dropdown" className="relative">
@@ -149,6 +204,20 @@ export default function BenchmarkPage() {
       )}
 
       {/* Hint */}
+      {/* Run status */}
+      {runMessage && (
+        <div
+          className={`mt-4 flex items-center gap-2 rounded-lg border px-3 py-2 font-mono text-[11px] ${
+            runState === 'error'
+              ? 'border-destructive/30 bg-destructive/5 text-destructive'
+              : 'border-primary/30 bg-primary/5 text-primary'
+          }`}
+        >
+          {runState === 'error' ? <AlertCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          <span>{runMessage}</span>
+        </div>
+      )}
+
       {!loading && benchmarks.length > 0 && (
         <p className="mt-6 font-mono text-[10px] text-muted-foreground/50">
           Click any card to select it for side-by-side comparison. Select 2 or more to see the comparison table.
