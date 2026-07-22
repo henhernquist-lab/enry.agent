@@ -63,7 +63,7 @@ export default async function RootLayout({
             __html: `try {
               const theme = localStorage.getItem('enry-theme');
               if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
-              else if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+              else if (theme === 'midnight') document.documentElement.setAttribute('data-theme', 'midnight');
               else document.documentElement.removeAttribute('data-theme');
             } catch (e) {}`,
           }}

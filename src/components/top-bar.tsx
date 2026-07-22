@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Search, Globe, Moon, Activity, Settings, ChevronRight, Check, Sun, Laptop } from 'lucide-react'
+import { Search, Globe, Moon, Activity, Settings, ChevronRight, Check, Sun, Zap } from 'lucide-react'
 
 interface Crumb {
   label: string
@@ -38,7 +38,7 @@ const DESCRIPTIONS: Record<string, string> = {
   '/settings': 'Manage your account and integrations',
 }
 
-type Theme = 'dark' | 'light' | 'system'
+type Theme = 'og' | 'midnight' | 'light'
 
 function openCommandPalette() {
   window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))
@@ -46,7 +46,7 @@ function openCommandPalette() {
 
 function setTheme(theme: Theme) {
   const root = document.documentElement
-  if (theme === 'system') {
+  if (theme === 'og') {
     root.removeAttribute('data-theme')
   } else {
     root.setAttribute('data-theme', theme)
@@ -61,14 +61,14 @@ export function TopBar() {
 
   const [langOpen, setLangOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
-  const [theme, setThemeState] = useState<Theme>('dark')
+  const [theme, setThemeState] = useState<Theme>('og')
   const langRef = useRef<HTMLDivElement>(null)
   const themeRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem('enry-theme') as Theme | null
-      if (saved) {
+      if (saved && ['og', 'midnight', 'light'].includes(saved)) {
         setThemeState(saved)
         setTheme(saved)
       }
@@ -179,9 +179,9 @@ export function TopBar() {
                 Theme
               </div>
               {([
-                { id: 'dark', label: 'Dark', icon: Moon },
+                { id: 'og', label: 'OG', icon: Zap },
+                { id: 'midnight', label: 'Midnight', icon: Moon },
                 { id: 'light', label: 'Light', icon: Sun },
-                { id: 'system', label: 'System', icon: Laptop },
               ] as const).map((t) => (
                 <button
                   key={t.id}
