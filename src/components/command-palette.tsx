@@ -10,15 +10,10 @@ import {
   Settings,
   Search,
   Calculator,
-  Dumbbell,
-  Utensils,
+
   GitBranch,
-  Target,
   BookMarked,
   Timer,
-  ScanSearch,
-  Hourglass,
-  SmilePlus,
   Brain,
   StickyNote,
   Bell,
@@ -53,16 +48,14 @@ const MAIN_ROUTES: NavItem[] = [
 // Flashcard Generator + Article Notes migrated into Enry Learn (flashcards →
 // `learn`; Article Notes → Learn's Sources tab). Their routes stay in the repo
 // but are unlinked here.
+//
+// Meal Logger, Workout Logger, Habit Streaks, Daily Check-in, and Countdown
+// are retired from discoverability (dark-not-deleted). Routes/components stay.
+// Repo Reviewer merged into Repo Scanner as its "Code Review" mode.
 const TOOL_ROUTES: NavItem[] = [
   { label: 'Grade Calculator', path: '/resources/grade-calculator', icon: Calculator, keywords: 'gpa grades' },
-  { label: 'Workout Logger', path: '/resources/workout', icon: Dumbbell, keywords: 'gym exercise sets reps' },
-  { label: 'Meal Logger', path: '/resources/meal', icon: Utensils, keywords: 'food macros calories' },
-  { label: 'Repo Scanner', path: '/resources/repo-scanner', icon: GitBranch, keywords: 'github code' },
-  { label: 'Habit Streaks', path: '/resources/habits', icon: Target, keywords: 'streak checkin' },
+  { label: 'Repo Scanner', path: '/resources/repo-scanner', icon: GitBranch, keywords: 'github code review scan' },
   { label: 'Race Pace Calculator', path: '/resources/race-pace', icon: Timer, keywords: 'race running splits' },
-  { label: 'Repo Reviewer', path: '/resources/repo-review', icon: ScanSearch, keywords: 'code review github' },
-  { label: 'Meet/Game Countdown', path: '/resources/countdown', icon: Hourglass, keywords: 'event track meet football' },
-  { label: 'Daily Check-in', path: '/resources/checkin', icon: SmilePlus, keywords: 'mood rating' },
   { label: 'Quick Notes', path: '/resources/notes', icon: StickyNote, keywords: 'note memo' },
   { label: 'Bell Schedule', path: '/resources/schedule', icon: Bell, keywords: 'periods class schedule' },
   { label: 'Chief of Staff', path: '/resources/briefing', icon: Briefcase, keywords: 'briefing daily observations actions' },
@@ -88,9 +81,7 @@ const ACTIONS: ActionItem[] = [
   { label: 'New note', icon: StickyNote, run: (router) => router.push('/resources/notes') },
   { label: 'New chat', icon: MessageSquarePlus, run: (router) => router.push('/') },
   { label: 'Log a race result', icon: Timer, run: (router) => router.push('/resources/race-pace?tab=log') },
-  { label: 'Check in for today', icon: SmilePlus, run: (router) => router.push('/resources/checkin') },
-  { label: 'Log a workout', icon: Dumbbell, run: (router) => router.push('/resources/workout') },
-  { label: 'Start a repo review', icon: ScanSearch, run: (router) => router.push('/resources/repo-review') },
+  { label: 'Scan a repo', icon: GitBranch, run: (router) => router.push('/resources/repo-scanner') },
   { label: 'Something went wrong', icon: AlertOctagon, run: (router) => router.push('/resources/root-cause?start=1') },
   { label: 'Talk to Past Henry', icon: Ghost, run: (router) => router.push('/resources/ghost') },
   { label: 'Open terminal', icon: TerminalSquare, run: () => window.dispatchEvent(new Event('enry:open-terminal')) },

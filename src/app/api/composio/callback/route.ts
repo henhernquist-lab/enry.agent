@@ -1,11 +1,11 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
-import { getConnectionStatus, type ComposioToolkit } from '@/lib/composio'
+import { getConnectionStatus, type ComposioConnectable } from '@/lib/composio'
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search', 'firecrawl']
+const TOOLKITS: ComposioConnectable[] = ['gmail', 'firecrawl']
 
 // Composio redirects the browser here after the user completes (or abandons)
 // the consent screen. A normal top-level navigation to our own origin, so the
@@ -14,7 +14,7 @@ const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search', 'firecrawl']
 // trusts the redirect alone), updates our row, then bounces to Settings.
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  const toolkit = String(url.searchParams.get('toolkit') ?? '') as ComposioToolkit
+  const toolkit = String(url.searchParams.get('toolkit') ?? '') as ComposioConnectable
   const settingsUrl = new URL('/settings', url.origin)
 
   const session = await auth()

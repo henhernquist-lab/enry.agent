@@ -1,11 +1,11 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
-import { createConnectionLink, type ComposioToolkit, resolveAuthConfigId, verifyAuthConfig } from '@/lib/composio'
+import { createConnectionLink, type ComposioConnectable, resolveAuthConfigId, verifyAuthConfig } from '@/lib/composio'
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search', 'firecrawl']
+const TOOLKITS: ComposioConnectable[] = ['gmail', 'firecrawl']
 
 // Starts a Composio Connect Link for a toolkit: creates/reuses the toolkit's
 // auth config, creates a connected-account link scoped to this user, upserts a
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}))
-  const toolkit = String(body.toolkit ?? '') as ComposioToolkit
+  const toolkit = String(body.toolkit ?? '') as ComposioConnectable
   if (!TOOLKITS.includes(toolkit)) return Response.json({ error: 'Invalid toolkit' }, { status: 400 })
 
   try {

@@ -6,19 +6,22 @@ import { motion } from 'framer-motion'
 import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search, Globe } from 'lucide-react'
 import Link from 'next/link'
 
-type ComposioToolkit = 'gmail' | 'composio_search' | 'firecrawl'
+type ComposioToolkit = 'gmail' | 'firecrawl'
 type ConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
 
+// Toolkits that don't need any auth at all — always available, no connect button.
+const ALWAYS_AVAILABLE_TOOLKITS = new Set(['composio_search'])
+
 interface ComposioConnection {
-  toolkit: ComposioToolkit
+  toolkit: string
   status: ConnectionStatus
   error: string | null
   connected_at: string | null
 }
 
-const TOOLKIT_META: Record<ComposioToolkit, { label: string; desc: string; icon: typeof Mail }> = {
+const TOOLKIT_META: Record<string, { label: string; desc: string; icon: typeof Mail }> = {
   gmail: { label: 'Gmail', desc: 'Read-only: search and read email through chat.', icon: Mail },
-  composio_search: { label: 'Web Search', desc: 'Transactional lookups: prices, flights, finance, e-commerce, and page scraping.', icon: Search },
+  composio_search: { label: 'Web Search', desc: 'Transactional lookups: prices, flights, finance, e-commerce, and page scraping. No auth needed — always available.', icon: Search },
   firecrawl: { label: 'Firecrawl', desc: 'Advanced web scraping, site crawling, structured data extraction, and site mapping.', icon: Globe },
 }
 
@@ -56,24 +59,23 @@ function SettingsSectionCard({
 }
 
 // Connectors: connect/disconnect cards for Composio-backed tools (Gmail,
-// Google Calendar). Tokens never touch this app — Composio hosts the OAuth
+// Firecrawl). Tokens never touch this app — Composio hosts the OAuth
 // consent screen and custodies the resulting credential; this UI only reads/
-// writes connection status.
+// writes connection status. composio_search is always available (no auth).
 function ConnectorsSection() {
   const searchParams = useSearchParams()
-  const [connections, setConnections] = useState<Record<ComposioToolkit, ComposioConnection | null>>({
+  const [connections, setConnections] = useState<Record<string, ComposioConnection | null>>({
     gmail: null,
-    composio_search: null,
     firecrawl: null,
   })
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState<ComposioToolkit | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
   const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null)
 
   const load = useCallback(async () => {
     const res = await fetch('/api/composio/connections')
     const data = await res.json()
-    const map: Record<ComposioToolkit, ComposioConnection | null> = { gmail: null, composio_search: null, firecrawl: null }
+    const map: Record<string, ComposioConnection | null> = { gmail: null, firecrawl: null }
     for (const c of (data.connections ?? []) as ComposioConnection[]) map[c.toolkit] = c
     setConnections(map)
     setLoading(false)
@@ -88,7 +90,7 @@ function ConnectorsSection() {
     const connected = searchParams.get('composio_connected')
     const err = searchParams.get('composio_error')
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (connected) setBanner({ ok: true, text: `${TOOLKIT_META[connected as ComposioToolkit]?.label ?? connected} connected.` })
+    if (connected) setBanner({ ok: true, text: `${TOOLKIT_META[connected]?.label ?? connected} connected.` })
     else if (err) setBanner({ ok: false, text: `Connection failed (${err}). Try again.` })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -96,7 +98,7 @@ function ConnectorsSection() {
   const [lastDiagnostic, setLastDiagnostic] = useState<Record<string, unknown> | null>(null)
   const [diagnosing, setDiagnosing] = useState(false)
 
-  const runDiagnostic = async (toolkit: ComposioToolkit) => {
+  const runDiagnostic = async (toolkit: string) => {
     setDiagnosing(true); setBanner(null); setLastDiagnostic(null)
     try {
       const res = await fetch('/api/composio/diagnose', {
@@ -168,9 +170,11 @@ function ConnectorsSection() {
       )}
 
       <div className="space-y-2">
-        {(Object.keys(TOOLKIT_META) as ComposioToolkit[]).map((tk) => {
+        {(Object.keys(TOOLKIT_META) as string[]).map((tk) => {
           const meta = TOOLKIT_META[tk]
+          if (!meta) return null
           const Icon = meta.icon
+          const isAlwaysAvailable = ALWAYS_AVAILABLE_TOOLKITS.has(tk)
           const conn = connections[tk]
           const status: ConnectionStatus = conn?.status ?? 'disconnected'
           const isBusy = busy === tk
@@ -185,6 +189,8 @@ function ConnectorsSection() {
                   <p className="font-mono text-[12px] text-foreground">{meta.label}</p>
                   {loading ? (
                     <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  ) : isAlwaysAvailable ? (
+                    <span className="flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary"><CheckCircle2 className="h-2.5 w-2.5" /> always available</span>
                   ) : status === 'connected' ? (
                     <span className="flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary"><CheckCircle2 className="h-2.5 w-2.5" /> connected</span>
                   ) : status === 'pending' ? (
@@ -196,20 +202,24 @@ function ConnectorsSection() {
                 <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{meta.desc}</p>
               </div>
               <div className="flex flex-shrink-0 items-center gap-2">
-                <button onClick={() => runDiagnostic(tk)} disabled={diagnosing || isBusy || loading}
-                  className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
-                  {diagnosing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Diagnose
-                </button>
-                {status === 'connected' ? (
-                  <button onClick={() => disconnect(tk)} disabled={isBusy}
-                    className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40">
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2Off className="h-3.5 w-3.5" />} Disconnect
-                  </button>
-                ) : (
-                  <button onClick={() => connect(tk)} disabled={isBusy || loading}
-                    className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
-                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Connect
-                  </button>
+                {!isAlwaysAvailable && (
+                  <>
+                    <button onClick={() => runDiagnostic(tk)} disabled={diagnosing || isBusy || loading}
+                      className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+                      {diagnosing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Diagnose
+                    </button>
+                    {status === 'connected' ? (
+                      <button onClick={() => disconnect(tk as ComposioToolkit)} disabled={isBusy}
+                        className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40">
+                        {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2Off className="h-3.5 w-3.5" />} Disconnect
+                      </button>
+                    ) : (
+                      <button onClick={() => connect(tk as ComposioToolkit)} disabled={isBusy || loading}
+                        className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
+                        {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Connect
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -217,7 +227,7 @@ function ConnectorsSection() {
         })}
       </div>
       <p className="mt-3 font-mono text-[9px] leading-relaxed text-muted-foreground/70">
-        Composio hosts the Google consent screen and holds the resulting credential — it never passes through Enry. Read-only for now: no send-email actions.
+        Gmail and Firecrawl use Composio for connection management — credentials never pass through Enry. Web Search is always available and requires no authentication.
       </p>
     </motion.div>
   )
@@ -284,7 +294,7 @@ export default function SettingsPage() {
           <SettingsSectionCard
             icon={Puzzle}
             title="Integrations"
-            description="Composio connectors (Gmail) and future API integrations."
+            description="Composio connectors (Gmail, Firecrawl) and future API integrations."
             delay={0.25}
           />
         </div>

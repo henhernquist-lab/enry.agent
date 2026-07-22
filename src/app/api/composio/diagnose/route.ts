@@ -1,11 +1,11 @@
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { Composio } from '@composio/core'
-import { resolveAuthConfigId, type ComposioToolkit } from '@/lib/composio'
+import { resolveAuthConfigId, type ComposioConnectable } from '@/lib/composio'
 
 export const maxDuration = 30
 
-const TOOLKITS: ComposioToolkit[] = ['gmail', 'composio_search', 'firecrawl']
+const TOOLKITS: ComposioConnectable[] = ['gmail', 'firecrawl']
 
 // Diagnostic endpoint: exercises the Composio auth config + link creation path
 // using the server's own credentials, and returns the full raw response or
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
-  const toolkit = String(body.toolkit ?? 'gmail') as ComposioToolkit
+  const toolkit = String(body.toolkit ?? 'gmail') as ComposioConnectable
   if (!TOOLKITS.includes(toolkit)) return Response.json({ error: 'Invalid toolkit' }, { status: 400 })
 
   const apiKey = process.env.COMPOSIO_API_KEY

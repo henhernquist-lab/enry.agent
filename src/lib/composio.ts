@@ -1,16 +1,17 @@
-// Server-side Composio wrapper for the Connectors feature (Gmail + Google
-// Calendar, v1). Every function here is verified against @composio/core's
-// actual packaged TypeScript source (node_modules/@composio/core/src) rather
-// than doc pages, because Composio's own SDK retired the older `initiate()`
-// connected-account flow (cutover 2026-07-03) in favor of `link()` — a doc
-// summary would have shipped a dead code path.
+// Server-side Composio wrapper for the Connectors feature (Gmail, v1).
+// Every function here is verified against @composio/core's actual packaged
+// TypeScript source (node_modules/@composio/core/src) rather than doc pages.
 //
-// Composio fully custodies the resulting Gmail/Calendar OAuth tokens; nothing
-// Google-scoped is ever returned by these functions or stored by callers.
+// Three auth modes across our toolkits:
+//   gmail           — managed OAuth (Composio hosts the consent screen)
+//   composio_search — no auth needed (tools work without any connection)
+//   firecrawl       — custom auth (user's own Firecrawl API key)
 
 import { Composio } from '@composio/core'
 
 export type ComposioToolkit = 'gmail' | 'composio_search' | 'firecrawl'
+
+export type ComposioConnectable = 'gmail' | 'firecrawl'
 
 let _client: Composio | null = null
 
@@ -28,26 +29,44 @@ function client(): Composio {
 // the exact OAuth app config they set up (specific scopes, branding, etc.)
 // instead of auto-creating a new Composio-managed config that re-prompts for
 // every possible scope. Fallback to list+create only if the env var is unset.
-const AUTH_CONFIG_ENV: Record<ComposioToolkit, string | undefined> = {
+const AUTH_CONFIG_ENV: Record<ComposioConnectable, string | undefined> = {
   gmail: process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID,
-  composio_search: process.env.COMPOSIO_SEARCH_AUTH_CONFIG_ID,
   firecrawl: process.env.COMPOSIO_FIRECRAWL_AUTH_CONFIG_ID,
+}
+
+const CUSTOM_AUTH_KEYS: Partial<Record<ComposioConnectable, string>> = {
+  firecrawl: process.env.FIRECRAWL_API_KEY ?? '',
 }
 
 // Synchronous resolver: env-var wins, no SDK call. Used by the hot connect path
 // (we don't want to pay a list roundtrip when the dashboard config is known).
-function getEnvAuthConfigId(toolkit: ComposioToolkit): string | null {
+function getEnvAuthConfigId(toolkit: ComposioConnectable): string | null {
   const id = AUTH_CONFIG_ENV[toolkit]
   return id && id.trim().length > 0 ? id.trim() : null
 }
 
-export async function resolveAuthConfigId(toolkit: ComposioToolkit): Promise<string> {
+export async function resolveAuthConfigId(toolkit: ComposioConnectable): Promise<string> {
   const fromEnv = getEnvAuthConfigId(toolkit)
   if (fromEnv) return fromEnv
-  // Fallback: discover or create a Composio-managed config. Reused across every
-  // user's connection to that toolkit. Created unrestricted here: Phase 1
-  // exposes no tools to any model, so there's nothing to over-scope yet.
+
   const c = client()
+
+  // Firecrawl uses custom auth (user's own API key), not Composio-managed OAuth.
+  if (toolkit === 'firecrawl') {
+    const apiKey = CUSTOM_AUTH_KEYS.firecrawl
+    if (!apiKey) throw new Error('FIRECRAWL_API_KEY is not set — Firecrawl requires your own API key for custom auth.')
+    const existing = await c.authConfigs.list({ toolkit, isComposioManaged: false })
+    if (existing.items.length > 0) return existing.items[0].id
+    const created = await c.authConfigs.create(toolkit, {
+      type: 'use_custom_auth',
+      name: `enry-${toolkit}`,
+      authScheme: 'API_KEY',
+      credentials: { apiKey },
+    })
+    return created.id
+  }
+
+  // Gmail: Composio-managed OAuth. Reused across every user's connection.
   const existing = await c.authConfigs.list({ toolkit, isComposioManaged: true })
   if (existing.items.length > 0) return existing.items[0].id
   const created = await c.authConfigs.create(toolkit, {
@@ -70,7 +89,7 @@ export async function verifyAuthConfig(authConfigId: string): Promise<{ id: stri
 // `toolkit`. Returns the redirect URL to send the browser to, plus Composio's
 // connected_account_id (the reference to poll/store — never a credential).
 export async function createConnectionLink(
-  toolkit: ComposioToolkit,
+  toolkit: ComposioConnectable,
   userId: string,
   callbackUrl: string,
 ): Promise<{ connectedAccountId: string; redirectUrl: string; authConfigId: string }> {
