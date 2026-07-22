@@ -4,20 +4,27 @@ import type { RoomDefinition, RoomRegistry, Position, Activity, ActivityConfig, 
 // The Room — constants
 // ───────────────────────────────────────────────────────────────────
 
-/** Enry's brand colors mapped to 3D-friendly hex values. */
+/** Enry's brand colors mapped to 3D-friendly hex values.
+ *
+ * Albedos are deliberately lifted well above the CSS token values —
+ * meshStandardMaterial only reflects what its color allows, so
+ * near-black (#0d–#26) surfaces stay invisible no matter how strong
+ * the lights are. Dark graphite with a green-cool undertone reads as
+ * "dark premium" once lit; the raw token hexes read as a void.
+ */
 export const COLORS = {
-  // Surfaces — match the CSS token system (surface-base/secondary/elevated)
-  floor: '#0d0d0d',
-  wallBack: '#111111',
-  wallLeft: '#0f0f0f',
-  wallRight: '#0f0f0f',
-  ceiling: '#0a0a0a',
+  // Surfaces — dark graphite, subtle green-cool undertone
+  floor: '#242a27',
+  wallBack: '#2a3033',
+  wallLeft: '#262c2f',
+  wallRight: '#262c2f',
+  ceiling: '#1c2124',
 
-  // Furniture — muted dark tones with slight warmth
-  desk: '#1a1a1a',
-  deskTop: '#222222',
-  chair: '#1e1e1e',
-  chairSeat: '#262626',
+  // Furniture — mid graphite so the desk reads as an object, not a shadow
+  desk: '#31373b',
+  deskTop: '#3e454a',
+  chair: '#2e3438',
+  chairSeat: '#3a4145',
 
   // Accent — Enry green
   primary: '#3a9e60',
@@ -25,32 +32,32 @@ export const COLORS = {
   primaryGlow: '#00ff66',
 
   // Monitor — cool screen glow
-  monitorScreen: '#0a1620',
-  monitorGlow: '#1a3a5a',
-  monitorFrame: '#161616',
+  monitorScreen: '#0d2233',
+  monitorGlow: '#3a7ab8',
+  monitorFrame: '#282d31',
 
-  // Character — stylized dark figure
-  characterBody: '#1e1e1e',
-  characterHead: '#2a2a2a',
+  // Character — light warm gray so it's the brightest object in frame
+  characterBody: '#4a5258',
+  characterHead: '#5c646a',
   characterAccent: '#3a9e60',
 
   // Lighting
-  ambientColor: '#ffffff',
-  directionalColor: '#fff8e7',
+  ambientColor: '#dfe8ee',
+  directionalColor: '#fff4e0',
   accentLightColor: '#3a9e60',
   monitorLightColor: '#4a9eff',
   lampLightColor: '#ffc97a',
 
   // New furniture
-  whiteboard: '#1a1a1a',
-  whiteboardSurface: '#262626',
-  coffeeMachine: '#1c1c1c',
-  coffeeMachineTop: '#2a2a2a',
-  window: '#0a1a2a',
-  windowFrame: '#1a1a1a',
+  whiteboard: '#2c3236',
+  whiteboardSurface: '#d9dde0',
+  coffeeMachine: '#2e3337',
+  coffeeMachineTop: '#3b4145',
+  window: '#10263c',
+  windowFrame: '#2a2f33',
   keyboardLed: '#3a9e60',
-  deskLamp: '#1e1e1e',
-  deskLampHead: '#2a2a2a',
+  deskLamp: '#2e3337',
+  deskLampHead: '#3b4145',
 } as const
 
 /** Room dimensions in world units. */
@@ -256,7 +263,7 @@ export const OFFICE_ROOM: RoomDefinition = {
     },
   ],
   characterSpawn: [0, 0, -0.2],
-  ambientIntensity: 0.35,
+  ambientIntensity: 0.6,
   accentColor: COLORS.primary,
   stations: STATIONS,
 }
@@ -295,6 +302,6 @@ export const ANIM = {
   lampGlowAmplitude: 0.08,
   monitorFlickerChance: 0.003,
   monitorFlickerDuration: 0.1,
-  windowLightIntensity: 0.15,
-  windowLightColor: '#3a6a9a',
+  windowLightIntensity: 0.55,
+  windowLightColor: '#5a8ec4',
 } as const

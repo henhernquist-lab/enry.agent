@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import type { Mesh, MeshStandardMaterial, Group } from 'three'
+import type { MeshStandardMaterial } from 'three'
 import { COLORS, ROOM_DIMS, ANIM } from './constants'
 
 // ───────────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ export function Desk() {
         <meshStandardMaterial
           color={COLORS.primary}
           emissive={COLORS.primary}
-          emissiveIntensity={0.3}
+          emissiveIntensity={1.0}
           roughness={0.3}
         />
       </mesh>
@@ -152,14 +152,14 @@ export function Monitor() {
         flickerRef.current.active = false
         flickerRef.current.elapsed = 0
       }
-      matRef.current.emissiveIntensity = 0.1
+      matRef.current.emissiveIntensity = 0.5
     } else {
       // Normal pulse + random flicker chance
       if (Math.random() < ANIM.monitorFlickerChance) {
         flickerRef.current.active = true
       }
       matRef.current.emissiveIntensity =
-        0.4 + Math.sin(t * ANIM.monitorPulseSpeed) * ANIM.monitorPulseAmplitude
+        1.4 + Math.sin(t * ANIM.monitorPulseSpeed) * ANIM.monitorPulseAmplitude * 2
     }
   })
 
@@ -187,7 +187,7 @@ export function Monitor() {
           ref={matRef}
           color={COLORS.monitorScreen}
           emissive={COLORS.monitorGlow}
-          emissiveIntensity={0.4}
+          emissiveIntensity={1.4}
           roughness={0.2}
           metalness={0.1}
         />
@@ -213,7 +213,7 @@ export function KeyboardLed() {
     if (!matRef.current) return
     const t = state.clock.elapsedTime
     matRef.current.emissiveIntensity =
-      0.3 + Math.sin(t * ANIM.keyboardLedPulseSpeed) * ANIM.keyboardLedPulseAmplitude
+      1.2 + Math.sin(t * ANIM.keyboardLedPulseSpeed) * ANIM.keyboardLedPulseAmplitude
   })
 
   return (
@@ -237,12 +237,13 @@ export function DeskLamp() {
 
   useFrame((state) => {
     const t = state.clock.elapsedTime
-    const glow = 0.15 + Math.sin(t * ANIM.lampGlowSpeed) * ANIM.lampGlowAmplitude
+    const glow = 1.1 + Math.sin(t * ANIM.lampGlowSpeed) * ANIM.lampGlowAmplitude * 4
     if (matRef.current) {
       matRef.current.emissiveIntensity = glow
     }
+    // Physical units — the lamp is a real local light source now
     if (lightRef.current) {
-      lightRef.current.intensity = glow * 2
+      lightRef.current.intensity = glow * 6
     }
   })
 
@@ -270,7 +271,7 @@ export function DeskLamp() {
           ref={matRef}
           color={COLORS.lampLightColor}
           emissive={COLORS.lampLightColor}
-          emissiveIntensity={0.15}
+          emissiveIntensity={1.1}
           roughness={0.1}
         />
       </mesh>
@@ -278,8 +279,8 @@ export function DeskLamp() {
       <pointLight
         ref={lightRef}
         position={[0, 0.42, 0.18]}
-        intensity={0.3}
-        distance={3}
+        intensity={6}
+        distance={3.5}
         color={COLORS.lampLightColor}
       />
     </group>
@@ -306,7 +307,7 @@ export function Whiteboard() {
         <meshStandardMaterial
           color={COLORS.primary}
           emissive={COLORS.primary}
-          emissiveIntensity={0.1}
+          emissiveIntensity={0.5}
           roughness={0.4}
         />
       </mesh>
@@ -316,7 +317,7 @@ export function Whiteboard() {
         <meshStandardMaterial
           color={COLORS.primaryDim}
           emissive={COLORS.primaryDim}
-          emissiveIntensity={0.08}
+          emissiveIntensity={0.4}
           roughness={0.4}
         />
       </mesh>
@@ -336,7 +337,7 @@ export function CoffeeMachine() {
   useFrame((state) => {
     if (!ledRef.current) return
     const t = state.clock.elapsedTime
-    ledRef.current.emissiveIntensity = 0.4 + Math.sin(t * 1.5) * 0.15
+    ledRef.current.emissiveIntensity = 1.0 + Math.sin(t * 1.5) * 0.3
   })
 
   return (
@@ -368,7 +369,7 @@ export function CoffeeMachine() {
           ref={ledRef}
           color={COLORS.primary}
           emissive={COLORS.primary}
-          emissiveIntensity={0.4}
+          emissiveIntensity={1.0}
           roughness={0.2}
         />
       </mesh>

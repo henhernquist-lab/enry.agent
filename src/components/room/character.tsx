@@ -1,10 +1,10 @@
 'use client'
 
-import { useRef, useMemo } from 'react'
+import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
-import { COLORS, ANIM } from './constants'
+import { COLORS } from './constants'
 import { getBreathingOffset, getActivityPose, lerpPose, NEUTRAL_POSE, type ActivityPose } from './animations'
 import { useWalkingController, getWalkingAnimation } from './walking-controller'
 import type { RoomStore } from './room-state'
@@ -53,12 +53,8 @@ export function CharacterController({
   const { activity, label } = useActivitySnapshot(store)
   const showLabel = label !== '' && activity !== 'walking'
 
-  // Sync initial position
-  useMemo(() => {
-    if (groupRef.current) {
-      groupRef.current.position.set(...spawnPosition)
-    }
-  }, [spawnPosition])
+  // Initial position comes from the <group position={spawnPosition}> prop —
+  // no ref sync needed (and refs are null during the first render anyway).
 
   useFrame((state) => {
     if (!groupRef.current) return
@@ -173,7 +169,7 @@ export function CharacterController({
           <meshStandardMaterial
             color={COLORS.characterAccent}
             emissive={COLORS.characterAccent}
-            emissiveIntensity={0.2}
+            emissiveIntensity={0.9}
             roughness={0.4}
           />
         </mesh>
@@ -190,7 +186,7 @@ export function CharacterController({
             <meshStandardMaterial
               color={COLORS.monitorScreen}
               emissive={COLORS.primary}
-              emissiveIntensity={0.08}
+              emissiveIntensity={0.7}
               roughness={0.2}
             />
           </mesh>

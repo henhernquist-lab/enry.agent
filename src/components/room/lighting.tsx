@@ -1,5 +1,6 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
+import * as THREE from 'three'
 import type { PointLight, DirectionalLight } from 'three'
 import { COLORS, ANIM } from './constants'
 import type { RoomDefinition } from './types'
@@ -9,8 +10,13 @@ interface LightingProps {
 }
 
 /**
- * Premium lighting rig — ambient base + warm directional key + green accent
- * point light + cool monitor light + warm desk lamp glow.
+ * Premium lighting rig — hemisphere + ambient base, warm directional key,
+ * a dedicated spot on the worker (the focal point), green accent light,
+ * monitor glow that actually illuminates the desk, and window daylight.
+ *
+ * Point/spot intensities are in physical units (three r155+ candela with
+ * distance² decay) — single-digit values are candle-dim, which is why the
+ * original rig read as near-black. Don't "tidy" these down.
  *
  * Subtle intensity drift on the accent and monitor lights keeps the
  * room feeling alive without being distracting.
@@ -20,13 +26,20 @@ export function Lighting({ room }: LightingProps) {
   const monitorRef = useRef<PointLight>(null)
   const keyRef = useRef<DirectionalLight>(null)
 
+  // Spotlight target — aimed at the worker's seat at the desk
+  const spotTarget = useMemo(() => {
+    const obj = new THREE.Object3D()
+    obj.position.set(0, 1.0, -0.4)
+    return obj
+  }, [])
+
   useFrame((state) => {
     const t = state.clock.elapsedTime
     if (accentRef.current) {
-      accentRef.current.intensity = 0.6 + Math.sin(t * 0.5) * 0.08
+      accentRef.current.intensity = 18 + Math.sin(t * 0.5) * 2
     }
     if (monitorRef.current) {
-      monitorRef.current.intensity = 0.8 + Math.sin(t * ANIM.monitorPulseSpeed) * ANIM.monitorPulseAmplitude
+      monitorRef.current.intensity = 11 + Math.sin(t * ANIM.monitorPulseSpeed) * 2.0
     }
     // Very subtle key light drift — simulates time of day shift
     if (keyRef.current) {
@@ -36,6 +49,12 @@ export function Lighting({ room }: LightingProps) {
 
   return (
     <>
+      {/* Hemisphere — sky/ground bounce so vertical surfaces never go black */}
+      <hemisphereLight
+        args={['#a8bccb', '#3d4a42']}
+        intensity={0.65}
+      />
+
       {/* Ambient base — soft fill so no area is pitch black */}
       <ambientLight intensity={room.ambientIntensity} color={COLORS.ambientColor} />
 
@@ -43,7 +62,7 @@ export function Lighting({ room }: LightingProps) {
       <directionalLight
         ref={keyRef}
         position={[6, 10, 4]}
-        intensity={1.2}
+        intensity={2.2}
         color={COLORS.directionalColor}
         castShadow
         shadow-mapSize-width={2048}
@@ -59,33 +78,56 @@ export function Lighting({ room }: LightingProps) {
       {/* Fill light — cool, from upper left, softer to fill shadow areas */}
       <directionalLight
         position={[-5, 6, -3]}
-        intensity={0.3}
+        intensity={0.45}
         color={COLORS.monitorLightColor}
+      />
+
+      {/* Character key spot — the worker is the focal point of the scene */}
+      <primitive object={spotTarget} />
+      <spotLight
+        position={[2.2, 4.6, 2.4]}
+        target={spotTarget}
+        angle={0.55}
+        penumbra={0.7}
+        intensity={70}
+        distance={12}
+        color="#fdf3e3"
+        castShadow
+        shadow-bias={-0.0004}
       />
 
       {/* Accent point light — Enry green, near the desk, subtle pulse */}
       <pointLight
         ref={accentRef}
-        position={[0, 2.5, 0]}
-        intensity={0.6}
-        distance={8}
+        position={[0, 2.8, 0.6]}
+        intensity={18}
+        distance={10}
         color={COLORS.accentLightColor}
       />
 
-      {/* Monitor glow light — cool blue, positioned at the screen */}
+      {/* Green rim light — low behind the worker, silhouettes the character
+          in Enry green and washes the floor around the desk */}
+      <pointLight
+        position={[-1.6, 0.7, 1.4]}
+        intensity={7}
+        distance={6}
+        color={COLORS.accentLightColor}
+      />
+
+      {/* Monitor glow light — cool blue, illuminates the desk and worker */}
       <pointLight
         ref={monitorRef}
-        position={[0, 1.8, -2.8]}
-        intensity={0.8}
-        distance={5}
+        position={[0, 1.8, -1.9]}
+        intensity={11}
+        distance={6}
         color={COLORS.monitorLightColor}
       />
 
       {/* Window light — cool daylight from the right wall */}
       <pointLight
-        position={[5.5, 2.5, 0]}
-        intensity={ANIM.windowLightIntensity * 2}
-        distance={6}
+        position={[5.2, 2.5, 0]}
+        intensity={9}
+        distance={9}
         color={ANIM.windowLightColor}
       />
 
@@ -94,8 +136,8 @@ export function Lighting({ room }: LightingProps) {
           but this one is a softer ambient fill. */}
       <pointLight
         position={[-1.2, 1.5, -0.8]}
-        intensity={0.15}
-        distance={2.5}
+        intensity={2.5}
+        distance={3.5}
         color={COLORS.lampLightColor}
       />
     </>

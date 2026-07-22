@@ -70,6 +70,11 @@ export function Scene() {
           alpha: false,
           powerPreference: 'high-performance',
         }}
+        onCreated={({ gl }) => {
+          // Global exposure lift — the ACES tonemapper crushes an already
+          // dark scene; 1.25 keeps highlights filmic but opens the shadows.
+          gl.toneMappingExposure = 1.25
+        }}
         camera={{
           position: OFFICE_ROOM.cameraInitial,
           fov: 45,
@@ -84,8 +89,8 @@ export function Scene() {
         <AdaptiveDpr pixelated />
         <AdaptiveEvents />
 
-        <color attach="background" args={['#080808']} />
-        <fog attach="fog" args={['#080808', 15, 35]} />
+        <color attach="background" args={['#0c0f11']} />
+        <fog attach="fog" args={['#0c0f11', 18, 45]} />
 
         <Suspense fallback={null}>
           <Lighting room={OFFICE_ROOM} />
