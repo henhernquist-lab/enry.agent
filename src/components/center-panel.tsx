@@ -36,6 +36,8 @@ import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploa
 import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/attachment-marker'
 
 import { setAgentBusy } from '@/lib/agent-presence'
+import { RecoveryBanner } from './recovery-banner'
+import { RecoveryState } from '@/lib/recovery/types'
 import { SkillBanner } from './skill-banner'
 import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
@@ -263,6 +265,23 @@ export function CenterPanel({
   // invokes these callbacks against its own internal state, not a fresh React
   // render), so this ref is kept current via the effect after the hook and is
   // what onError actually reads.
+  // ─── Recovery state ────────────────────────────────────────────
+  // Tracks the recovery lifecycle: Interrupted → Recovering → Recovered | Failed
+  const [recoveryState, setRecoveryState] = useState<RecoveryState | null>(null)
+  const recoveryStateRef = useRef<RecoveryState | null>(null)
+  const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Keep ref in sync — useChat callbacks see stale closures
+  useEffect(() => { recoveryStateRef.current = recoveryState }, [recoveryState])
+
+  // Auto-hide "Recovered" banner after 3s
+  useEffect(() => {
+    if (recoveryState === RecoveryState.Recovered) {
+      recoveryTimerRef.current = setTimeout(() => setRecoveryState(null), 3000)
+      return () => { if (recoveryTimerRef.current) clearTimeout(recoveryTimerRef.current) }
+    }
+  }, [recoveryState])
+
   const messagesRef = useRef<UIMessage[]>(initialMessages ?? [])
   const { messages, sendMessage, status, error } = useChat({
     transport,
@@ -270,18 +289,38 @@ export function CenterPanel({
     onFinish: ({ messages: finalMessages }) => {
       onSaveMessages(finalMessages, model)
       onActivity({ type: 'assistant-complete', content: '', at: Date.now() })
+      // Clear recovery state on successful completion
+      if (recoveryStateRef.current === RecoveryState.Recovering) {
+        setRecoveryState(RecoveryState.Recovered)
+      }
     },
     onError: (err) => {
-      // Previously unlogged — a raw network/timeout failure (the function
-      // killed by maxDuration before any response) left zero trace anywhere,
-      // same invisible-failure gap Drive's terminal-exec had.
       console.error('[chat] streamText error:', err)
-      // A request that errors (a timeout, a degraded upstream model) never
-      // reaches onFinish, so without this the user's own message — already
-      // visible in the UI — was never saved anywhere. Save whatever exists
-      // right now rather than losing it silently.
       if (messagesRef.current.length > 0) onSaveMessages(messagesRef.current, model)
       onActivity({ type: 'error', content: err.message, at: Date.now() })
+
+      // ── Auto-recovery ──────────────────────────────────────────
+      // If the last message is an incomplete assistant response,
+      // attempt to recover by sending a continuation request.
+      const lastMsg = messagesRef.current[messagesRef.current.length - 1]
+      if (lastMsg?.role === 'assistant') {
+        const partialContent = getTextContent(lastMsg)
+        if (partialContent && partialContent.length > 0) {
+          setRecoveryState(RecoveryState.Recovering)
+          // Re-send with recovery flag + partial content for continuation
+          sendMessage({ text: '' }, {
+            body: {
+              model,
+              effort: chatEffort,
+              focusMode,
+              sessionFocus: serializeSessionFocus(sessionFocus),
+              reasoningDepth,
+              recovery: true,
+              partialContent,
+            },
+          })
+        }
+      }
     },
   })
   useEffect(() => { messagesRef.current = messages }, [messages])
@@ -662,6 +701,28 @@ export function CenterPanel({
         <div className="mx-auto max-w-3xl space-y-6">
           {/* Compaction indicator — shown after server-side compaction */}
           <CompactionIndicator compacted={contextCompacted} summary={compactionSummary} messageCount={messages.length} />
+          {/* Recovery banner — shown when stream is interrupted and recovery is attempted */}
+          <RecoveryBanner
+            state={recoveryState}
+            onRetry={() => {
+              // Manual retry: re-send the recovery request with the last partial content
+              const lastMsg = messages[messages.length - 1]
+              if (lastMsg?.role === 'assistant') {
+                const partialContent = getTextContent(lastMsg)
+                if (partialContent) {
+                  setRecoveryState(RecoveryState.Recovering)
+                  sendMessage({ text: '' }, {
+                    body: {
+                      model, effort: chatEffort, focusMode,
+                      sessionFocus: serializeSessionFocus(sessionFocus),
+                      reasoningDepth,
+                      recovery: true, partialContent,
+                    },
+                  })
+                }
+              }
+            }}
+          />
           {/* Welcome Section - shown when no messages */}
           {messages.length === 0 && (
             <motion.div

@@ -17,6 +17,7 @@ import { logUsage } from '@/lib/usage/log'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { monidDiscover, monidRun } from '@/lib/monid'
 import { getReceiptsHook } from '@/lib/learn/receipts-hook'
+import { RecoveryManager } from '@/lib/recovery/recovery-manager'
 // Side-effect import: registers enryReceiptsDetector as the active
 // ReceiptsHook at module-load time, before this route's first
 // getReceiptsHook() call below. Order matters — must precede any code
@@ -247,8 +248,28 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 
 export async function POST(req: Request) {
   const body = await req.json()
-  const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn } = body
+  const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn, recovery, partialContent } = body
   const selectedModel: string = CHAT_MODELS.includes(model) ? model : DEFAULT_MODEL
+
+  // ─── Recovery Mode ─────────────────────────────────────────
+  // When the frontend detects a stream interruption, it sends a
+  // follow-up request with recovery: true and the partial content
+  // that was received before the interruption. We inject a
+  // continuation prompt so the model picks up where it left off.
+  const recoveryManager = new RecoveryManager()
+  const isRecovery = recovery === true
+  let recoverySystemPrompt = ''
+  if (isRecovery) {
+    recoveryManager.startRequest()
+    recoveryManager.markStreaming()
+    if (typeof partialContent === 'string') {
+      recoveryManager.recordPartial(partialContent)
+    }
+    recoverySystemPrompt = '\n\nCONTINUATION REQUEST: Your previous response was interrupted unexpectedly. Continue exactly where you left off. Do NOT restart, summarize, or repeat any previous content. Do NOT apologize or acknowledge the interruption. Simply continue writing as if nothing happened.'
+    if (typeof partialContent === 'string' && partialContent.length > 0) {
+      recoverySystemPrompt += `\n\nThe last content sent before the interruption was:\n\n${partialContent.slice(-500)}\n\nContinue from the exact point this was cut off.`
+    }
+  }
 
   let chatClient: ReturnType<typeof nimClientFor>
   try {
@@ -370,7 +391,7 @@ export async function POST(req: Request) {
     const skillStartedAt = Date.now()
     const skillResult = streamText({
       model: chatClient.chat(selectedModel),
-      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}`,
+      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}${isRecovery ? recoverySystemPrompt : ''}`,
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
         providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
@@ -597,7 +618,7 @@ export async function POST(req: Request) {
   const chatStartedAt = Date.now()
   const result = streamText({
     model: chatClient.chat(selectedModel),
-    system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.
+    system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.${isRecovery ? recoverySystemPrompt : ''}
 
 You exist to move Henry's work forward: shipping features on the enry.agent codebase itself, answering technical questions with real research, running tool-calling loops on his behalf, and remembering context across sessions so he never has to re-explain his stack.
 
@@ -718,6 +739,7 @@ ${userProfile ? `\n${userProfile}` : ''}`,
       providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
     } : {}),
     tools: allTools,
+    // Inject recovery continuation into the system prompt when recovering
     // Same reasoning as the multi-skill call above: unset here defaults to
     // maxRetries 2, and this path additionally runs up to 7 tool-calling
     // steps (stopWhen) in one invocation — a broad request that triggers
