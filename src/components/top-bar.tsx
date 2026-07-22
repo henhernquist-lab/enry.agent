@@ -68,7 +68,10 @@ export function TopBar() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem('enry-theme') as Theme | null
-      if (saved) setThemeState(saved)
+      if (saved) {
+        setThemeState(saved)
+        setTheme(saved)
+      }
     } catch { /* noop */ }
   }, [])
 
