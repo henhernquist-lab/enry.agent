@@ -1,5 +1,7 @@
 import { auth } from '@/lib/auth'
-import { createSession } from '@/lib/terminal/pty-manager'
+import { createSession as createLocalSession } from '@/lib/terminal/pty-manager'
+import { createSession as createSpriteSession } from '@/lib/terminal/sprite-manager'
+import { requireHenryOwner } from '@/lib/auth-owner'
 
 export const runtime = 'nodejs'
 // PTYs are long-lived; allow the create handler plenty of room (it returns
@@ -8,20 +10,25 @@ export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
-  // auth() does real async work (Supabase lookups in the jwt callback for
-  // edge cases like legacy tokens missing googleId) — wrapped so a genuine
-  // auth-layer failure surfaces real detail too, not just a bare 500 that
-  // bypasses the createSession error handling below entirely.
-  let session
-  try {
-    session = await auth()
-  } catch (err) {
-    console.error('[terminal/pty] auth() failed:', err)
-    const message = err instanceof Error ? err.message : String(err)
-    return Response.json({ error: `Auth check failed: ${message}` }, { status: 500 })
-  }
-  if (!session?.user) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  // Vercel + SPRITES_TOKEN → cloud terminal path (Henry-only).
+  // Codespace (no VERCEL) → local PTY path (any signed-in user, unchanged).
+  const onCloud = !!process.env.VERCEL
+
+  if (onCloud) {
+    const gate = await requireHenryOwner()
+    if (gate.response) return gate.response
+  } else {
+    let session
+    try {
+      session = await auth()
+    } catch (err) {
+      console.error('[terminal/pty] auth() failed:', err)
+      const message = err instanceof Error ? err.message : String(err)
+      return Response.json({ error: `Auth check failed: ${message}` }, { status: 500 })
+    }
+    if (!session?.user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    }
   }
 
   let cols = 80
@@ -36,26 +43,32 @@ export async function POST(req: Request) {
     /* empty body is fine */
   }
 
+  if (onCloud) {
+    if (!process.env.SPRITES_TOKEN) {
+      console.error('[terminal/pty] VERCEL=1 but SPRITES_TOKEN unset — cloud terminals misconfigured')
+      return Response.json(
+        { error: 'Cloud terminals not configured — SPRITES_TOKEN is missing on the deployed app.' },
+        { status: 503 },
+      )
+    }
+    try {
+      const pty = await createSpriteSession({ cols, rows, cwd })
+      return Response.json({ id: pty.id, cols: pty.cols, rows: pty.rows, cwd: '' })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[terminal/pty] createSpriteSession failed:', err)
+      return Response.json({ error: `Failed to start cloud terminal: ${message}` }, { status: 500 })
+    }
+  }
+
+  // Local path — unchanged Codespace behavior (node-pty, any signed-in user).
   try {
-    const pty = await createSession({ cols, rows, cwd })
+    const pty = await createLocalSession({ cols, rows, cwd })
     return Response.json({ id: pty.id, cols: pty.cols, rows: pty.rows, cwd: pty.cwd })
   } catch (err) {
-    // createSession rejects on failure (native addon didn't load, node-pty's
-    // spawn() threw, etc.). Without this catch, Next's default handler
-    // returns a bare 500 with no body — which is exactly what made this
-    // undiagnosable from the client.
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[terminal/pty] createSession failed:', err)
-    // Vercel's serverless functions can't hold a long-lived PTY process — if
-    // this route ever runs there, node-pty's spawn() fails in a way that's
-    // easy to mistake for a generic bug. Detect it and say so plainly instead
-    // of surfacing a raw spawn error. VERCEL is set on every Vercel deploy
-    // (build and runtime); absence of CODESPACES alone isn't a reliable
-    // signal — it would also misfire on a plain local/laptop dev server.
+    console.error('[terminal/pty] createLocalSession failed:', err)
     if (process.env.VERCEL) {
-      // Not an error — an environment limitation. Real PTY shells need a
-      // long-lived process, which Vercel's serverless functions don't provide.
-      // The client renders this as a muted notice, not a red failure.
       return Response.json(
         { error: 'Terminal panes only run in the Codespace dev environment — not on the deployed app.' },
         { status: 501 },

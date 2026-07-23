@@ -1,5 +1,7 @@
 import { auth } from '@/lib/auth'
-import { resizeSession } from '@/lib/terminal/pty-manager'
+import { resizeSession as resizeLocalSession } from '@/lib/terminal/pty-manager'
+import { resizeSession as resizeSpriteSession, ensureWsLive } from '@/lib/terminal/sprite-manager'
+import { requireHenryOwner } from '@/lib/auth-owner'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -9,14 +11,21 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-// POST /api/terminal/pty/[id]/resize — resize the PTY (cols × rows).
+// POST /api/terminal/pty/[id]/resize — resize the terminal (cols × rows).
+// Codespace → local PTY. Vercel → Sprites WS (requires Henry).
 export async function POST(req: Request, ctx: RouteCtx) {
-  const session = await auth()
-  if (!session?.user) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   const { id } = await ctx.params
+
+  const onCloud = !!process.env.VERCEL
+  if (onCloud) {
+    const gate = await requireHenryOwner()
+    if (gate.response) return gate.response
+  } else {
+    const session = await auth()
+    if (!session?.user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
 
   let cols = 80
   let rows = 24
@@ -28,6 +37,8 @@ export async function POST(req: Request, ctx: RouteCtx) {
     return Response.json({ error: 'Invalid body' }, { status: 400 })
   }
 
-  const ok = resizeSession(id, cols, rows)
+  if (onCloud) ensureWsLive(id)
+
+  const ok = onCloud ? resizeSpriteSession(id, cols, rows) : resizeLocalSession(id, cols, rows)
   return Response.json({ ok })
 }
