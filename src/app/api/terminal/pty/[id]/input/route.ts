@@ -1,5 +1,7 @@
 import { auth } from '@/lib/auth'
-import { writeInput } from '@/lib/terminal/pty-manager'
+import { writeInput as writeLocalInput } from '@/lib/terminal/pty-manager'
+import { writeInput as writeSpriteInput, ensureWsLive } from '@/lib/terminal/sprite-manager'
+import { requireHenryOwner } from '@/lib/auth-owner'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -9,14 +11,21 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-// POST /api/terminal/pty/[id]/input — send keystrokes to the PTY.
+// POST /api/terminal/pty/[id]/input — send keystrokes to the terminal.
+// Codespace → local PTY. Vercel → Sprites WS (requires Henry).
 export async function POST(req: Request, ctx: RouteCtx) {
-  const session = await auth()
-  if (!session?.user) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   const { id } = await ctx.params
+
+  const onCloud = !!process.env.VERCEL
+  if (onCloud) {
+    const gate = await requireHenryOwner()
+    if (gate.response) return gate.response
+  } else {
+    const session = await auth()
+    if (!session?.user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
 
   let data = ''
   try {
@@ -28,6 +37,11 @@ export async function POST(req: Request, ctx: RouteCtx) {
 
   if (!data) return Response.json({ ok: true })
 
-  const ok = writeInput(id, data)
+  // Cloud: WS may be down from a prior function cycle. Best-effort revive —
+  // if it can't come back, return ok:false so the client knows the keystroke
+  // was dropped (xterm.js local echo still shows it; the shell just didn't get it).
+  if (onCloud) ensureWsLive(id)
+
+  const ok = onCloud ? writeSpriteInput(id, data) : writeLocalInput(id, data)
   return Response.json({ ok })
 }
