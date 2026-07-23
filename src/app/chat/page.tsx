@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import type { UIMessage } from 'ai'
 import { LeftSidebar, CenterPanel, RightPanel, GridBackground, CornerAccents } from '@/components/components'
 import {
@@ -30,8 +31,10 @@ import { QuickStartCard } from '@/components/quick-start-card'
 import { ProviderTopology } from '@/components/provider-topology'
 import { Card } from '@/components/card'
 
-export default function ChatPage() {
+function ChatPageInner() {
   const { data: session, status: sessionStatus } = useSession()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [agentStatus, setAgentStatus] = useState<'online' | 'thinking' | 'streaming' | 'idle'>('online')
 
   // Conversations list (no messages — loaded separately on demand)
@@ -75,14 +78,30 @@ export default function ChatPage() {
     if (sessionStatus !== 'authenticated') return
 
     // Load this user's chats from Supabase
-    loadConversations().then((convs) => {
+    loadConversations().then(async (convs) => {
       setConversations(convs)
-      // Default to a new blank chat — don't auto-select the last conversation
-      // so the user consciously chooses to resume one
-      setActiveId(newConversationId())
-      setActiveMessages(undefined)
-      activeCreatedAtRef.current = Date.now()
+
+      // A deep link (e.g. the dashboard sidebar) can jump straight to a
+      // saved conversation via ?id=; otherwise default to a new blank
+      // chat — don't auto-select the last conversation so the user
+      // consciously chooses to resume one.
+      const deepLinkId = searchParams.get('id')
+      const target = deepLinkId ? convs.find((c) => c.id === deepLinkId) : undefined
+      if (target) {
+        const msgs = await loadConversationMessages(target.id)
+        setActiveId(target.id)
+        setActiveMessages(msgs)
+        activeCreatedAtRef.current = target.createdAt
+      } else {
+        setActiveId(newConversationId())
+        setActiveMessages(undefined)
+        activeCreatedAtRef.current = Date.now()
+      }
     })
+    // searchParams is read once at load, not tracked reactively — selecting
+    // or starting chats afterward is handled by the handlers below, which
+    // sync the URL themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStatus])
 
   // ─── Refresh conversation list (without disrupting active chat) ───
@@ -142,22 +161,31 @@ export default function ChatPage() {
     setActiveMessages(undefined)
     activeCreatedAtRef.current = Date.now()
     resetActivityState()
-  }, [resetActivityState])
+    router.replace('/chat', { scroll: false })
+  }, [resetActivityState, router])
 
   const handleSelectConversation = useCallback(
     async (id: string) => {
-      setActiveId(id)
-      setActiveMessages(undefined) // clear while loading
       resetActivityState()
 
-      // Fetch messages from Supabase — server verifies ownership (403 if wrong user)
+      // Fetch messages BEFORE flipping activeId. CenterPanel remounts via
+      // key={activeId} below, but useChat() isn't given an `id` option —
+      // its internal Chat instance is built once at mount and never
+      // re-synced from prop changes afterward (confirmed in @ai-sdk/react's
+      // source: the Chat instance is only recreated when a `chat` object or
+      // `id` option changes, not `messages`). Remounting before the real
+      // messages arrive locks in an empty chat that setActiveMessages(msgs)
+      // can no longer fix once it resolves — this was the root cause of
+      // clicking a saved chat rendering as blank/default.
       const msgs = await loadConversationMessages(id)
-      setActiveMessages(msgs)
-
       const conv = conversations.find((c) => c.id === id)
+
+      setActiveId(id)
+      setActiveMessages(msgs)
       activeCreatedAtRef.current = conv?.createdAt ?? Date.now()
+      router.replace(`/chat?id=${id}`, { scroll: false })
     },
-    [resetActivityState, conversations],
+    [resetActivityState, conversations, router],
   )
 
   const handleDeleteConversation = useCallback(
@@ -169,9 +197,10 @@ export default function ChatPage() {
         setActiveMessages(undefined)
         activeCreatedAtRef.current = Date.now()
         resetActivityState()
+        router.replace('/chat', { scroll: false })
       }
     },
-    [activeId, refreshConversations, resetActivityState],
+    [activeId, refreshConversations, resetActivityState, router],
   )
 
   return (
@@ -238,5 +267,14 @@ export default function ChatPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// useSearchParams (for the ?id= deep link) requires a Suspense boundary.
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-background text-xs text-muted-foreground">Loading…</div>}>
+      <ChatPageInner />
+    </Suspense>
   )
 }
