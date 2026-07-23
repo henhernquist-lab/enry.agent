@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { DoubleSide } from 'three'
 import type { MeshStandardMaterial } from 'three'
 import { COLORS, ROOM_DIMS, ANIM } from './constants'
 
@@ -21,10 +22,12 @@ export function Floor() {
       receiveShadow
     >
       <planeGeometry args={[ROOM_DIMS.width, ROOM_DIMS.depth]} />
+      {/* Low roughness + some metalness — the floor picks up specular pools
+          from the lamp/monitor/LED lights instead of reading as flat gray */}
       <meshStandardMaterial
         color={COLORS.floor}
-        roughness={0.85}
-        metalness={0.1}
+        roughness={0.35}
+        metalness={0.35}
       />
     </mesh>
   )
@@ -103,6 +106,17 @@ export function Desk() {
         <boxGeometry args={[1.2, 0.03, 0.35]} />
         <meshStandardMaterial color={COLORS.desk} roughness={0.7} metalness={0.1} />
       </mesh>
+      {/* Under-desk LED strip — the visible source of the green floor wash
+          (its light lives in lighting.tsx as the under-desk point light) */}
+      <mesh position={[0, 0.94, 0.85]}>
+        <boxGeometry args={[3.3, 0.025, 0.03]} />
+        <meshStandardMaterial
+          color={COLORS.primary}
+          emissive={COLORS.primary}
+          emissiveIntensity={2.2}
+          roughness={0.3}
+        />
+      </mesh>
     </group>
   )
 }
@@ -151,14 +165,15 @@ export function Monitor() {
         flickerRef.current.active = false
         flickerRef.current.elapsed = 0
       }
-      matRef.current.emissiveIntensity = 0.5
+      matRef.current.emissiveIntensity = 0.3
     } else {
       // Normal pulse + random flicker chance
       if (Math.random() < ANIM.monitorFlickerChance) {
         flickerRef.current.active = true
       }
+      // Kept below bloom-out so the screen content lines stay readable
       matRef.current.emissiveIntensity =
-        1.4 + Math.sin(t * ANIM.monitorPulseSpeed) * ANIM.monitorPulseAmplitude * 2
+        0.55 + Math.sin(t * ANIM.monitorPulseSpeed) * ANIM.monitorPulseAmplitude
     }
   })
 
@@ -186,11 +201,33 @@ export function Monitor() {
           ref={matRef}
           color={COLORS.monitorScreen}
           emissive={COLORS.monitorGlow}
-          emissiveIntensity={1.4}
+          emissiveIntensity={0.55}
           roughness={0.2}
           metalness={0.1}
         />
       </mesh>
+      {/* Screen content — code-like lines so the display reads as a working
+          editor instead of a blown-out rectangle */}
+      {[
+        { y: 1.12, w: 0.9, x: -0.45, c: COLORS.primary, e: 1.2 },
+        { y: 1.0, w: 1.5, x: -0.15, c: '#7a8894', e: 0.5 },
+        { y: 0.88, w: 1.2, x: -0.3, c: '#7a8894', e: 0.5 },
+        { y: 0.76, w: 1.65, x: -0.08, c: COLORS.primaryDim, e: 0.9 },
+        { y: 0.64, w: 1.0, x: -0.4, c: '#7a8894', e: 0.5 },
+        { y: 0.52, w: 1.35, x: -0.23, c: '#7a8894', e: 0.5 },
+        { y: 0.4, w: 0.7, x: -0.55, c: COLORS.primary, e: 1.2 },
+        { y: 0.28, w: 1.5, x: -0.15, c: '#7a8894', e: 0.5 },
+      ].map((line, i) => (
+        <mesh key={i} position={[line.x, line.y, 0.05]}>
+          <planeGeometry args={[line.w, 0.045]} />
+          <meshStandardMaterial
+            color={line.c}
+            emissive={line.c}
+            emissiveIntensity={line.e}
+            roughness={0.3}
+          />
+        </mesh>
+      ))}
       {/* Green accent LED on bottom bezel */}
       <mesh position={[0.9, 0.12, 0.05]}>
         <sphereGeometry args={[0.02, 8, 8]} />
@@ -395,7 +432,8 @@ export function Window() {
         <boxGeometry args={[3, 2.5, 0.08]} />
         <meshStandardMaterial color={COLORS.windowFrame} roughness={0.7} metalness={0.1} />
       </mesh>
-      {/* Glass — emissive, suggesting daylight outside */}
+      {/* Glass — emissive, suggesting daylight outside. Double-sided so the
+          pane reads from every orbit angle instead of a black slab from behind */}
       <mesh position={[0, 0, 0.05]}>
         <planeGeometry args={[2.7, 2.2]} />
         <meshStandardMaterial
@@ -405,6 +443,7 @@ export function Window() {
           emissiveIntensity={ANIM.windowLightIntensity}
           roughness={0.1}
           metalness={0.05}
+          side={DoubleSide}
         />
       </mesh>
       {/* Cross frame — mullions */}
@@ -415,6 +454,94 @@ export function Window() {
       <mesh position={[0, 0, 0.06]}>
         <boxGeometry args={[2.7, 0.04, 0.02]} />
         <meshStandardMaterial color={COLORS.windowFrame} roughness={0.7} metalness={0.1} />
+      </mesh>
+    </group>
+  )
+}
+
+/** Rug — soft matte oval under the desk zone, breaks up the bare floor. */
+export function Rug() {
+  return (
+    <mesh position={[0, 0.012, -0.9]} receiveShadow>
+      <cylinderGeometry args={[2.7, 2.7, 0.02, 40]} />
+      <meshStandardMaterial color={COLORS.rug} roughness={0.95} metalness={0} />
+    </mesh>
+  )
+}
+
+/** Potted plant — fills the front-left corner with a touch of organic green. */
+export function Plant() {
+  return (
+    <group position={[-4.6, 0, 3.4]}>
+      {/* Pot */}
+      <mesh position={[0, 0.25, 0]} castShadow>
+        <cylinderGeometry args={[0.28, 0.35, 0.5, 14]} />
+        <meshStandardMaterial color={COLORS.plantPot} roughness={0.7} metalness={0.1} />
+      </mesh>
+      {/* Foliage — stacked cones, stylized to match the primitive look */}
+      <mesh position={[0, 0.85, 0]} castShadow>
+        <coneGeometry args={[0.45, 0.9, 10]} />
+        <meshStandardMaterial color={COLORS.plantFoliage} roughness={0.85} metalness={0} />
+      </mesh>
+      <mesh position={[0, 1.35, 0]} castShadow>
+        <coneGeometry args={[0.32, 0.7, 10]} />
+        <meshStandardMaterial color={COLORS.plantFoliage} roughness={0.85} metalness={0} />
+      </mesh>
+    </group>
+  )
+}
+
+/** Wall shelf — two boards with a few items on the left wall. */
+export function Shelf() {
+  return (
+    <group position={[-5.85, 2.3, 1.8]}>
+      {[0, -0.7].map((y) => (
+        <mesh key={y} position={[0.12, y, 0]} castShadow>
+          <boxGeometry args={[0.25, 0.05, 1.6]} />
+          <meshStandardMaterial color={COLORS.shelf} roughness={0.6} metalness={0.15} />
+        </mesh>
+      ))}
+      {/* Items — books / boxes */}
+      <mesh position={[0.12, 0.15, -0.45]} castShadow>
+        <boxGeometry args={[0.18, 0.24, 0.3]} />
+        <meshStandardMaterial color={COLORS.shelfItem} roughness={0.7} metalness={0.05} />
+      </mesh>
+      <mesh position={[0.12, 0.12, 0.1]} castShadow>
+        <boxGeometry args={[0.16, 0.18, 0.22]} />
+        <meshStandardMaterial color={COLORS.primaryDim} roughness={0.7} metalness={0.05} />
+      </mesh>
+      <mesh position={[0.12, -0.55, 0.4]} castShadow>
+        <boxGeometry args={[0.18, 0.26, 0.26]} />
+        <meshStandardMaterial color={COLORS.shelfItem} roughness={0.7} metalness={0.05} />
+      </mesh>
+    </group>
+  )
+}
+
+/** Wall poster — framed green-on-dark art on the back wall, right of the monitor. */
+export function Poster() {
+  return (
+    <group position={[3.2, 2.7, -4.85]}>
+      <mesh castShadow>
+        <boxGeometry args={[1.3, 1.7, 0.05]} />
+        <meshStandardMaterial color={COLORS.posterFrame} roughness={0.5} metalness={0.15} />
+      </mesh>
+      <mesh position={[0, 0, 0.03]}>
+        <planeGeometry args={[1.15, 1.55]} />
+        <meshStandardMaterial color={COLORS.posterArt} roughness={0.8} metalness={0} />
+      </mesh>
+      {/* Minimal "N" mark — two emissive strokes, echoes the app logo */}
+      <mesh position={[-0.18, 0, 0.04]} rotation={[0, 0, 0]}>
+        <planeGeometry args={[0.07, 0.8]} />
+        <meshStandardMaterial color={COLORS.primary} emissive={COLORS.primary} emissiveIntensity={0.7} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 0, 0.04]} rotation={[0, 0, 0.45]}>
+        <planeGeometry args={[0.07, 0.85]} />
+        <meshStandardMaterial color={COLORS.primary} emissive={COLORS.primary} emissiveIntensity={0.7} roughness={0.4} />
+      </mesh>
+      <mesh position={[0.18, 0, 0.04]}>
+        <planeGeometry args={[0.07, 0.8]} />
+        <meshStandardMaterial color={COLORS.primary} emissive={COLORS.primary} emissiveIntensity={0.7} roughness={0.4} />
       </mesh>
     </group>
   )
@@ -436,6 +563,10 @@ export function Furniture() {
       <Whiteboard />
       <CoffeeMachine />
       <Window />
+      <Rug />
+      <Plant />
+      <Shelf />
+      <Poster />
     </group>
   )
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { RotateCcw, Monitor, Eye, ArrowLeft, Activity as ActivityIcon } from 'lucide-react'
 import Link from 'next/link'
@@ -20,6 +21,13 @@ interface RoomOverlayProps {
  * room context, focus shortcuts, and camera reset.
  */
 export function RoomOverlay({ room, focusedTarget, onReset, onFocus, activityLabel }: RoomOverlayProps) {
+  // Control hint auto-dismisses — it's onboarding, not chrome
+  const [hintVisible, setHintVisible] = useState(true)
+  useEffect(() => {
+    const timer = setTimeout(() => setHintVisible(false), 7000)
+    return () => clearTimeout(timer)
+  }, [])
+
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-6">
       {/* Top bar — room name + back link */}
@@ -89,17 +97,18 @@ export function RoomOverlay({ room, focusedTarget, onReset, onFocus, activityLab
         </div>
       </div>
 
-      {/* Center hint — shows briefly when no target is focused */}
+      {/* Control hint — screen-space pill at bottom-center, fades after a
+          few seconds instead of sitting mid-scene over the desk */}
       <AnimatePresence>
-        {!focusedTarget && (
+        {hintVisible && !focusedTarget && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ delay: 1, duration: 0.5 }}
-            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ delay: 0.8, duration: 0.5 }}
+            className="pointer-events-none absolute bottom-20 left-1/2 -translate-x-1/2"
           >
-            <p className="font-mono text-[10px] text-muted-foreground/30">
+            <p className="rounded-full border border-border bg-surface-secondary/85 px-4 py-1.5 font-mono text-[11px] text-muted-foreground backdrop-blur">
               drag to orbit · scroll to zoom · double-click desk to focus
             </p>
           </motion.div>

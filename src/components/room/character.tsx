@@ -246,20 +246,20 @@ function StatusLabel({ text, activity }: { text: string; activity: Activity }) {
     activity === 'celebrating'
       ? 'text-primary'
       : activity === 'typing'
-        ? 'text-muted-foreground'
+        ? 'text-foreground/85'
         : activity === 'thinking'
-          ? 'text-blue-400/60'
-          : 'text-muted-foreground/70'
+          ? 'text-blue-300/80'
+          : 'text-muted-foreground'
 
   return (
     <div
       style={{
-        background: 'rgba(8,8,8,0.85)',
-        border: '1px solid rgba(58,158,96,0.15)',
+        background: 'rgba(10,13,15,0.92)',
+        border: '1px solid rgba(58,158,96,0.4)',
         borderRadius: '6px',
-        padding: '3px 10px',
+        padding: '4px 12px',
         fontFamily: 'monospace',
-        fontSize: '11px',
+        fontSize: '12px',
         whiteSpace: 'nowrap',
         backdropFilter: 'blur(8px)',
         userSelect: 'none',

@@ -13,7 +13,7 @@ import { EnvironmentLife } from './environment-life'
 import { useRoomState } from './room-state'
 import { useActivityManager } from './activity-manager'
 import { useWalkingController } from './walking-controller'
-import { OFFICE_ROOM, SURFACE_ENTRY_EVENTS } from './constants'
+import { OFFICE_ROOM, SURFACE_ENTRY_EVENTS, EVENT_ACTIVITY_MAP } from './constants'
 import type { FocusTarget } from './types'
 
 /**
@@ -53,21 +53,6 @@ export function Scene({ from, state }: SceneProps) {
   const walker = useWalkingController()
   const activityManager = useActivityManager(store, walker)
 
-  // ── Entry context — opened via a "See Enry" button ────────────
-  // When a surface opened The Room, the worker reflects that surface's
-  // state instead of the mocked ambient timeline: stop the mock and
-  // dispatch the surface's event through the existing state machine.
-  // Direct visits (no `from`) keep the ambient timeline as before.
-  useEffect(() => {
-    if (!from) return
-    const entry = SURFACE_ENTRY_EVENTS[from]
-    if (!entry) return
-    activityManager.stopMockTimeline()
-    activityManager.dispatch(state === 'working' ? entry.working : entry.idle)
-    // activityManager is stable per mount; re-dispatch only if the URL context changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, state])
-
   // ── Camera controls ───────────────────────────────────────────
   const handleReset = useCallback(() => {
     cameraRef.current?.reset()
@@ -79,6 +64,40 @@ export function Scene({ from, state }: SceneProps) {
     cameraRef.current?.focusOn(target)
     setFocusedTarget(target.id)
   }, [])
+
+  // ── Entry context — opened via a "See Enry" button ────────────
+  // When a surface opened The Room, the worker reflects that surface's
+  // state instead of the mocked ambient timeline: stop the mock and
+  // dispatch the surface's event through the existing state machine,
+  // then glide the camera onto the worker's station so you land looking
+  // at the thing Enry is doing. Direct visits (no `from`) keep the
+  // ambient timeline and default framing as before.
+  useEffect(() => {
+    if (!from) return
+    const entry = SURFACE_ENTRY_EVENTS[from]
+    if (!entry) return
+    activityManager.stopMockTimeline()
+    const event = state === 'working' ? entry.working : entry.idle
+    activityManager.dispatch(event)
+
+    // Focus the camera on the station this event sends the worker to.
+    // Small delay: lets the canvas settle and reads as a deliberate move.
+    const stationId = EVENT_ACTIVITY_MAP[event]?.station
+    const station = OFFICE_ROOM.stations.find((s) => s.id === stationId)
+    if (!station) return
+    const focusTarget =
+      OFFICE_ROOM.focusTargets.find((f) => f.id === (station.id === 'desk' ? 'main-desk' : station.id)) ??
+      {
+        id: station.id,
+        label: station.label,
+        position: [station.position[0], station.position[1] + 1.2, station.position[2]] as [number, number, number],
+        distance: 5,
+      }
+    const timer = setTimeout(() => handleFocus(focusTarget), 700)
+    return () => clearTimeout(timer)
+    // activityManager/handleFocus are stable per mount; re-run only on URL context change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, state])
 
   // ── Per-frame tick for the activity manager ───────────────────
   // We use a lightweight component inside the Canvas to drive ticks

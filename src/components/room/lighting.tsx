@@ -52,7 +52,7 @@ export function Lighting({ room }: LightingProps) {
       {/* Hemisphere — sky/ground bounce so vertical surfaces never go black */}
       <hemisphereLight
         args={['#a8bccb', '#3d4a42']}
-        intensity={0.65}
+        intensity={0.8}
       />
 
       {/* Ambient base — soft fill so no area is pitch black */}
@@ -62,17 +62,19 @@ export function Lighting({ room }: LightingProps) {
       <directionalLight
         ref={keyRef}
         position={[6, 10, 4]}
-        intensity={2.2}
+        intensity={1.7}
         color={COLORS.directionalColor}
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        shadow-mapSize-width={4096}
+        shadow-mapSize-height={4096}
         shadow-camera-far={30}
         shadow-camera-left={-10}
         shadow-camera-right={10}
         shadow-camera-top={10}
         shadow-camera-bottom={-10}
-        shadow-bias={-0.0005}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.02}
+        shadow-radius={5}
       />
 
       {/* Fill light — cool, from upper left, softer to fill shadow areas */}
@@ -87,13 +89,16 @@ export function Lighting({ room }: LightingProps) {
       <spotLight
         position={[2.2, 4.6, 2.4]}
         target={spotTarget}
-        angle={0.55}
-        penumbra={0.7}
-        intensity={70}
+        angle={0.6}
+        penumbra={0.85}
+        intensity={75}
         distance={12}
         color="#fdf3e3"
         castShadow
-        shadow-bias={-0.0004}
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.02}
       />
 
       {/* Accent point light — Enry green, near the desk, subtle pulse */}
@@ -105,12 +110,13 @@ export function Lighting({ room }: LightingProps) {
         color={COLORS.accentLightColor}
       />
 
-      {/* Green rim light — low behind the worker, silhouettes the character
-          in Enry green and washes the floor around the desk */}
+      {/* Under-desk LED wash — paired with the emissive LED strip on the
+          desk underside (furniture.tsx), so the green floor pool visibly
+          comes FROM somewhere instead of reading as a sourceless blob */}
       <pointLight
-        position={[-1.6, 0.7, 1.4]}
-        intensity={7}
-        distance={6}
+        position={[0, 0.55, -1.5]}
+        intensity={6}
+        distance={4.5}
         color={COLORS.accentLightColor}
       />
 
