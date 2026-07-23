@@ -5,7 +5,7 @@ import { Card } from '@/components/card'
 const MODES = [
   { href: '/chat', label: 'Chat', desc: 'Ask Enry anything', icon: MessageSquare, color: 'text-primary' },
   { href: '/agent', label: 'Drive', desc: 'Autonomous coding agent', icon: Swords, color: 'text-primary' },
-  { href: '/cruise', label: 'Cruise', desc: 'Scan-and-fix pipeline', icon: Ship, color: 'text-primary' },
+  { href: '/agent', label: 'Cruise', desc: 'Scan-and-fix pipeline', icon: Ship, color: 'text-primary' },
   { href: '/learn', label: 'Learn', desc: 'Tutorials and skills', icon: GraduationCap, color: 'text-primary' },
   { href: '/m/chat', label: 'enry lite', desc: 'Mobile chat', icon: Smartphone, color: 'text-primary' },
 ]
