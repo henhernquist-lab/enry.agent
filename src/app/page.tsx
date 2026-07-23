@@ -7,6 +7,7 @@ import { CruiseStatusCard } from '@/components/dashboard/cruise-status-card'
 import { ModeLauncher } from '@/components/dashboard/mode-launcher'
 import { MemoryFeedCard } from '@/components/dashboard/memory-feed-card'
 import { RepoSummariesCard } from '@/components/dashboard/repo-summaries-card'
+import { QuickNotesCard } from '@/components/dashboard/quick-notes-card'
 import { HeroSkeleton, CardSkeleton } from '@/components/dashboard/skeletons'
 
 export default function DashboardPage() {
@@ -39,13 +40,14 @@ export default function DashboardPage() {
         </section>
 
         {/* Knowledge / Dev row */}
-        <section aria-label="Knowledge and development" className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section aria-label="Knowledge and development" className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Suspense fallback={<CardSkeleton />}>
             <MemoryFeedCard />
           </Suspense>
           <Suspense fallback={<CardSkeleton />}>
             <RepoSummariesCard />
           </Suspense>
+          <QuickNotesCard />
         </section>
       </div>
     </DashboardLayout>
