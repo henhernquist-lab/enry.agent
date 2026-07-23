@@ -12,6 +12,7 @@ interface Crumb {
 
 const CRUMBS: Record<string, Crumb[]> = {
   '/': [{ label: 'Home', href: '/' }],
+  '/chat': [{ label: 'Workspace', href: '/' }, { label: 'Chat' }],
   '/agent': [{ label: 'Workspace', href: '/' }, { label: 'Drive' }],
   '/learn': [{ label: 'Workspace', href: '/' }, { label: 'Learn' }],
   '/lab': [{ label: 'Workspace', href: '/' }, { label: 'Lab' }],
@@ -26,6 +27,7 @@ const CRUMBS: Record<string, Crumb[]> = {
 
 const DESCRIPTIONS: Record<string, string> = {
   '/': 'Dashboard overview',
+  '/chat': 'Ask Enry anything',
   '/agent': 'Autonomous coding agent',
   '/learn': 'Tutorials and skills',
   '/lab': 'Experiments and overnight runs',

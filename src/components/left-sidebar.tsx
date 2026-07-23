@@ -47,7 +47,8 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Platform',
     items: [
-      { href: '/', icon: Home, label: 'Chat', desc: 'Ask Enry anything' },
+      { href: '/', icon: Home, label: 'Home', desc: 'Dashboard overview' },
+      { href: '/chat', icon: MessageSquare, label: 'Chat', desc: 'Ask Enry anything' },
       { href: '/models', icon: Cpu, label: 'Model Intelligence', desc: 'Benchmark model performance' },
       { href: '/usage', icon: BarChart3, label: 'Usage', desc: 'Track tokens, cost, and alerts' },
     ],
