@@ -27,49 +27,44 @@ export interface ActivityManagerHandle {
   dispatch: (eventType: RoomEventType) => void
   /** Per-frame update — call from useFrame. */
   tick: (delta: number) => void
-  /** Start the mocked event timeline. */
-  startMockTimeline: () => void
-  /** Stop the mocked event timeline. */
-  stopMockTimeline: () => void
-}
-
-function randRange(min: number, max: number): number {
-  return min + Math.random() * (max - min)
+  /** Start polling /api/activity/recent and reflecting real state. */
+  startAmbientSync: () => void
+  /** Stop ambient polling — used when a "See Enry" entry (?from=) takes over. */
+  stopAmbientSync: () => void
 }
 
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-/** Mocked event sequence — simulates a day of Enry working. */
-const MOCK_TIMELINE: RoomEventType[] = [
-  'drive.editing',
-  'drive.planning',
-  'drive.editing',
-  'drive.testing',
-  'drive.idle',
-  'chat.thinking',
-  'chat.responding',
-  'drive.editing',
-  'cruise.scanning',
-  'cruise.fixing',
-  'drive.idle',
-  'lab.evolving',
-  'memory.storing',
-  'drive.planning',
-  'drive.editing',
-  'drive.testing',
-  'system.idle',
-]
+/** How often ambient (unattended) view polls for real activity, in seconds. */
+const AMBIENT_POLL_INTERVAL = 20
+
+/**
+ * Maps the shared /api/activity/recent response (same source as the
+ * homepage Live Activity widget and the worker HUD) to a room event.
+ * usage_log has no mode-specific "learn" event in RoomEventType, so
+ * 'learn' maps to lab.evolving — both read as "thinking/studying at the
+ * whiteboard," the closest real fit rather than inventing a new state.
+ */
+function mapActivityToEvent(mode: string | null, isActive: boolean): RoomEventType {
+  if (!isActive || !mode) return 'system.idle'
+  switch (mode) {
+    case 'drive': return 'drive.editing'
+    case 'cruise': return 'cruise.scanning'
+    case 'chat': return 'chat.responding'
+    case 'learn': return 'lab.evolving'
+    case 'lab': return 'lab.evolving'
+    default: return 'system.idle'
+  }
+}
 
 export function useActivityManager(
   store: RoomStore,
   walker: WalkingControllerHandle,
 ): ActivityManagerHandle {
-  const mockTimerRef = useRef(0)
-  const mockIndexRef = useRef(0)
-  const mockActiveRef = useRef(false)
-  const mockIntervalRef = useRef(8) // seconds between mock events
+  const ambientTimerRef = useRef(0)
+  const ambientActiveRef = useRef(false)
   const transitionCooldownRef = useRef(0)
   const pendingActivityRef = useRef<{ activity: Activity; stationId: string } | null>(null)
 
@@ -117,6 +112,17 @@ export function useActivityManager(
     }
   }, [store, walker])
 
+  // ── Ambient sync — polls real activity, dispatches the mapped event ──
+  const syncRealActivity = useCallback(() => {
+    fetch('/api/activity/recent')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { mode: string | null; isActive: boolean } | null) => {
+        if (!data) return
+        dispatch(mapActivityToEvent(data.mode, data.isActive))
+      })
+      .catch(() => { /* request failed — stay in current state, never fall back to fake data */ })
+  }, [dispatch])
+
   // ── Per-frame tick ──────────────────────────────────────────────
   const tick = useCallback((delta: number) => {
     // Cooldown
@@ -127,43 +133,38 @@ export function useActivityManager(
     // Store tick (advances activity timer)
     store.tick(delta)
 
-    // Mock timeline
-    if (mockActiveRef.current) {
-      mockTimerRef.current += delta
-      if (mockTimerRef.current >= mockIntervalRef.current) {
-        mockTimerRef.current = 0
-        // Vary the interval slightly for organic feel
-        mockIntervalRef.current = randRange(6, 14)
-        const event = MOCK_TIMELINE[mockIndexRef.current % MOCK_TIMELINE.length]
-        mockIndexRef.current++
-        dispatch(event)
+    if (ambientActiveRef.current) {
+      ambientTimerRef.current += delta
+      if (ambientTimerRef.current >= AMBIENT_POLL_INTERVAL) {
+        ambientTimerRef.current = 0
+        syncRealActivity()
       }
     }
-  }, [store, dispatch])
+  }, [store, syncRealActivity])
 
-  // ── Mock timeline control ───────────────────────────────────────
-  const startMockTimeline = useCallback(() => {
-    mockActiveRef.current = true
-    mockTimerRef.current = 0
-    // Fire first event after a short delay
-    mockIntervalRef.current = 3
+  // ── Ambient sync control ──────────────────────────────────────────
+  const startAmbientSync = useCallback(() => {
+    ambientActiveRef.current = true
+    ambientTimerRef.current = AMBIENT_POLL_INTERVAL // poll immediately on first tick instead of waiting a full interval
   }, [])
 
-  const stopMockTimeline = useCallback(() => {
-    mockActiveRef.current = false
+  const stopAmbientSync = useCallback(() => {
+    ambientActiveRef.current = false
   }, [])
 
-  // Auto-start mock timeline on mount
+  // Auto-start ambient sync on mount — direct /room visits with no ?from=
+  // entry context reflect real recent activity (or a genuine idle state)
+  // instead of a scripted "day of Enry working."
   useEffect(() => {
-    startMockTimeline()
-    return () => stopMockTimeline()
-  }, [startMockTimeline, stopMockTimeline])
+    startAmbientSync()
+    return () => stopAmbientSync()
+  }, [startAmbientSync, stopAmbientSync])
 
   return {
     dispatch,
     tick,
-    startMockTimeline,
-    stopMockTimeline,
+    startAmbientSync,
+    stopAmbientSync,
   }
 }
 

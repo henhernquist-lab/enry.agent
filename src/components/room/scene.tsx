@@ -116,16 +116,16 @@ export function Scene({ from, state }: SceneProps) {
 
   // ── Entry context — opened via a "See Enry" button ────────────
   // When a surface opened The Room, the worker reflects that surface's
-  // state instead of the mocked ambient timeline: stop the mock and
+  // state instead of the ambient real-activity poll: stop the poll and
   // dispatch the surface's event through the existing state machine,
   // then glide the camera onto the worker's station so you land looking
   // at the thing Enry is doing. Direct visits (no `from`) keep the
-  // ambient timeline and default framing as before.
+  // ambient sync (real activity, polled every 20s) and default framing.
   useEffect(() => {
     if (!from) return
     const entry = SURFACE_ENTRY_EVENTS[from]
     if (!entry) return
-    activityManager.stopMockTimeline()
+    activityManager.stopAmbientSync()
     const event = state === 'working' ? entry.working : entry.idle
     activityManager.dispatch(event)
 
