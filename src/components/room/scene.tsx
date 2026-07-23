@@ -54,26 +54,34 @@ export function Scene({ from, state }: SceneProps) {
   const activityManager = useActivityManager(store, walker)
 
   // ── Worker context — real data for the speech bubble / click HUD ─
-  // The homepage "Live activity" card is mock data, so the only real
-  // source for "current model" today is the usage log. Surface/state
-  // come from the entry context. No filler is fabricated downstream.
+  // Two real sources, both also used elsewhere so all surfaces agree:
+  //   - /api/usage: today's top model + request count (also backs Usage page)
+  //   - /api/activity/recent: most recent request's mode/model/recency
+  //     (also backs the homepage Live Activity widget) — the same source,
+  //     not a second one, per the "one truth across surfaces" requirement.
+  // Surface/state come from the entry context (?from=/&state=). No filler
+  // is fabricated downstream.
   const [workerInfo, setWorkerInfo] = useState<WorkerInfo>({ surface: from, state })
   useEffect(() => {
     let cancelled = false
-    fetch('/api/usage?range=today')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return
-        const top = data.breakdown?.model?.[0] as { label?: string } | undefined
-        const requests = data.summary?.requests as number | undefined
-        setWorkerInfo({
-          surface: from,
-          state,
-          topModel: top?.label,
-          modelLine: top?.label ? `${top.label} · ${requests ?? 0} req today` : undefined,
-        })
+    Promise.all([
+      fetch('/api/usage?range=today').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch('/api/activity/recent').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([usage, recent]) => {
+      if (cancelled) return
+      const top = usage?.breakdown?.model?.[0] as { label?: string } | undefined
+      const requests = usage?.summary?.requests as number | undefined
+      const recentActivityLine = recent?.at
+        ? `${recent.mode ? recent.mode[0].toUpperCase() + recent.mode.slice(1) : 'Activity'} · ${recent.modelLabel ?? 'unknown model'}`
+        : undefined
+      setWorkerInfo({
+        surface: from,
+        state,
+        topModel: top?.label,
+        modelLine: top?.label ? `${top.label} · ${requests ?? 0} req today` : undefined,
+        recentActivityLine,
       })
-      .catch(() => { /* usage endpoint down — bubble falls back to activity label */ })
+    })
     return () => { cancelled = true }
   }, [from, state])
 

@@ -37,6 +37,9 @@ export interface WorkerInfo {
   topModel?: string
   /** One-line usage summary, e.g. "DeepSeek V4 Pro · 34 req today". */
   modelLine?: string
+  /** From the shared /api/activity/recent source — same feed as the homepage
+   *  Live Activity widget, e.g. "Drive · DeepSeek V4 Pro · 2m ago". */
+  recentActivityLine?: string
 }
 
 interface CharacterControllerProps {
@@ -82,6 +85,7 @@ export function CharacterController({
       f.push(`${info.surface} session · ${info.state === 'working' ? 'active' : 'idle'}`)
     }
     if (info?.modelLine) f.push(info.modelLine)
+    if (info?.recentActivityLine) f.push(info.recentActivityLine)
     return f.length > 0 ? f : ['Idle']
   }, [label, info])
 
