@@ -58,6 +58,15 @@ export const COLORS = {
   keyboardLed: '#3a9e60',
   deskLamp: '#2e3337',
   deskLampHead: '#3b4145',
+
+  // Props
+  rug: '#2b342e',
+  plantPot: '#33393d',
+  plantFoliage: '#3f7a52',
+  shelf: '#333a3f',
+  shelfItem: '#42494f',
+  posterFrame: '#2c3236',
+  posterArt: '#16281e',
 } as const
 
 /** Room dimensions in world units. */
@@ -68,12 +77,12 @@ export const ROOM_DIMS = {
   wallThickness: 0.2,
 } as const
 
-/** Camera defaults — third-person isometric. */
+/** Camera defaults — third-person isometric, framed on the workstation. */
 export const CAMERA_DEFAULTS = {
-  position: [10, 8, 10] as Position,
-  target: [0, 1.5, 0] as Position,
-  minDistance: 4,
-  maxDistance: 25,
+  position: [6.2, 4.6, 6.6] as Position,
+  target: [0, 1.1, -0.6] as Position,
+  minDistance: 3,
+  maxDistance: 13,
   maxPolarAngle: Math.PI / 2.1,
   minPolarAngle: Math.PI / 6,
   /** Lerp factor for smooth camera transitions. */
@@ -275,7 +284,7 @@ export const OFFICE_ROOM: RoomDefinition = {
     },
   ],
   characterSpawn: [0, 0, -0.2],
-  ambientIntensity: 0.6,
+  ambientIntensity: 0.7,
   accentColor: COLORS.primary,
   stations: STATIONS,
 }
