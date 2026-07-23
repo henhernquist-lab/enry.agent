@@ -6,11 +6,11 @@ import { AdaptiveDpr, AdaptiveEvents, PerformanceMonitor } from '@react-three/dr
 import { Lighting } from './lighting'
 import { CameraRig, type CameraHandle } from './camera'
 import { Furniture } from './furniture'
-import { CharacterController } from './character'
+import { CharacterController, type WorkerInfo } from './character'
 import { LoadingScreen } from './loading-screen'
 import { RoomOverlay } from './room-overlay'
 import { EnvironmentLife } from './environment-life'
-import { useRoomState } from './room-state'
+import { useRoomState, useActivitySnapshot } from './room-state'
 import { useActivityManager } from './activity-manager'
 import { useWalkingController } from './walking-controller'
 import { OFFICE_ROOM, SURFACE_ENTRY_EVENTS, EVENT_ACTIVITY_MAP } from './constants'
@@ -52,6 +52,47 @@ export function Scene({ from, state }: SceneProps) {
   const store = useRoomState()
   const walker = useWalkingController()
   const activityManager = useActivityManager(store, walker)
+
+  // ── Worker context — real data for the speech bubble / click HUD ─
+  // The homepage "Live activity" card is mock data, so the only real
+  // source for "current model" today is the usage log. Surface/state
+  // come from the entry context. No filler is fabricated downstream.
+  const [workerInfo, setWorkerInfo] = useState<WorkerInfo>({ surface: from, state })
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/usage?range=today')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        const top = data.breakdown?.model?.[0] as { label?: string } | undefined
+        const requests = data.summary?.requests as number | undefined
+        setWorkerInfo({
+          surface: from,
+          state,
+          topModel: top?.label,
+          modelLine: top?.label ? `${top.label} · ${requests ?? 0} req today` : undefined,
+        })
+      })
+      .catch(() => { /* usage endpoint down — bubble falls back to activity label */ })
+    return () => { cancelled = true }
+  }, [from, state])
+
+  // ── Worker mini-HUD (opened by clicking the character) ─────────
+  // Screen-space overlay rather than an in-canvas drei <Html> — a
+  // conditionally-mounted Html fails to portal children after the
+  // initial mount, and a fixed panel is more readable regardless.
+  const [hudOpen, setHudOpen] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const { label: activityLabel } = useActivitySnapshot(store)
+  useEffect(() => {
+    if (!hudOpen) return
+    const id = setInterval(() => setElapsed(store.character.activityElapsed), 1000)
+    return () => clearInterval(id)
+  }, [hudOpen, store])
+  const handleCharacterClick = useCallback(() => {
+    setElapsed(store.character.activityElapsed)
+    setHudOpen((v) => !v)
+  }, [store])
 
   // ── Camera controls ───────────────────────────────────────────
   const handleReset = useCallback(() => {
@@ -146,6 +187,8 @@ export function Scene({ from, state }: SceneProps) {
             store={store}
             walker={walker}
             spawnPosition={OFFICE_ROOM.characterSpawn}
+            info={workerInfo}
+            onCharacterClick={handleCharacterClick}
           />
 
           {/* Activity manager tick — drives the character's behavior */}
@@ -161,6 +204,16 @@ export function Scene({ from, state }: SceneProps) {
           ))}
         </Suspense>
       </Canvas>
+
+      {/* Worker mini-HUD — model / task / elapsed, all real context */}
+      {hudOpen && (
+        <WorkerHudPanel
+          info={workerInfo}
+          activityLabel={activityLabel || 'idle'}
+          elapsed={elapsed}
+          onClose={() => setHudOpen(false)}
+        />
+      )}
 
       {/* HTML overlay — UI controls on top of the 3D canvas */}
       <RoomOverlay
@@ -212,4 +265,53 @@ function DeskClickTarget({
 /** No-op component that just renders children — keeps Suspense happy. */
 function SceneReady() {
   return null
+}
+
+// ── Worker mini-HUD panel ──────────────────────────────────────────
+
+function formatElapsed(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  const m = Math.floor(s / 60)
+  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`
+}
+
+function WorkerHudPanel({
+  info,
+  activityLabel,
+  elapsed,
+  onClose,
+}: {
+  info?: WorkerInfo
+  activityLabel: string
+  elapsed: number
+  onClose: () => void
+}) {
+  const task = info?.surface
+    ? `${info.surface} · ${activityLabel}`
+    : `ambient · ${activityLabel}`
+
+  return (
+    <div className="absolute right-6 top-20 z-20 min-w-[210px] rounded-lg border border-primary/30 bg-surface-secondary/90 p-3 font-mono text-[11px] backdrop-blur">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[9px] uppercase tracking-widest text-primary">Enry</span>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="px-1 text-xs leading-none text-muted-foreground transition-colors hover:text-foreground"
+        >
+          ×
+        </button>
+      </div>
+      {[
+        ['Model', info?.topModel ?? '—'],
+        ['Task', task],
+        ['Elapsed', formatElapsed(elapsed)],
+      ].map(([k, v]) => (
+        <div key={k} className="flex items-center justify-between gap-4 py-0.5">
+          <span className="text-muted-foreground">{k}</span>
+          <span className="max-w-[150px] truncate text-right text-foreground">{v}</span>
+        </div>
+      ))}
+    </div>
+  )
 }

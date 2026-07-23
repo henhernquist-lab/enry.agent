@@ -33,6 +33,7 @@ export type Activity =
   | 'waiting'
   | 'celebrating'
   | 'lookingAround'
+  | 'error'
 
 /** Configuration for each activity: duration range, label, station, posture. */
 export interface ActivityConfig {
@@ -70,13 +71,16 @@ export type RoomEventType =
   | 'drive.planning'
   | 'drive.testing'
   | 'drive.idle'
+  | 'drive.error'
   | 'chat.responding'
   | 'chat.thinking'
   | 'cruise.scanning'
   | 'cruise.fixing'
+  | 'cruise.error'
   | 'lab.evolving'
   | 'memory.storing'
   | 'system.idle'
+  | 'system.error'
 
 export interface RoomEvent {
   type: RoomEventType

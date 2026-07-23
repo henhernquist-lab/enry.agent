@@ -144,6 +144,29 @@ export const ACTIVITY_CONFIG: Record<Activity, ActivityConfig> = {
     label: '',
     standing: true,
   },
+  error: {
+    duration: { min: 10, max: 15 },
+    label: 'Stuck',
+    station: 'desk',
+    standing: false,
+  },
+}
+
+/**
+ * Visor emissive color per activity — the character's "eye" reads its
+ * state at a glance: green = idle/ready, blue-white = working,
+ * amber = error (the material also pulse-flashes toward red in error).
+ */
+export const VISOR_COLORS: Record<Activity, string> = {
+  idle: '#3a9e60',
+  waiting: '#3a9e60',
+  lookingAround: '#3a9e60',
+  celebrating: '#3a9e60',
+  walking: '#3a9e60',
+  typing: '#bcd8ff',
+  thinking: '#bcd8ff',
+  inspecting: '#bcd8ff',
+  error: '#ff9a3d',
 }
 
 /** Maps room events to activities. */
@@ -159,6 +182,9 @@ export const EVENT_ACTIVITY_MAP: Record<string, { activity: Activity; station?: 
   'lab.evolving': { activity: 'thinking', station: 'whiteboard' },
   'memory.storing': { activity: 'celebrating', station: 'desk' },
   'system.idle': { activity: 'idle', station: 'desk' },
+  'drive.error': { activity: 'error', station: 'desk' },
+  'cruise.error': { activity: 'error', station: 'desk' },
+  'system.error': { activity: 'error', station: 'desk' },
 }
 
 /**

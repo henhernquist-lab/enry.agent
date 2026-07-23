@@ -145,9 +145,10 @@ export function getActivityPose(activity: Activity, time: number): ActivityPose 
         rightArmX: -0.6 - t,
         leftArmZ: 0.1,
         rightArmZ: -0.1,
-        bodyY: -0.15,
+        // Micro-bob layered on the keystroke rhythm — reads as engaged work
+        bodyY: -0.15 + Math.sin(time * 1.7) * 0.008,
         legsVisible: false,
-        bodyLeanX: 0.02,
+        bodyLeanX: 0.03,
       }
     }
 
@@ -236,19 +237,42 @@ export function getActivityPose(activity: Activity, time: number): ActivityPose 
     }
 
     case 'idle': {
-      // Sitting at desk, relaxed, subtle breathing + occasional head turn
+      // Sitting at desk, relaxed: slow sway, occasional head tilt, arms
+      // drifting at rest — visibly "at ease" next to the tighter work poses
       const look = Math.sin(time * 0.15) * 0.06
+      // Occasional tilt: only the top of a slow sine crosses the threshold,
+      // so the head dips every ~30s and the pose lerp smooths the edges
+      const tilt = Math.max(0, Math.sin(time * 0.21) - 0.85) * 0.9
+      const armDrift = Math.sin(time * 0.35) * 0.05
       return {
         ...NEUTRAL_POSE,
         headY: look,
-        headX: 0,
-        leftArmX: 0.1,
-        rightArmX: 0.1,
-        leftArmZ: 0.05,
-        rightArmZ: -0.05,
+        headX: tilt,
+        leftArmX: 0.12 + armDrift,
+        rightArmX: 0.12 - armDrift,
+        leftArmZ: 0.06 + Math.sin(time * 0.5) * 0.02,
+        rightArmZ: -0.06 - Math.sin(time * 0.5) * 0.02,
         bodyY: -0.15,
         legsVisible: false,
-        bodyLeanX: 0,
+        bodyLeanX: Math.sin(time * 0.24) * 0.015,
+      }
+    }
+
+    case 'error': {
+      // Stuck — slumped at the station: head hung low with a slow shake,
+      // arms drooped out, hunched forward. Unmistakably "something's wrong".
+      const shake = Math.sin(time * 2.4) * 0.06
+      return {
+        ...NEUTRAL_POSE,
+        headY: shake,
+        headX: 0.42,
+        leftArmX: 0.3,
+        rightArmX: 0.3,
+        leftArmZ: 0.22,
+        rightArmZ: -0.22,
+        bodyY: -0.19,
+        legsVisible: false,
+        bodyLeanX: 0.09,
       }
     }
 
