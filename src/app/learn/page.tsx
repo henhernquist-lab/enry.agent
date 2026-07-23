@@ -325,6 +325,27 @@ function LearnPageContent() {
     })
   }
 
+  const TEMPLATES: Record<string, string> = {
+    teach: 'teach me ()',
+    probe: 'probe ()',
+    gap: 'gap ()',
+    defend: 'defend ()',
+    retire: 'retire ()',
+  }
+
+  const insertTemplate = (verb: string) => {
+    const tpl = TEMPLATES[verb] ?? `${verb} ()`
+    setInput(tpl)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) {
+        el.focus()
+        const cursor = tpl.indexOf('()') + 1
+        el.setSelectionRange(cursor, cursor)
+      }
+    })
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -531,7 +552,7 @@ function LearnPageContent() {
                   return (
                     <button
                       key={v}
-                      onClick={() => exec(v, '', v)}
+                      onClick={() => insertTemplate(v)}
                       disabled={running}
                       className={`flex items-center gap-1 rounded border px-2.5 py-1.5 font-mono text-[10px] capitalize transition-all disabled:opacity-40 ${
                         isActive
