@@ -13,13 +13,6 @@ import {
   type Conversation,
   type ActivityEvent,
 } from '@/lib/chat-history'
-import {
-  startAllSchedulers,
-  stopAllSchedulers,
-  setOnAutomationRun,
-  type Automation,
-  type AutomationRun,
-} from '@/lib/automations'
 import { QuickNotesWidget } from '@/components/home/quick-notes-widget'
 import { ActivityChart } from '@/components/home/activity-chart'
 import { TerminalLauncher } from '@/components/home/terminal-launcher'
@@ -47,18 +40,6 @@ export default function ChatPage() {
   const [currentModel, setCurrentModel] = useState('deepseek/deepseek-v4-pro')
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
   const responseStartRef = useRef<number | null>(null)
-
-  // ─── Automation scheduler lifecycle ─────────────────────────
-  useEffect(() => {
-    setOnAutomationRun((_automation: Automation, _run: AutomationRun) => {})
-    startAllSchedulers()
-    return () => stopAllSchedulers()
-  }, [])
-
-  const handleAutomationsChange = useCallback(() => {
-    stopAllSchedulers()
-    startAllSchedulers()
-  }, [])
 
   // ─── Load conversations + profile when session is authenticated ───
   // Clears state first so a freshly-logged-in user never sees another
@@ -194,7 +175,6 @@ export default function ChatPage() {
           onNewChat={handleNewChat}
           onSelectConversation={handleSelectConversation}
           onDeleteConversation={handleDeleteConversation}
-          onAutomationsChange={handleAutomationsChange}
         />          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <CenterPanel
             key={activeId}

@@ -22,7 +22,6 @@ import {
 } from 'lucide-react'
 import { EnryLogo } from './enry-logo'
 import { StatusIndicator } from './status-indicator'
-import { BuiltinAutomationsLauncher } from './automations/builtin-launcher'
 import type { Conversation } from '@/lib/chat-history'
 
 interface LeftSidebarProps {
@@ -32,7 +31,6 @@ interface LeftSidebarProps {
   onNewChat: () => void
   onSelectConversation: (id: string) => void
   onDeleteConversation: (id: string) => void
-  onAutomationsChange?: () => void
 }
 
 interface NavItem {
@@ -93,7 +91,6 @@ export function LeftSidebar({
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
-  onAutomationsChange,
 }: LeftSidebarProps) {
   const pathname = usePathname()
 
@@ -117,13 +114,6 @@ export function LeftSidebar({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4 scrollbar-hidden">
-        {/* Builtin automation toggles */}
-        <div className="space-y-2">
-          <BuiltinAutomationsLauncher />
-        </div>
-
-        <div className="border-t border-border" />
-
         {/* Nav sections */}
         <nav className="space-y-5">
           {SECTIONS.map((section) => (
