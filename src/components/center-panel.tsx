@@ -42,6 +42,7 @@ import { SkillBanner } from './skill-banner'
 import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
 import { ChatToolSteps } from './chat-tool-steps'
+import { SkillFeedbackBar } from './skill-feedback-bar'
 import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS, filterSkillsByDomain } from '@/lib/skills/registry'
 import { listModels } from '@/lib/nim'
@@ -148,6 +149,10 @@ const SUGGESTION_CARDS = [
 // read by the component's useEffect after each response settles.
 let _pendingCompaction: { compacted: boolean; summary: string | null } | null = null
 
+// Module-level skill invocation ID — written by the transport's custom fetch
+// when a skill response includes the header, read by the component's useEffect
+let _pendingSkillInvocationId: string | null = null
+
 const transport = new DefaultChatTransport({
   api: '/api/chat',
   fetch: async (url, options) => {
@@ -156,6 +161,10 @@ const transport = new DefaultChatTransport({
     if (compacted === 'true') {
       const summary = response.headers.get('X-Context-Compacted-Summary')
       _pendingCompaction = { compacted: true, summary: summary ? decodeURIComponent(summary) : null }
+    }
+    const skillInvocationId = response.headers.get('X-Skill-Invocation-Id')
+    if (skillInvocationId) {
+      _pendingSkillInvocationId = skillInvocationId
     }
     return response
   },
@@ -335,7 +344,16 @@ export function CenterPanel({
         setCompactionSummary(pending.summary)
       }, 0)
     }
-  }, [status])
+    // Sync skill invocation ID for the latest assistant message
+    if (status === 'ready' && _pendingSkillInvocationId) {
+      const invocationId = _pendingSkillInvocationId
+      _pendingSkillInvocationId = null
+      setSkillInvocationIds((prev) => ({
+        ...prev,
+        [messages.length - 1]: invocationId, // Last message is the assistant response
+      }))
+    }
+  }, [status, messages.length])
 
   const [input, setInput] = useState('')
   // ─── Skill mode ───────────────────────────────────────────────
@@ -351,6 +369,7 @@ export function CenterPanel({
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
   const [uploadResult, setUploadResult] = useState<AttachmentMeta | null>(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
+  const [skillInvocationIds, setSkillInvocationIds] = useState<Record<number, string>>({})
   const modelDropdownRef = useRef<HTMLDivElement>(null)
   const effortDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -901,6 +920,14 @@ export function CenterPanel({
                           <RotateCcw className="h-3 w-3 text-muted-foreground" />
                         </button>
                       </div>
+                    )}
+                    {/* Skill feedback bar for skill invocations with invocationId */}
+                    {message.role === 'assistant' && inSkillRange && skillInvocationIds[index] && (
+                      <SkillFeedbackBar
+                        key={`feedback-${message.id}`}
+                        invocationId={skillInvocationIds[index]}
+                        skillName={activeSkill?.name}
+                      />
                     )}
 
 

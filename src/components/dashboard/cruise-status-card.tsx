@@ -40,7 +40,7 @@ export async function CruiseStatusCard() {
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Cruise</h3>
         <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-          {repos.length} repo{repos.length !== 1 ? 's' : ''}
+          {scheduled.length} repo{scheduled.length !== 1 ? 's' : ''}
         </span>
       </div>
 
