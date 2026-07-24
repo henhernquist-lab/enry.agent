@@ -96,6 +96,7 @@ const DRIVE_SKILL_SLUGS = [
   'show-your-work', 'test-first', 'slow-down', 'prove-it-works',
   'first-principles', 'adversarial-coding', 'two-model-consensus',
   'codebase-grounded',
+  'monid',
 ]
 const DRIVE_SKILLS = ALL_SKILLS.filter((s) => DRIVE_SKILL_SLUGS.includes(s.slug))
 
@@ -680,6 +681,8 @@ export default function AgentPage() {
           focus_mode: focusMode,
           reasoning_depth: opts?.reasoningDepthOverride ?? reasoningDepth,
           proceed: opts?.proceed ?? false,
+          // Cruise auto-enables Monid for every run (no user present to toggle).
+          monid_enabled: cruiseMode === 'cruise',
           ...(opts?.skillSlugs && opts.skillSlugs.length > 0 ? { skill_slugs: opts.skillSlugs } : {}),
           ...(opts?.skillSlug && !opts?.skillSlugs ? { skill_slug: opts.skillSlug } : {}),
         }
@@ -995,6 +998,13 @@ USER REQUEST: ${userText}`
       instruction = userText + CLARIFY_RULE
     }
 
+    // Cruise mode: Monid is auto-enabled for every run. Append availability
+    // note so the coding agent knows it can call monid_api for external API
+    // discovery when the built-in tools (Tavily, GitHub, etc.) aren't enough.
+    const cruiseMonidNote = cruiseMode === 'cruise'
+      ? '\n\nAVAILABLE TOOL: monid_api — discover and call third-party APIs at runtime. When a request needs data or a service not covered by the built-in tools (Tavily web search, GitHub file ops, Composio connectors), call monid_api with a natural-language description. Monid finds and executes the right endpoint automatically.'
+      : ''
+
     setLines((l) => [
       ...l,
       { kind: 'prompt', text },
@@ -1002,7 +1012,7 @@ USER REQUEST: ${userText}`
     ])
     setInput('')
     beginSteps({ key: 'analyze', label: 'Analyzing request', icon: 'analyze', state: 'active' })
-    exec(instruction, {
+    exec(instruction + cruiseMonidNote, {
       skillSlugs: slugsForServer ?? (skillToUse ? [skillToUse.slug] : undefined),
       modelOverride, effortOverride, reasoningDepthOverride,
     })
