@@ -47,6 +47,7 @@ import { firstPrinciples } from './definitions/first-principles'
 import { adversarialCoding } from './definitions/adversarial-coding'
 import { twoModelConsensus } from './definitions/two-model-consensus'
 import { codebaseGrounded } from './definitions/codebase-grounded'
+import { monid } from './definitions/monid'
 
 // The registry. Adding a skill = import its definition and add it to this
 // array. Everything else (invocation, banner, round-tracking, exit, the
@@ -88,6 +89,7 @@ export const SKILLS: SkillDefinition[] = [
   adversarialCoding,
   twoModelConsensus,
   codebaseGrounded,
+  monid,
   // Chat skills (homepage)
   devilAdvocate,
   steelmanDrill,
