@@ -40,6 +40,10 @@ export interface WorkerInfo {
   /** From the shared /api/activity/recent source — same feed as the homepage
    *  Live Activity widget, e.g. "Drive · DeepSeek V4 Pro · 2m ago". */
   recentActivityLine?: string
+  /** Real reason from the most recent failure (Cruise run error text), shown
+   *  in the speech bubble during the error state. Undefined when there's no
+   *  failure or the failed run recorded no reason — never a fabricated string. */
+  errorReason?: string
 }
 
 interface CharacterControllerProps {
@@ -79,6 +83,14 @@ export function CharacterController({
 
   // ── Speech-bubble fragments — real state only, no filler ────────
   const fragments = useMemo(() => {
+    // In the error state the bubble shows the real failure reason (if the
+    // failed run recorded one) alongside the "Stuck" label — nothing else,
+    // and never a fabricated detail when no reason exists.
+    if (activity === 'error') {
+      const f = [label || 'Stuck']
+      if (info?.errorReason) f.push(info.errorReason)
+      return f
+    }
     const f: string[] = []
     if (label) f.push(label)
     if (info?.surface) {
@@ -87,7 +99,7 @@ export function CharacterController({
     if (info?.modelLine) f.push(info.modelLine)
     if (info?.recentActivityLine) f.push(info.recentActivityLine)
     return f.length > 0 ? f : ['Idle']
-  }, [label, info])
+  }, [label, info, activity])
 
   // Render side uses modulo, so a stale index is always safe when the
   // fragment list shrinks — no sync reset needed.

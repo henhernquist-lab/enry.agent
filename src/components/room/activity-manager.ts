@@ -116,8 +116,15 @@ export function useActivityManager(
   const syncRealActivity = useCallback(() => {
     fetch('/api/activity/recent')
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: { mode: string | null; isActive: boolean } | null) => {
+      .then((data: { mode: string | null; isActive: boolean; error?: { source: string } | null } | null) => {
         if (!data) return
+        // A real recent failure wins over normal activity — flip to the error
+        // state (amber/red visor + stuck pose). The endpoint already clears
+        // this once a later success arrives, so it can't stick forever.
+        if (data.error) {
+          dispatch('cruise.error')
+          return
+        }
         dispatch(mapActivityToEvent(data.mode, data.isActive))
       })
       .catch(() => { /* request failed — stay in current state, never fall back to fake data */ })

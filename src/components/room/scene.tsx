@@ -64,25 +64,37 @@ export function Scene({ from, state }: SceneProps) {
   const [workerInfo, setWorkerInfo] = useState<WorkerInfo>({ surface: from, state })
   useEffect(() => {
     let cancelled = false
-    Promise.all([
-      fetch('/api/usage?range=today').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      fetch('/api/activity/recent').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-    ]).then(([usage, recent]) => {
-      if (cancelled) return
-      const top = usage?.breakdown?.model?.[0] as { label?: string } | undefined
-      const requests = usage?.summary?.requests as number | undefined
-      const recentActivityLine = recent?.at
-        ? `${recent.mode ? recent.mode[0].toUpperCase() + recent.mode.slice(1) : 'Activity'} · ${recent.modelLabel ?? 'unknown model'}`
-        : undefined
-      setWorkerInfo({
-        surface: from,
-        state,
-        topModel: top?.label,
-        modelLine: top?.label ? `${top.label} · ${requests ?? 0} req today` : undefined,
-        recentActivityLine,
+    const load = () => {
+      Promise.all([
+        fetch('/api/usage?range=today').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('/api/activity/recent').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]).then(([usage, recent]) => {
+        if (cancelled) return
+        const top = usage?.breakdown?.model?.[0] as { label?: string } | undefined
+        const requests = usage?.summary?.requests as number | undefined
+        const recentActivityLine = recent?.at
+          ? `${recent.mode ? recent.mode[0].toUpperCase() + recent.mode.slice(1) : 'Activity'} · ${recent.modelLabel ?? 'unknown model'}`
+          : undefined
+        // Real failure reason from the shared endpoint — same source the
+        // ambient sync uses to flip the visor/pose to the error state, so the
+        // bubble text and the pose can't disagree. Empty reason → undefined.
+        const err = recent?.error as { reason?: string } | null | undefined
+        const errorReason = err?.reason?.trim() ? err.reason.trim() : undefined
+        setWorkerInfo({
+          surface: from,
+          state,
+          topModel: top?.label,
+          modelLine: top?.label ? `${top.label} · ${requests ?? 0} req today` : undefined,
+          recentActivityLine,
+          errorReason,
+        })
       })
-    })
-    return () => { cancelled = true }
+    }
+    load()
+    // Poll so the bubble/HUD reflect current state (incl. a cleared error),
+    // matching the ambient sync's cadence. Cheap: one shared endpoint.
+    const id = setInterval(load, 20000)
+    return () => { cancelled = true; clearInterval(id) }
   }, [from, state])
 
   // ── Worker mini-HUD (opened by clicking the character) ─────────
