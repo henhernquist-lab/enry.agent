@@ -1,15 +1,24 @@
 import { generateText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 
-// Qwen 3.5 397B — one of only two NIM models with native image input
-// (confirmed against docs/model-selection-guide.md); the other is MiniMax M3.
-const VISION_MODEL = 'qwen/qwen3.5-397b-a17b'
+// Was qwen/qwen3.5-397b-a17b — confirmed dead on NIM's backend: even a
+// plain text completion 404s with "Specified function in account ... is
+// not found" (verified directly against /v1/chat/completions), despite
+// the model still being listed by GET /v1/models. That's what actually
+// broke every image upload — describeImage() runs on every upload
+// regardless of which chat model the user has selected, so the failure
+// was 100% reproducible and had nothing to do with file size or storage.
+//
+// nvidia/nemotron-nano-12b-v2-vl confirmed live and vision-capable via a
+// real end-to-end test (correctly identified the color of a test image),
+// using the existing NVIDIA_API_KEY — no new env var needed.
+const VISION_MODEL = 'nvidia/nemotron-nano-12b-v2-vl'
 
 export async function describeImage(imageUrl: string, mediaType: string): Promise<{ description: string | null; error: string | null }> {
   try {
     const client = createOpenAI({
       baseURL: 'https://integrate.api.nvidia.com/v1',
-      apiKey: process.env.QWEN_API_KEY ?? '',
+      apiKey: process.env.NVIDIA_API_KEY ?? '',
     })
 
     const { text } = await generateText({
