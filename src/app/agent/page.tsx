@@ -33,7 +33,7 @@ interface RepoOption {
 type ChatLine =
   | { kind: 'prompt'; text: string }
   | { kind: 'system'; text: string }
-  | { kind: 'thinking'; text: string }
+  | { kind: 'thinking' }
   | { kind: 'plan'; text: string; targetFile: string; isNewFile: boolean } // plan-first phase 1 plan
   | { kind: 'proposal'; file: string; diff: string; isNewFile: boolean }
   | { kind: 'applied'; text: string }
@@ -53,6 +53,10 @@ type ChatLine =
   // place as Drive advances (classify -> reason -> write -> propose, or
   // apply/commit/PR). See src/components/drive-steps.tsx.
   | { kind: 'steps'; id: string; steps: DriveStep[] }
+  // Thinking indicator — shown while a skill invocation is generating before
+  // the first response content arrives. Removed automatically when any real
+  // content line appears.
+  | { kind: 'thinking' }
 
 // Manual vs Auto — who decides model, Think, effort, and skill for a request.
 //   Manual: the user's explicit picker/toggle values are used exactly as set.
@@ -710,6 +714,9 @@ export default function AgentPage() {
         setCurrentBranch(data.current_branch ?? null)
         setHasPendingDiff(!!data.has_pending_diff)
 
+        // Clear the thinking indicator now that real content is arriving.
+        setLines((l) => l.filter((line) => line.kind !== 'thinking'))
+
         // Auto-mode NL edits: the server classifies the target file and stops
         // there (see /api/terminal/exec's dispatch()) so classification and
         // full-file generation get separate maxDuration budgets instead of
@@ -1009,6 +1016,12 @@ USER REQUEST: ${userText}`
       ...l,
       { kind: 'prompt', text },
       ...(autoChoiceNote ? [{ kind: 'system' as const, text: autoChoiceNote }] : []),
+      // Show thinking indicator while the skill generates — cleared when first
+      // response content arrives in exec().
+      ...(skillsToUse.length > 0 || skillToUse ? [{ kind: 'thinking' as const }] : []),
+      ...(cruiseMode === 'cruise' && (skillsToUse.length > 0 || skillToUse)
+        ? [{ kind: 'system' as const, text: 'Cruise auto-enabled Monid API discovery for this run.' }]
+        : []),
     ])
     setInput('')
     beginSteps({ key: 'analyze', label: 'Analyzing request', icon: 'analyze', state: 'active' })
@@ -1374,6 +1387,19 @@ USER REQUEST: ${userText}`
                   )
                 }
 
+                if (line.kind === 'thinking') {
+                  return (
+                    <div key={i} className="mb-6 overflow-hidden rounded border border-muted-foreground/10 bg-surface-secondary/30 border-l-[3px] border-l-muted-foreground/20">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5">
+                        <Brain className="h-3 w-3 flex-shrink-0 animate-pulse text-muted-foreground/60" />
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50">
+                          Thinking…
+                        </span>
+                        <span className="ml-0.5 inline-block h-[10px] w-[4px] animate-pulse bg-muted-foreground/30 align-[-1px]" />
+                      </div>
+                    </div>
+                  )
+                }
                 if (line.kind === 'question') {
                   return (
                     <motion.div key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="mb-5">
@@ -1471,19 +1497,6 @@ USER REQUEST: ${userText}`
                     </div>
                   )
                 }
-
-                if (line.kind === 'thinking') {
-                  return (
-                    <div key={i} className="mb-3">
-                      <button onClick={() => setThinkingCollapsed((v) => !v)}
-                        className="mb-1 flex items-center gap-1 font-mono text-[10px] text-muted-foreground/50 transition-colors hover:text-muted-foreground">
-                        <ChevronDown className={`h-3 w-3 transition-transform ${thinkingCollapsed ? '-rotate-90' : ''}`} /> Thinking
-                      </button>
-                      {!thinkingCollapsed && <p className="border-l-2 border-border pl-3 font-mono text-[11px] leading-relaxed text-muted-foreground/50">{line.text}</p>}
-                    </div>
-                  )
-                }
-
                 // Plan response (plan-first phase 1)
                 if (line.kind === 'plan') {
                   return (
