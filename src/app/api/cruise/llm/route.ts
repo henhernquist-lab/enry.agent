@@ -29,7 +29,7 @@ const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 const MODEL_CONFIG = {
   'deepseek/deepseek-v4-pro': { baseURL: OPENROUTER_BASE, getApiKey: () => process.env.DEEPSEEK_API_KEY ?? '' },
   'minimaxai/minimax-m3':           { baseURL: NIM_BASE, getApiKey: () => process.env.MINIMAX_API_KEY ?? '' },
-  'qwen/qwen3.5-397b-a17b':      { baseURL: NIM_BASE, getApiKey: () => process.env.QWEN_API_KEY ?? '' },
+  'qwen/qwen3-coder-480b-a35b-instruct':      { baseURL: NIM_BASE, getApiKey: () => process.env.QWEN_API_KEY ?? '' },
   'z-ai/glm-5.2':                { baseURL: NIM_BASE, getApiKey: () => process.env.GLM_API_KEY ?? '' },
 } as const
 

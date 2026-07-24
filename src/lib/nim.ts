@@ -40,18 +40,21 @@ export const MODEL_LIST: ModelMeta[] = [
     id: 'minimaxai/minimax-m3',
     label: 'MiniMax M3',
     company: 'NVIDIA NIM',
-    description: 'Fast and capable. Drive-only.',
+    description: 'Fast and capable. Drive-only. (Still live on NIM catalog — M2.7 not found.)',
     scopes: ['drive'],
     defaultEffort: 'medium',
     supportsVision: true,
   },
   {
-    id: 'qwen/qwen3.5-397b-a17b',
-    label: 'Qwen 3.5',
+    // Replaces qwen/qwen3.5-397b-a17b — deprecated/retired by NIM as of
+    // July 27, 2026. Qwen3 Coder 480B is the current coding-tuned model on
+    // NIM, live and confirmed working.
+    id: 'qwen/qwen3-coder-480b-a35b-instruct',
+    label: 'Qwen3 Coder',
     company: 'NVIDIA NIM',
-    description: 'Great for analysis.',
+    description: 'Coding-tuned 480B. Replaces deprecated Qwen 3.5 397B.',
     scopes: ['chat', 'drive'],
-    supportsVision: true,
+    defaultEffort: 'medium',
     supportsReasoning: true,
   },
   {
@@ -108,6 +111,17 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['drive'], // ← intentionally NOT in 'chat' or 'lite'
     defaultEffort: 'medium',
   },
+  {
+    // xAI Grok — OpenAI-compatible endpoint. Model ID "grok-4.5" is the
+    // current flagship per docs.x.ai. Drive-only: strong coding/reasoning
+    // model suitable for agentic work. Chat scope can be added later.
+    id: 'grok-4.5',
+    label: 'Grok 4.5',
+    company: 'xAI',
+    description: 'xAI flagship. Strong reasoning. Drive-only.',
+    scopes: ['drive'],
+    defaultEffort: 'medium',
+  },
 ]
 
 // Default chat model — falls back here if a request supplies an unknown id.
@@ -134,8 +148,8 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   // OpenRouter key was being sent to NIM and correctly rejected (401).
   'deepseek/deepseek-v4-pro':          { baseURL: OPENROUTER_BASE, getApiKey: () => process.env.DEEPSEEK_API_KEY ?? '' },
   // NIM-hosted models share the endpoint + apiKey lookup.
-  'minimaxai/minimax-m3':                 { baseURL: NIM_BASE, getApiKey: () => process.env.MINIMAX_API_KEY ?? '' },
-  'qwen/qwen3.5-397b-a17b':            { baseURL: NIM_BASE, getApiKey: () => process.env.QWEN_API_KEY ?? '' },
+  'minimaxai/minimax-m3':                        { baseURL: NIM_BASE, getApiKey: () => process.env.MINIMAX_API_KEY ?? '' },
+  'qwen/qwen3-coder-480b-a35b-instruct':        { baseURL: NIM_BASE, getApiKey: () => process.env.QWEN_API_KEY ?? '' },
   'z-ai/glm-5.2':                      { baseURL: NIM_BASE, getApiKey: () => process.env.GLM_API_KEY ?? '' },
   'nvidia/nemotron-3-ultra-550b-a55b': { baseURL: NIM_BASE, getApiKey: () => process.env.NVIDIA_API_KEY ?? '' },
   'moonshotai/kimi-k2-instruct':        { baseURL: NIM_BASE, getApiKey: () => process.env.MOONSHOT_API_KEY ?? process.env.NVIDIA_API_KEY ?? '' },
@@ -152,6 +166,8 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   'gpt-4o':                            { baseURL: 'https://models.inference.ai.azure.com',                getApiKey: () => process.env.GITHUB_MODELS_API_KEY ?? process.env.GITHUB_TOKEN ?? '' },
   // Moonshot Kimi K2.7 Code via OpenRouter.
   'moonshotai/kimi-k2.7-code':         { baseURL: OPENROUTER_BASE,                      getApiKey: () => process.env.OPENROUTER_API_KEY ?? '' },
+  // xAI Grok — OpenAI-compatible at api.x.ai/v1. Uses XAI_API_KEY.
+  'grok-4.5':                          { baseURL: 'https://api.x.ai/v1',                getApiKey: () => process.env.XAI_API_KEY ?? '' },
 }
 
 // ─── Lookup helpers (used by pickers + server routes) ──────────────

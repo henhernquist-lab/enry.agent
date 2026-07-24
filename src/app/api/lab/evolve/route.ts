@@ -12,7 +12,7 @@ export const maxDuration = 120
 const EVOLVE_MODELS = [
   { id: 'deepseek/deepseek-v4-pro',    label: 'DeepSeek V4 Pro' },
   { id: 'minimaxai/minimax-m3',              label: 'MiniMax M3' },
-  { id: 'qwen/qwen3.5-397b-a17b',          label: 'Qwen 3.5 397B' },
+  { id: 'qwen/qwen3-coder-480b-a35b-instruct', label: 'Qwen3 Coder' },
 ] as const
 
 const SYNTHESIS_MODEL = 'deepseek/deepseek-v4-pro'

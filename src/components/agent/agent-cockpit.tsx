@@ -16,7 +16,7 @@ interface RepoOption { full_name: string; default_branch: string; private: boole
 const MODELS = [
   { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro', hint: 'strongest · complex work' },
   { id: 'minimaxai/minimax-m3',          label: 'MiniMax M3',       hint: 'fast · general' },
-  { id: 'qwen/qwen3.5-397b-a17b',      label: 'Qwen 3.5 397B',    hint: 'large · analysis' },
+  { id: 'qwen/qwen3-coder-480b-a35b-instruct', label: 'Qwen3 Coder', hint: 'coding-tuned · 480B' },
   { id: 'z-ai/glm-5.2',                label: 'GLM 5.2',          hint: 'versatile · instructions' },
 ] as const
 
