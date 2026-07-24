@@ -37,21 +37,27 @@ export const MODEL_LIST: ModelMeta[] = [
     supportsReasoning: true,
   },
   {
+    // supportsVision removed — confirmed hanging (TLS connects, zero bytes,
+    // 20s timeout) against the live NIM endpoint. It never actually saw an
+    // image; the flag was aspirational, not verified.
     id: 'minimaxai/minimax-m3',
     label: 'MiniMax M3',
     company: 'NVIDIA NIM',
     description: 'Fast and capable. Drive-only.',
     scopes: ['drive'],
     defaultEffort: 'medium',
-    supportsVision: true,
   },
   {
+    // supportsVision removed — this model's NIM function is dead (404
+    // "Specified function in account ... is not found" even for a plain
+    // text completion, confirmed by direct curl), despite still being
+    // listed by GET /v1/models. It broke every image upload until
+    // describeImage() was pointed at nemotron-nano-12b-v2-vl instead.
     id: 'qwen/qwen3.5-397b-a17b',
     label: 'Qwen 3.5',
     company: 'NVIDIA NIM',
     description: 'Great for analysis.',
     scopes: ['chat', 'drive'],
-    supportsVision: true,
     supportsReasoning: true,
   },
   {
@@ -108,6 +114,21 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['drive'], // ← intentionally NOT in 'chat' or 'lite'
     defaultEffort: 'medium',
   },
+  {
+    // Confirmed live and vision-capable via direct end-to-end testing
+    // against NIM (text sanity check + real image description, both 200
+    // OK) — this is what describeImage() already uses for upload-time
+    // image summaries. Adding it here makes it a real, selectable chat
+    // model so a user can attach an image mid-conversation and have the
+    // model actually see it, not just get an auto-generated caption.
+    id: 'nvidia/nemotron-nano-12b-v2-vl',
+    label: 'Nemotron Nano VL',
+    company: 'NVIDIA NIM',
+    description: 'Vision-capable — reads images attached in chat.',
+    scopes: ['chat', 'drive'],
+    defaultEffort: 'medium',
+    supportsVision: true,
+  },
 ]
 
 // Default chat model — falls back here if a request supplies an unknown id.
@@ -152,6 +173,8 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   'gpt-4o':                            { baseURL: 'https://models.inference.ai.azure.com',                getApiKey: () => process.env.GITHUB_MODELS_API_KEY ?? process.env.GITHUB_TOKEN ?? '' },
   // Moonshot Kimi K2.7 Code via OpenRouter.
   'moonshotai/kimi-k2.7-code':         { baseURL: OPENROUTER_BASE,                      getApiKey: () => process.env.OPENROUTER_API_KEY ?? '' },
+  // Same NIM key/endpoint already verified working for describeImage().
+  'nvidia/nemotron-nano-12b-v2-vl':    { baseURL: NIM_BASE, getApiKey: () => process.env.NVIDIA_API_KEY ?? '' },
 }
 
 // ─── Lookup helpers (used by pickers + server routes) ──────────────
