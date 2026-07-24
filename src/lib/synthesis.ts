@@ -9,6 +9,36 @@ import type {
   ArticleNotePayload,
 } from './resources'
 
+// ─── Human-readable labels for each resource type ─────────────────────────
+// Used in snapshotToText() so the LLM never sees raw snake_case identifiers.
+const TYPE_LABELS: Record<ResourceType, string> = {
+  flashcards: 'flashcards',
+  grade_calc: 'grade calculator',
+  workout: 'workout log',
+  meal: 'meal log',
+  repo_scan: 'repo scanner',
+  habit_streak: 'habit streaks',
+  race_pace: 'race pace calculator',
+  prompt: 'saved prompts',
+  article_note: 'article notes',
+  repo_review: 'repo reviews',
+  countdown: 'countdowns',
+  checkin: 'daily check-ins',
+  note: 'notes',
+  bell_schedule: 'bell schedule',
+  uploaded_file: 'uploaded files',
+  aperture: 'The Aperture',
+  briefing: 'daily briefings',
+  root_cause: 'root cause analysis',
+  terminal_session: 'terminal sessions',
+  ghost_conversation: 'Ghost conversations',
+  github_action: 'GitHub actions',
+  contradiction: 'contradictions',
+  regret: 'regret ledger',
+  memory: 'memory entries',
+  learn_session: 'Learn sessions',
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Cross-tool synthesis layer.
 //
@@ -503,7 +533,8 @@ export function snapshotToText(snapshot: ContextSnapshot, patterns: CrossToolPat
   if (snapshot.activity.length === 0) lines.push('(no activity logged)')
   for (const a of snapshot.activity.sort((x, y) => y.recent - x.recent)) {
     const last = a.daysSinceLast === null ? 'never' : a.daysSinceLast === 0 ? 'today' : `${a.daysSinceLast}d ago`
-    lines.push(`- ${a.type}: ${a.total} total, ${a.recent} recent (Δ${a.rateDelta >= 0 ? '+' : ''}${a.rateDelta} vs prior window), last ${last}`)
+    const label = TYPE_LABELS[a.type] ?? a.type
+    lines.push(`- ${label}: ${a.total} total, ${a.recent} recent (Δ${a.rateDelta >= 0 ? '+' : ''}${a.rateDelta} vs prior window), last ${last}`)
   }
 
   lines.push('\n## Streaks & consistency')

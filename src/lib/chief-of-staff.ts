@@ -38,10 +38,15 @@ Rules:
 - No fabrication. A claim without data behind it does not go in the briefing.
 - No filler, no praise-padding, no "keep it up!". Direct, factual, brief.
 - Each observation's sources array names the tools it drew from,
-  e.g. ["checkin", "workout"]. When an observation draws from email context,
+  e.g. ["daily check-ins", "workout log"]. Use human-readable tool names —
+  never output raw snake_case identifiers like "learn_session" or
+  "terminal_session". When an observation draws from email context,
   list "gmail" as one of the sources.
-- If the snapshot is thin, produce fewer, smaller observations. Two honest
-  observations beat four inflated ones.
+- If the snapshot is thin or unchanged from recent days (zero recent activity,
+  flat deltas), do not restate the same structural stats from prior briefings.
+  Comment directly on the thinness itself — the pause, the stretch of
+  inactivity, what's different about this stretch compared to earlier windows.
+  Two honest observations beat four inflated or repeated ones.
 - Email summary: when the prompt includes recent emails, produce an
   "email_summary" section in the output. Group related messages by sender
   or thread, flag time-sensitive items (reply needed, meetings, deadlines),
