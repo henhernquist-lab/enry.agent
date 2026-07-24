@@ -259,15 +259,22 @@ export function CharacterController({
             <sphereGeometry args={[0.28, 24, 24]} />
             <meshStandardMaterial color={COLORS.characterHead} roughness={0.6} metalness={0.1} />
           </mesh>
-          {/* Visor / screen-face — emissive color driven by activity state */}
-          <mesh position={[0, 0, 0.25]}>
-            <planeGeometry args={[0.35, 0.2]} />
+          {/* Visor — a curved sphere-segment hugging only the FRONT of the
+              head (phi arc centered on +Z, a band at eye level). The old flat
+              plane sat inside the skull and its wide edges poked out the sides
+              as a green arc; a front-only segment reads as a visor from the
+              front and vanishes edge-on from behind. Radius is just proud of
+              the head so it never z-fights the skull. Emissive color/intensity
+              are still driven by activity state via visorMatRef. */}
+          <mesh>
+            <sphereGeometry args={[0.29, 24, 16, Math.PI / 4, Math.PI / 2, 1.12, 0.52]} />
             <meshStandardMaterial
               ref={visorMatRef}
               color={COLORS.monitorScreen}
               emissive={COLORS.primary}
               emissiveIntensity={0.7}
               roughness={0.2}
+              side={THREE.DoubleSide}
             />
           </mesh>
         </group>
@@ -276,11 +283,11 @@ export function CharacterController({
         <group ref={leftArmRef} position={[-0.42, 1.35, 0]}>
           <mesh position={[0, -0.3, 0]} castShadow>
             <capsuleGeometry args={[0.09, 0.5, 6, 12]} />
-            <meshStandardMaterial color={COLORS.characterBody} roughness={0.7} metalness={0.05} />
+            <meshStandardMaterial color={COLORS.characterLimb} roughness={0.7} metalness={0.05} />
           </mesh>
           <mesh position={[0, -0.62, 0]} castShadow>
             <sphereGeometry args={[0.1, 12, 12]} />
-            <meshStandardMaterial color={COLORS.characterHead} roughness={0.6} metalness={0.1} />
+            <meshStandardMaterial color={COLORS.characterJoint} roughness={0.55} metalness={0.15} />
           </mesh>
         </group>
 
@@ -288,11 +295,11 @@ export function CharacterController({
         <group ref={rightArmRef} position={[0.42, 1.35, 0]}>
           <mesh position={[0, -0.3, 0]} castShadow>
             <capsuleGeometry args={[0.09, 0.5, 6, 12]} />
-            <meshStandardMaterial color={COLORS.characterBody} roughness={0.7} metalness={0.05} />
+            <meshStandardMaterial color={COLORS.characterLimb} roughness={0.7} metalness={0.05} />
           </mesh>
           <mesh position={[0, -0.62, 0]} castShadow>
             <sphereGeometry args={[0.1, 12, 12]} />
-            <meshStandardMaterial color={COLORS.characterHead} roughness={0.6} metalness={0.1} />
+            <meshStandardMaterial color={COLORS.characterJoint} roughness={0.55} metalness={0.15} />
           </mesh>
         </group>
 
@@ -300,7 +307,7 @@ export function CharacterController({
         <group ref={leftLegRef} position={[-0.18, 0.65, 0]}>
           <mesh position={[0, -0.32, 0]} castShadow>
             <capsuleGeometry args={[0.12, 0.55, 6, 12]} />
-            <meshStandardMaterial color={COLORS.characterBody} roughness={0.7} metalness={0.05} />
+            <meshStandardMaterial color={COLORS.characterLimb} roughness={0.7} metalness={0.05} />
           </mesh>
         </group>
 
@@ -308,7 +315,7 @@ export function CharacterController({
         <group ref={rightLegRef} position={[0.18, 0.65, 0]}>
           <mesh position={[0, -0.32, 0]} castShadow>
             <capsuleGeometry args={[0.12, 0.55, 6, 12]} />
-            <meshStandardMaterial color={COLORS.characterBody} roughness={0.7} metalness={0.05} />
+            <meshStandardMaterial color={COLORS.characterLimb} roughness={0.7} metalness={0.05} />
           </mesh>
         </group>
       </group>

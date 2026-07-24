@@ -36,10 +36,15 @@ export const COLORS = {
   monitorGlow: '#3a7ab8',
   monitorFrame: '#282d31',
 
-  // Character — light warm gray so it's the brightest object in frame
-  characterBody: '#4a5258',
-  characterHead: '#5c646a',
-  characterAccent: '#3a9e60',
+  // Character — differentiated materials so Enry reads as a designed figure,
+  // not a monochrome blank. Teal-slate body against a bright silver head keeps
+  // the character the clear focal point under the warm key + green accent
+  // lights, while green stays an ACCENT only (visor + chest stripe).
+  characterBody: '#3f6f7e',   // torso — saturated teal-slate
+  characterLimb: '#33565f',   // arms / legs — darker teal, distinct from torso
+  characterJoint: '#294048',  // hands / joints — deep teal
+  characterHead: '#c3cace',   // head — bright silver so the visor green pops
+  characterAccent: '#3a9e60', // green accent — visor + stripe only
 
   // Lighting
   ambientColor: '#dfe8ee',
