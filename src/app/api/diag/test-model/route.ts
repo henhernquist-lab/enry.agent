@@ -95,6 +95,7 @@ function inferEnvVarName(modelId: string): string {
   if (modelId.startsWith('z-ai')) return 'GLM_API_KEY'
   if (modelId.startsWith('nvidia/')) return 'NVIDIA_API_KEY'
   if (modelId.startsWith('moonshotai/')) return 'MOONSHOT_API_KEY'
+  if (modelId.startsWith('grok')) return 'XAI_API_KEY'
   return `<unknown env for ${modelId}>`
 }
 

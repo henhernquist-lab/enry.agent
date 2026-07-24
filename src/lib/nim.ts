@@ -129,6 +129,15 @@ export const MODEL_LIST: ModelMeta[] = [
     defaultEffort: 'medium',
     supportsVision: true,
   },
+  {
+    id: 'grok-4',
+    label: 'Grok 4',
+    company: 'xAI',
+    description: 'xAI flagship. Strong reasoning and coding.',
+    scopes: ['chat', 'drive'],
+    defaultEffort: 'high',
+    supportsReasoning: true,
+  },
 ]
 
 // Default chat model — falls back here if a request supplies an unknown id.
@@ -145,6 +154,7 @@ interface ProviderConfig {
 
 const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
+const XAI_BASE = 'https://api.x.ai/v1'
 const PROVIDERS: Record<string, ProviderConfig> = {
   // DeepSeek V4 Pro — routed via OpenRouter, not NIM. NIM's deepseek-v4-pro
   // deployment has been persistently DEGRADED (confirmed repeatedly this
@@ -175,6 +185,8 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   'moonshotai/kimi-k2.7-code':         { baseURL: OPENROUTER_BASE,                      getApiKey: () => process.env.OPENROUTER_API_KEY ?? '' },
   // Same NIM key/endpoint already verified working for describeImage().
   'nvidia/nemotron-nano-12b-v2-vl':    { baseURL: NIM_BASE, getApiKey: () => process.env.NVIDIA_API_KEY ?? '' },
+  // xAI Grok — OpenAI-compatible endpoint at api.x.ai.
+  'grok-4':                            { baseURL: XAI_BASE, getApiKey: () => process.env.XAI_API_KEY ?? '' },
 }
 
 // ─── Lookup helpers (used by pickers + server routes) ──────────────

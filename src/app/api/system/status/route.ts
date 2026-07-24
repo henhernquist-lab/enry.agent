@@ -10,11 +10,12 @@ const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
 // catalog. "Ready" = the model ID is in the /v1/models catalog AND its key
 // env var is set. The catalog call is made once and cached 60s so page
 // renders / polls don't re-hit NIM.
-const MODELS: { id: string; keyEnv: string }[] = [
+const MODELS: { id: string; keyEnv: string; skipCatalog?: boolean }[] = [
   { id: 'deepseek/deepseek-v4-pro', keyEnv: 'DEEPSEEK_API_KEY' },
   { id: 'minimaxai/minimax-m3',          keyEnv: 'MINIMAX_API_KEY' },
   { id: 'qwen/qwen3.5-397b-a17b',      keyEnv: 'QWEN_API_KEY' },
   { id: 'z-ai/glm-5.2',                keyEnv: 'GLM_API_KEY' },
+  { id: 'grok-4',                       keyEnv: 'XAI_API_KEY', skipCatalog: true },
 ]
 
 const CACHE_TTL_MS = 60_000
@@ -52,7 +53,8 @@ async function getModelStatus(): Promise<{ ready: number; total: number }> {
     const keySet = !!process.env[m.keyEnv]
     // If the catalog call failed entirely, fall back to key-presence so the
     // strip degrades to a plausible signal instead of showing 0/4 on a blip.
-    const inCatalog = catalog ? catalog.has(m.id) : true
+    // Models with skipCatalog (e.g. xAI) are checked by key presence only.
+    const inCatalog = m.skipCatalog ? true : (catalog ? catalog.has(m.id) : true)
     if (keySet && inCatalog) ready++
   }
 
