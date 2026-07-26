@@ -12,7 +12,7 @@ import { parseSessionFocusId, SESSION_FOCUS_PROMPTS, sessionFocusLabel } from '@
 import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
-import { nimClientFor, isCommunityModelId, warmCommunityModel } from '@/lib/nim'
+import { nimClientFor, isCommunityModelId, communityRouteParam, warmCommunityModel } from '@/lib/nim'
 import { logUsage } from '@/lib/usage/log'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { monidDiscover, monidRun } from '@/lib/monid'
@@ -265,6 +265,13 @@ export async function POST(req: Request) {
     await warmCommunityModel(selectedModel)
   }
 
+  // The provider model param. Community ids carry a `community:` marker for our
+  // own routing/allowlist logic — but the HF router must receive only the real
+  // `<hfId>:<provider>` string. Passing the prefixed id makes the router
+  // mis-parse the colon segments ("provider … not valid"). First-party ids
+  // pass through unchanged.
+  const modelParam = isCommunityModelId(selectedModel) ? communityRouteParam(selectedModel) : selectedModel
+
   // ─── Recovery Mode ─────────────────────────────────────────
   // When the frontend detects a stream interruption, it sends a
   // follow-up request with recovery: true and the partial content
@@ -404,7 +411,7 @@ export async function POST(req: Request) {
 
     const skillStartedAt = Date.now()
     const skillResult = streamText({
-      model: chatClient.chat(selectedModel),
+      model: chatClient.chat(modelParam),
       system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}${isRecovery ? recoverySystemPrompt : ''}`,
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
@@ -636,7 +643,7 @@ export async function POST(req: Request) {
 
   const chatStartedAt = Date.now()
   const result = streamText({
-    model: chatClient.chat(selectedModel),
+    model: chatClient.chat(modelParam),
     system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.${isRecovery ? recoverySystemPrompt : ''}
 
 You exist to move Henry's work forward: shipping features on the enry.agent codebase itself, answering technical questions with real research, running tool-calling loops on his behalf, and remembering context across sessions so he never has to re-explain his stack.
