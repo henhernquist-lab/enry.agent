@@ -18,6 +18,7 @@ import {
   Cpu,
   Box,
   Home,
+  Wand2,
   type LucideIcon,
 } from 'lucide-react'
 import { EnryLogo } from './enry-logo'
@@ -55,6 +56,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: '/agent', icon: Swords, label: 'Drive', desc: 'Autonomous coding agent' },
       { href: '/learn', icon: GraduationCap, label: 'Learn', desc: 'Tutorials and skills' },
+      { href: '/architect', icon: Wand2, label: 'Architect', desc: 'Prompt engineering lab' },
       { href: '/lab', icon: FlaskConical, label: 'Lab', desc: 'Experiments and overnight runs' },
     ],
   },

@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
@@ -147,14 +147,32 @@ const QUICK_ACTIONS = [
   { label: 'Search the web', glyph: '/', prompt: 'Search the web for ' },
   { label: 'Summarize a URL', glyph: '↗', prompt: 'Summarize the content at this URL: ' },
   { label: 'Write code', glyph: '<>', prompt: 'Write code to ' },
-  { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages', comingSoon: true as const },
+  { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages' },
 ]
 
-const SUGGESTION_CARDS = [
+interface SuggestionCard {
+  label: string
+  glyph: string
+  prompt: string
+  description: string
+}
+
+const SUGGESTION_CARD_POOL: SuggestionCard[] = [
+  // Set 0 — Mon / Thu / Sun / ...
   { label: 'Search the web', glyph: '/', prompt: 'Search the web for the latest AI news', description: 'Find real-time information from across the internet' },
   { label: 'Summarize a URL', glyph: '↗', prompt: 'Summarize the content at this URL: ', description: 'Extract key insights from any webpage' },
   { label: 'Write code', glyph: '<>', prompt: 'Write code to build a todo app', description: 'Generate, refactor, and debug code in any language' },
-  { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages', description: 'Read and draft email responses', comingSoon: true as const },
+  { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages', description: 'Read and draft email responses' },
+  // Set 1 — Tue / Fri / ...
+  { label: 'Explain a concept', glyph: '?', prompt: 'Explain ', description: 'Break down complex topics into simple explanations' },
+  { label: 'Debug my code', glyph: '🐛', prompt: 'Debug this code: ', description: 'Find and fix bugs with detailed explanations' },
+  { label: 'Plan my week', glyph: '📅', prompt: 'Help me plan my week. I need to: ', description: 'Organize tasks and schedule your week efficiently' },
+  { label: 'Draft an email', glyph: '✉', prompt: 'Draft an email that ', description: 'Compose professional or personal emails quickly' },
+  // Set 2 — Wed / Sat / ...
+  { label: 'Analyze data', glyph: '📊', prompt: 'Analyze this data: ', description: 'Find patterns and insights in your data' },
+  { label: 'Research a topic', glyph: '🔍', prompt: 'Research and summarize: ', description: 'Deep-dive into any topic with cited sources' },
+  { label: 'Refactor code', glyph: '♻', prompt: 'Refactor this code to ', description: 'Improve code structure without changing behavior' },
+  { label: 'Create flashcards', glyph: '🃏', prompt: 'Create flashcards for: ', description: 'Generate study flashcards from any material' },
 ]
 
 // Module-level compaction state — written by the transport's custom fetch,
@@ -643,8 +661,13 @@ export function CenterPanel({
 
   const router = useRouter()
 
-  const handlePrefillPrompt = (prompt: string, comingSoon?: boolean) => {
-    if (comingSoon) return
+  // Daily card rotation — pick a different set of 4 each day
+  const dailyCards = useMemo(() => {
+    const dayIndex = Math.floor(Date.now() / 86400000) % 3
+    return SUGGESTION_CARD_POOL.slice(dayIndex * 4, dayIndex * 4 + 4)
+  }, [])
+
+  const handlePrefillPrompt = (prompt: string) => {
     setInput(prompt)
     setTimeout(() => textareaRef.current?.focus(), 0)
   }
@@ -833,7 +856,7 @@ export function CenterPanel({
 
               {/* Suggestion Cards */}
               <div className="grid w-full grid-cols-2 gap-3">
-                {SUGGESTION_CARDS.map((card, index) => (
+                {dailyCards.map((card, index) => (
                   <motion.button
                     key={card.label}
                     initial={{ opacity: 0, y: 15 }}
@@ -843,32 +866,17 @@ export function CenterPanel({
                     whileTap={{ scale: 0.98 }}
                     onClick={() => {
                       if (card.label === 'Write code') router.push('/agent')
-                      else handlePrefillPrompt(card.prompt, card.comingSoon)
+                      else handlePrefillPrompt(card.prompt)
                     }}
-                    disabled={card.comingSoon}
-                    aria-disabled={card.comingSoon}
-                    aria-label={card.comingSoon ? `${card.label} (coming soon)` : `${card.label} - ${card.description}`}
-                    className={`group relative flex items-start gap-3 border border-border bg-surface-secondary p-4 text-left transition-all duration-200 ${
-                      card.comingSoon
-                        ? 'cursor-not-allowed opacity-60'
-                        : 'cursor-pointer hover:border-primary/30 hover:bg-surface-elevated hover:shadow-[0_0_20px_rgba(0,255,102,0.05)]'
-                    }`}
+                    aria-label={`${card.label} - ${card.description}`}
+                    className="group relative flex cursor-pointer items-start gap-3 border border-border bg-surface-secondary p-4 text-left transition-all duration-200 hover:border-primary/30 hover:bg-surface-elevated hover:shadow-[0_0_20px_rgba(0,255,102,0.05)]"
                   >
-                    <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center border font-mono text-base font-bold ${
-                      card.comingSoon
-                        ? 'border-border text-muted-foreground/40'
-                        : 'border-primary/30 text-primary group-hover:border-primary/60'
-                    }`}>
+                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center border border-primary/30 font-mono text-base font-bold text-primary group-hover:border-primary/60">
                       {card.glyph}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-foreground">{card.label}</p>
-                        {card.comingSoon && (
-                          <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                            — soon
-                          </span>
-                        )}
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">{card.description}</p>
                     </div>
@@ -1037,24 +1045,18 @@ export function CenterPanel({
           <div className="flex items-center gap-2">              {QUICK_ACTIONS.map((action) => (
                 <motion.button
                   key={action.label}
-                  whileHover={{ scale: action.comingSoon ? 1 : 1.03 }}
-                  whileTap={{ scale: action.comingSoon ? 1 : 0.97 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     if (action.label === 'Write code') router.push('/agent')
-                    else handlePrefillPrompt(action.prompt, action.comingSoon)
+                    else handlePrefillPrompt(action.prompt)
                   }}
-                disabled={action.comingSoon}
-                aria-disabled={action.comingSoon}
-                aria-label={action.comingSoon ? `${action.label} (coming soon)` : action.label}
-                className={`flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-medium transition-all duration-200 ${
-                  action.comingSoon
-                    ? 'cursor-not-allowed border-border bg-surface-elevated text-muted-foreground opacity-60'
-                    : 'cursor-pointer border-primary/20 bg-primary/5 text-primary hover:border-primary/40 hover:bg-primary/10 hover:shadow-[0_0_12px_rgba(0,255,102,0.08)]'
-                }`}
-              >
-                <span className="font-mono text-xs text-primary opacity-80">{action.glyph}</span>
-                {action.label}
-              </motion.button>
+                  aria-label={action.label}
+                  className="flex cursor-pointer items-center gap-1.5 border border-primary/20 bg-primary/5 px-3 py-1.5 text-[11px] font-medium text-primary transition-all duration-200 hover:border-primary/40 hover:bg-primary/10 hover:shadow-[0_0_12px_rgba(0,255,102,0.08)]"
+                >
+                  <span className="font-mono text-xs text-primary opacity-80">{action.glyph}</span>
+                  {action.label}
+                </motion.button>
             ))}
           </div>
         </div>

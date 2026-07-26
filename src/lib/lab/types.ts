@@ -119,3 +119,29 @@ export interface OvernightRunRow {
   created_at: string
   updated_at: string
 }
+
+// ── LARP Engine ──────────────────────────────────────────────
+
+export interface LarpFeature {
+  name: string
+  what_it_does: string
+  why_valuable: string
+  difficulty: 'Low' | 'Medium' | 'High'
+  build_effort: string
+  how_enry_could_improve: string
+  fits_enry: number
+  category: string
+  novelty: number
+  maintenance_cost: 'Low' | 'Medium' | 'High'
+  user_value: number
+  architecture_fit: number
+  recommendation_score: number
+}
+
+export interface LarpResult {
+  repo_name?: string
+  repo_description?: string
+  analysis_summary?: string
+  features?: LarpFeature[]
+  what_to_skip?: string[]
+}

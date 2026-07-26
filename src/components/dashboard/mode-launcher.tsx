@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { MessageSquare, Swords, Ship, GraduationCap, Smartphone } from 'lucide-react'
+import { MessageSquare, Swords, Ship, GraduationCap, Smartphone, Wand2 } from 'lucide-react'
 import { Card } from '@/components/card'
 
 const MODES = [
@@ -7,12 +7,13 @@ const MODES = [
   { href: '/agent', label: 'Drive', desc: 'Autonomous coding agent', icon: Swords, color: 'text-primary' },
   { href: '/agent', label: 'Cruise', desc: 'Scan-and-fix pipeline', icon: Ship, color: 'text-primary' },
   { href: '/learn', label: 'Learn', desc: 'Tutorials and skills', icon: GraduationCap, color: 'text-primary' },
+  { href: '/architect', label: 'Architect', desc: 'Prompt engineering lab', icon: Wand2, color: 'text-primary' },
   { href: '/m/chat', label: 'enry lite', desc: 'Mobile chat', icon: Smartphone, color: 'text-primary' },
 ]
 
 export function ModeLauncher() {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {MODES.map((mode) => (
         <Link key={mode.href} href={mode.href}>
           <Card
