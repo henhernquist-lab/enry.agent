@@ -12,7 +12,7 @@ import {
 } from '@/lib/benchmark/storage'
 import { runBenchmark } from '@/lib/benchmark/runner'
 import { ALL_SUITES } from '@/lib/benchmark/suites'
-import { getAllBenchmarks, sortBenchmarks, type BenchmarkSortKey } from '@/lib/model-intelligence'
+import { sortBenchmarks, type BenchmarkSortKey } from '@/lib/model-intelligence'
 
 // A full run makes many real model calls across suites; it must survive past
 // the HTTP response, so the work is scheduled via after() and bounded by this.
@@ -32,10 +32,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const sort = searchParams.get('sort') as BenchmarkSortKey['id'] | null
 
-  // Real completed runs from Supabase. Static fallback retained here for one
-  // commit only (removed in the read-path change) to keep this rewrite bisectable.
+  // Real completed runs only. A model with no completed run simply isn't in
+  // the list — an empty array is honest, never a fabricated static fallback.
   let benchmarks = await getLatestResults(uid)
-  if (benchmarks.length === 0) benchmarks = getAllBenchmarks()
   if (sort) benchmarks = sortBenchmarks(benchmarks, sort)
 
   return Response.json({ benchmarks })

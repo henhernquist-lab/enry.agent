@@ -19,7 +19,7 @@ export default function BenchmarkPage() {
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [runModelId, setRunModelId] = useState<string>(MODEL_LIST[0]?.id ?? '')
-  const [runState, setRunState] = useState<'idle' | 'starting' | 'started' | 'error'>('idle')
+  const [runState, setRunState] = useState<'idle' | 'starting' | 'running' | 'done' | 'error'>('idle')
   const [runMessage, setRunMessage] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -74,8 +74,43 @@ export default function BenchmarkPage() {
   const selectedBenchmarks = benchmarks.filter((b) => selectedIds.has(b.modelId))
   const currentSort = SORT_OPTIONS.find((s) => s.id === sortKey)
 
+  // Poll a run's live status until it completes or fails. Same shape family
+  // as the Cruise scan live-steps polling.
+  const pollRun = useCallback(async (runId: string, modelId: string) => {
+    while (true) {
+      await new Promise((r) => setTimeout(r, 2000))
+      let data: { status?: string; progress?: { completed: number; total: number } | null; error?: string }
+      try {
+        const res = await fetch(`/api/models/benchmarks/status?runId=${encodeURIComponent(runId)}`)
+        if (!res.ok) throw new Error('status fetch failed')
+        data = await res.json()
+      } catch {
+        continue // transient — keep polling
+      }
+
+      if (data.status === 'completed') {
+        setRunState('done')
+        setRunMessage(`Benchmark complete for ${modelId}. Scores updated.`)
+        await load()
+        return
+      }
+      if (data.status === 'failed') {
+        setRunState('error')
+        setRunMessage(`Benchmark failed for ${modelId}: ${data.error ?? 'unknown error'}`)
+        return
+      }
+      // still running
+      const p = data.progress
+      setRunMessage(
+        p && p.total > 0
+          ? `Benchmarking ${modelId}… ${p.completed}/${p.total} cases`
+          : `Benchmarking ${modelId}…`,
+      )
+    }
+  }, [load])
+
   const handleRunBenchmark = async () => {
-    if (!runModelId) return
+    if (!runModelId || runState === 'starting' || runState === 'running') return
     setRunState('starting')
     setRunMessage(null)
     try {
@@ -84,13 +119,14 @@ export default function BenchmarkPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId: runModelId }),
       })
-      if (res.ok) {
-        setRunState('started')
-        setRunMessage(`Benchmark started for ${runModelId}. Refresh to see updated scores.`)
+      const data = await res.json().catch(() => ({ error: 'Unknown error' }))
+      if (res.ok && data.runId) {
+        setRunState('running')
+        setRunMessage(`Benchmarking ${runModelId}…`)
+        void pollRun(data.runId, runModelId)
       } else {
-        const data = await res.json().catch(() => ({ error: 'Unknown error' }))
         setRunState('error')
-        setRunMessage(data.error ?? `Failed to start benchmark`)
+        setRunMessage(data.error ?? 'Failed to start benchmark')
       }
     } catch {
       setRunState('error')
@@ -132,10 +168,10 @@ export default function BenchmarkPage() {
             </select>
             <button
               onClick={handleRunBenchmark}
-              disabled={runState === 'starting'}
+              disabled={runState === 'starting' || runState === 'running'}
               className="flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 font-mono text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {runState === 'starting' ? (
+              {runState === 'starting' || runState === 'running' ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
                 <Play className="h-3 w-3" />
@@ -189,6 +225,16 @@ export default function BenchmarkPage() {
         <div className="flex h-64 items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
+      ) : benchmarks.length === 0 ? (
+        // Honest empty state — no fabricated scores. A model appears only
+        // once it has a real completed run.
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-16 text-center">
+          <p className="font-mono text-sm text-foreground">No benchmark runs yet</p>
+          <p className="max-w-md font-mono text-[11px] text-muted-foreground">
+            Pick a model above and hit <span className="text-primary">Run</span> to execute a real benchmark. Scores
+            appear here once the run completes — nothing is shown until then.
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sorted.map((benchmark, index) => (
@@ -213,7 +259,13 @@ export default function BenchmarkPage() {
               : 'border-primary/30 bg-primary/5 text-primary'
           }`}
         >
-          {runState === 'error' ? <AlertCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          {runState === 'error' ? (
+            <AlertCircle className="h-3.5 w-3.5" />
+          ) : runState === 'running' || runState === 'starting' ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          )}
           <span>{runMessage}</span>
         </div>
       )}
