@@ -3,7 +3,7 @@
 // (src/lib/usage/quota.ts). Kept free of runtime imports so it is safe to
 // pull into both server and client bundles.
 
-export type UsageMode = 'chat' | 'drive' | 'cruise' | 'learn' | 'lab'
+export type UsageMode = 'chat' | 'drive' | 'cruise' | 'learn' | 'lab' | 'architect'
 export type UsageStatus = 'success' | 'error' | 'timeout'
 export type UsageRange = 'today' | 'week' | 'month'
 
