@@ -127,12 +127,6 @@ export type BenchmarkSortKey =
   | 'reliability'
   | 'successRate'
 
-export interface BenchmarkStorage {
-  saveRun(run: BenchmarkRun): Promise<void>
-  getLatestResults(): Promise<ModelBenchmark[]>
-  getHistory(modelId: string, limit?: number): Promise<BenchmarkRun[]>
-}
-
 export interface ScoreWeights {
   coding: number
   reasoning: number
