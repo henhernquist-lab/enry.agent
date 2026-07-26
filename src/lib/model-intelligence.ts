@@ -343,15 +343,21 @@ const BENCHMARK_DATA: Record<string, ModelBenchmark> = {
 }
 
 // ── Health snapshots ───────────────────────────────────────────────
-// Today: static + derived from benchmark latency/success data.
-// Future: a cron-based poller calls each model with a lightweight probe,
-// records latency + success/failure, and updates these snapshots.
+// Real per-model health data lives in src/lib/usage/health.ts, aggregated
+// from usage_log by /api/models/health. This module only defines the
+// shared type + display helpers so the API route and UI agree on shape.
 
-export type HealthStatus = 'online' | 'slow' | 'offline'
+export type HealthStatus = 'online' | 'slow' | 'offline' | 'unknown'
 
 export interface ModelHealth {
   modelId: string
   status: HealthStatus
+  /** How `status` was decided — surfaced in the UI so a manual override reads differently from a derived one. */
+  statusSource: 'manual' | 'derived' | 'unconfigured' | 'none'
+  /** Optional note attached to a manual override (from model_statuses). */
+  statusNote: string | null
+  /** False when there's no usage_log data at all for this model yet — metrics below are all zero/null, not real. */
+  hasData: boolean
   avgLatencyMs: number
   successRate: number // 0-100
   errorRate: number // 0-100
@@ -359,45 +365,7 @@ export interface ModelHealth {
   lastFailureAt: string | null // ISO timestamp
   requestsToday: number
   provider: string
-  latencyHistory: { hour: string; latencyMs: number }[]
-}
-
-function generateLatencyHistory(baseLatency: number): { hour: string; latencyMs: number }[] {
-  const now = new Date()
-  const history: { hour: string; latencyMs: number }[] = []
-  for (let i = 23; i >= 0; i--) {
-    const ts = new Date(now.getTime() - i * 60 * 60 * 1000)
-    const variance = 0.7 + Math.random() * 0.6
-    history.push({
-      hour: ts.toISOString().slice(0, 13) + ':00',
-      latencyMs: Math.round(baseLatency * variance),
-    })
-  }
-  return history
-}
-
-function deriveHealthStatus(benchmark: ModelBenchmark): HealthStatus {
-  if (benchmark.successRate >= 95 && benchmark.avgLatencyMs < 4000) return 'online'
-  if (benchmark.successRate >= 85) return 'slow'
-  return 'offline'
-}
-
-function buildHealthSnapshot(benchmark: ModelBenchmark, meta: ModelMeta): ModelHealth {
-  const status = deriveHealthStatus(benchmark)
-  const now = new Date()
-  const errorRate = 100 - benchmark.successRate
-  return {
-    modelId: benchmark.modelId,
-    status,
-    avgLatencyMs: benchmark.avgLatencyMs,
-    successRate: benchmark.successRate,
-    errorRate,
-    lastSuccessAt: status !== 'offline' ? now.toISOString() : null,
-    lastFailureAt: status === 'offline' ? new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString() : null,
-    requestsToday: Math.floor(20 + Math.random() * 180),
-    provider: meta.company,
-    latencyHistory: generateLatencyHistory(benchmark.avgLatencyMs),
-  }
+  latencyHistory: { hour: string; latencyMs: number; hasData: boolean }[]
 }
 
 // ── Public API ─────────────────────────────────────────────────────
@@ -408,21 +376,6 @@ export function getAllBenchmarks(): ModelBenchmark[] {
 
 export function getBenchmark(modelId: string): ModelBenchmark | undefined {
   return BENCHMARK_DATA[modelId]
-}
-
-export function getAllHealth(): ModelHealth[] {
-  return MODEL_LIST.map((m) => {
-    const bench = BENCHMARK_DATA[m.id]
-    if (!bench) return undefined
-    return buildHealthSnapshot(bench, m)
-  }).filter(Boolean) as ModelHealth[]
-}
-
-export function getHealth(modelId: string): ModelHealth | undefined {
-  const meta = MODEL_LIST.find((m) => m.id === modelId)
-  const bench = BENCHMARK_DATA[modelId]
-  if (!meta || !bench) return undefined
-  return buildHealthSnapshot(bench, meta)
 }
 
 export function sortBenchmarks(
@@ -503,6 +456,7 @@ export function healthStatusColor(status: HealthStatus): string {
     case 'online': return 'text-primary'
     case 'slow': return 'text-warning'
     case 'offline': return 'text-destructive'
+    case 'unknown': return 'text-muted-foreground'
   }
 }
 
@@ -511,6 +465,7 @@ export function healthStatusBg(status: HealthStatus): string {
     case 'online': return 'bg-primary'
     case 'slow': return 'bg-warning'
     case 'offline': return 'bg-destructive'
+    case 'unknown': return 'bg-muted-foreground'
   }
 }
 
@@ -519,5 +474,6 @@ export function healthStatusLabel(status: HealthStatus): string {
     case 'online': return 'Online'
     case 'slow': return 'Slow'
     case 'offline': return 'Offline'
+    case 'unknown': return 'No data'
   }
 }
