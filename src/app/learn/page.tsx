@@ -325,23 +325,38 @@ function LearnPageContent() {
     })
   }
 
+  // Templates match the parser's actual expectations (learn-ops.ts):
+  // - probe / gap take NO arguments — bare verb triggers the operation
+  // - teach / defend / retire take a claim reference — resolveClaim does
+  //   ILIKE substring + embedding nearest-neighbor lookup, no quotes required
+  //   but " quoting pattern matches the error message examples for consistency
   const TEMPLATES: Record<string, string> = {
-    teach: 'teach me ()',
-    probe: 'probe ()',
-    gap: 'gap ()',
-    defend: 'defend ()',
-    retire: 'retire ()',
+    teach: 'teach ""',
+    probe: 'probe',
+    gap: 'gap',
+    defend: 'defend ""',
+    retire: 'retire ""',
   }
 
+  // Verbs that need claim references: cursor lands between the quotes.
+  // Verbs with no args (probe, gap): cursor lands at the end.
+  const CLAIM_REF_VERBS = new Set(['teach', 'defend', 'retire'])
+
   const insertTemplate = (verb: string) => {
-    const tpl = TEMPLATES[verb] ?? `${verb} ()`
+    const tpl = TEMPLATES[verb] ?? `${verb} ""`
     setInput(tpl)
     requestAnimationFrame(() => {
       const el = inputRef.current
       if (el) {
         el.focus()
-        const cursor = tpl.indexOf('()') + 1
-        el.setSelectionRange(cursor, cursor)
+        if (CLAIM_REF_VERBS.has(verb)) {
+          // Cursor between quotes: teach "|"
+          const cursor = tpl.indexOf('"') + 1
+          el.setSelectionRange(cursor, cursor)
+        } else {
+          // Cursor at end: probe|
+          el.setSelectionRange(tpl.length, tpl.length)
+        }
       }
     })
   }
