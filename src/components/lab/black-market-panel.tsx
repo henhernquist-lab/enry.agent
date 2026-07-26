@@ -5,8 +5,8 @@ import {
   X, ExternalLink, BarChart3, GitCompare, Lightbulb, Download,
   Cpu, GitMerge, Zap, CheckCircle2, AlertTriangle, Ban, Loader2, Plus, Trash2,
 } from 'lucide-react'
+import { BadgePill, DiscoveryBadgePill, formatCount, formatDate } from './black-market-card'
 import type { BlackMarketEntry } from '@/lib/lab/black-market'
-import { BadgePill, formatCount, formatDate } from './black-market-card'
 
 // ── Detail side panel ──────────────────────────────────────────────
 // Opens when a model card is clicked. Editorial detail + future-action
@@ -57,8 +57,8 @@ export function BlackMarketPanel({
             <div className="flex items-start justify-between gap-3 border-b border-border p-5">
               <div className="min-w-0">
                 <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                  <span className="rounded bg-warning/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-warning">
-                    Experimental
+                  <span className={`rounded px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider ${entry.collection === 'core' ? 'bg-primary/10 text-primary' : 'bg-accent/10 text-accent'}`}>
+                    {entry.collection === 'core' ? 'Core Community' : 'Daily Discovery'}
                   </span>
                   <span className="font-mono text-[10px] text-muted-foreground">{entry.creator}</span>
                 </div>
@@ -84,6 +84,13 @@ export function BlackMarketPanel({
                 <SpecItem icon={CheckCircle2} label="License" value={entry.license} />
                 <SpecItem icon={BarChart3} label="Updated" value={entry.stats.ok ? formatDate(entry.stats.lastModified) : '—'} />
               </div>
+
+              {/* Discovery flair badges */}
+              {entry.discoveryBadges.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {entry.discoveryBadges.map((b) => <DiscoveryBadgePill key={b} badge={b} />)}
+                </div>
+              )}
 
               {/* Badges */}
               <div className="mb-5 flex flex-wrap gap-1.5">
@@ -215,6 +222,11 @@ export function BlackMarketPanel({
                 <FutureButton icon={BarChart3} label="Benchmark" />
                 <FutureButton icon={GitCompare} label="Compare" />
                 <FutureButton icon={Download} label="Install" />
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <FutureButton icon={Cpu} label="Local" />
+                <FutureButton icon={GitCompare} label="Compare" />
+                <FutureButton icon={Zap} label="Rate" />
               </div>
             </div>
           </motion.aside>

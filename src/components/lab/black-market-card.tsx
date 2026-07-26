@@ -1,8 +1,8 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { BarChart3, Zap, ArrowUpRight } from 'lucide-react'
-import type { BlackMarketEntry, BlackMarketBadge } from '@/lib/lab/black-market'
+import { BarChart3, Zap, ArrowUpRight, Sparkles, Shield } from 'lucide-react'
+import type { BlackMarketEntry, BlackMarketBadge, DiscoveryBadge } from '@/lib/lab/black-market'
 
 // ── Badge styling ──────────────────────────────────────────────────
 // Tone per badge family. Uses design tokens only (no raw Tailwind colors).
@@ -19,12 +19,44 @@ const BADGE_TONE: Record<BlackMarketBadge, string> = {
   Uncensored:    'bg-destructive/10 text-destructive border-destructive/20',
   GGUF:          'bg-surface-elevated text-muted-foreground border-border',
   MTP:           'bg-surface-elevated text-muted-foreground border-border',
+  // Core model category badges
+  General:       'bg-surface-elevated text-muted-foreground border-border',
+  Lightweight:   'bg-accent/10 text-accent border-accent/20',
+  'Heavy Reasoning':'bg-accent/10 text-accent border-accent/20',
+  'Fast Chat':   'bg-accent/10 text-accent border-accent/20',
+  'Small High Quality':'bg-primary/10 text-primary border-primary/20',
+  // Discovery flair badges
+  Trending:      'bg-primary/10 text-primary border-primary/20',
+  New:           'bg-accent/10 text-accent border-accent/20',
+  'Staff Pick':  'bg-warning/10 text-warning border-warning/20',
+  Fast:          'bg-accent/10 text-accent border-accent/20',
+  Creative:      'bg-surface-elevated text-muted-foreground border-border',
 }
 
 export function BadgePill({ badge }: { badge: BlackMarketBadge }) {
   return (
     <span className={`rounded border px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider ${BADGE_TONE[badge]}`}>
       {badge}
+    </span>
+  )
+}
+
+const DISCOVERY_BADGE_EMOJI: Record<DiscoveryBadge, string> = {
+  Trending: '🔥',
+  New: '',
+  'Staff Pick': '⭐',
+  Experimental: '🧪',
+  Fast: '⚡',
+  Reasoning: '🧠',
+  Coding: '💻',
+  'Tool Calling': '🛠',
+  Creative: '',
+}
+
+export function DiscoveryBadgePill({ badge }: { badge: DiscoveryBadge }) {
+  return (
+    <span className="rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 font-mono text-[8px] text-primary">
+      {DISCOVERY_BADGE_EMOJI[badge]} {badge}
     </span>
   )
 }
@@ -50,6 +82,7 @@ export function BlackMarketCard({
   entry: BlackMarketEntry
   onOpen: (entry: BlackMarketEntry) => void
 }) {
+  const isCore = entry.collection === 'core'
   return (
     <motion.button
       layout
@@ -67,6 +100,22 @@ export function BlackMarketCard({
           <p className="truncate font-mono text-[10px] text-muted-foreground">{entry.creator}</p>
         </div>
         <ArrowUpRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary" />
+      </div>
+
+      {/* Collection + discovery badges */}
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {isCore ? (
+          <span className="flex items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 font-mono text-[8px] text-primary">
+            <Shield className="h-2.5 w-2.5" /> Core
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 rounded border border-accent/20 bg-accent/5 px-1.5 py-0.5 font-mono text-[8px] text-accent">
+            <Sparkles className="h-2.5 w-2.5" /> Discovery
+          </span>
+        )}
+        {entry.discoveryBadges.slice(0, 3).map((b) => (
+          <DiscoveryBadgePill key={b} badge={b} />
+        ))}
       </div>
 
       <p className="mb-3 line-clamp-2 text-[11px] leading-relaxed text-foreground/60">{entry.description}</p>

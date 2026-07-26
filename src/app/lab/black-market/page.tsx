@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Skull, Search, Loader2, AlertTriangle } from 'lucide-react'
-import { CATEGORY_META, type BlackMarketEntry, type BlackMarketCategory } from '@/lib/lab/black-market'
+import { ArrowLeft, Skull, Search, Loader2, AlertTriangle, Sparkles } from 'lucide-react'
+import type { BlackMarketEntry } from '@/lib/lab/black-market'
 import { BlackMarketCard } from '@/components/lab/black-market-card'
 import { BlackMarketPanel } from '@/components/lab/black-market-panel'
 
@@ -26,10 +26,16 @@ const FILTERS: { id: FilterId; label: string; kind: 'sort' | 'facet' }[] = [
   { id: 'experimental', label: 'Experimental', kind: 'facet' },
 ]
 
-const SECTION_ORDER: BlackMarketCategory[] = ['trending', 'reasoning', 'coding', 'experimental', 'verified']
+interface BlackMarketResponse {
+  core: BlackMarketEntry[]
+  discovery: BlackMarketEntry[]
+  date?: string
+}
 
 export default function BlackMarketPage() {
-  const [entries, setEntries] = useState<BlackMarketEntry[]>([])
+  const [core, setCore] = useState<BlackMarketEntry[]>([])
+  const [discovery, setDiscovery] = useState<BlackMarketEntry[]>([])
+  const [date, setDate] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -40,8 +46,6 @@ export default function BlackMarketPage() {
   const [addingId, setAddingId] = useState<string | null>(null)
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set())
 
-  // "Added to Enry" registry state — seeded from the API's `added` flag,
-  // then toggled locally on add/remove.
   const [enryAddedIds, setEnryAddedIds] = useState<Set<string>>(new Set())
   const [enryBusyId, setEnryBusyId] = useState<string | null>(null)
   const [enryError, setEnryError] = useState<string | null>(null)
@@ -49,10 +53,19 @@ export default function BlackMarketPage() {
   useEffect(() => {
     fetch('/api/lab/black-market')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d) => {
-        const list: BlackMarketEntry[] = d.entries ?? []
-        setEntries(list)
-        setEnryAddedIds(new Set(list.filter((e) => e.added).map((e) => e.hfId)))
+      .then((d: BlackMarketResponse) => {
+        const coreList: BlackMarketEntry[] = d.core ?? []
+        const discoveryList: BlackMarketEntry[] = d.discovery ?? []
+        setCore(coreList)
+        setDiscovery(discoveryList)
+        setDate(d.date ?? null)
+        setEnryAddedIds(
+          new Set(
+            [...coreList, ...discoveryList]
+              .filter((e) => e.added)
+              .map((e) => e.hfId),
+          ),
+        )
       })
       .catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
@@ -118,6 +131,7 @@ export default function BlackMarketPage() {
   }, [])
 
   // ── Search + filter + sort ────────────────────────────────────────
+  const allEntries = useMemo(() => [...core, ...discovery], [core, discovery])
   const flatMode = query.trim().length > 0 || activeFilter !== null
 
   const matchesQuery = useCallback((e: BlackMarketEntry) => {
@@ -127,12 +141,13 @@ export default function BlackMarketPage() {
       e.name.toLowerCase().includes(q) ||
       e.creator.toLowerCase().includes(q) ||
       e.baseModel.toLowerCase().includes(q) ||
-      e.badges.some((b) => b.toLowerCase().includes(q))
+      e.badges.some((b) => b.toLowerCase().includes(q)) ||
+      e.discoveryBadges.some((b) => b.toLowerCase().includes(q))
     )
   }, [query])
 
   const flatResults = useMemo(() => {
-    let list = entries.filter(matchesQuery)
+    let list = allEntries.filter(matchesQuery)
 
     // Facet filter
     if (activeFilter === 'reasoning') list = list.filter((e) => e.categories.includes('reasoning') || e.badges.includes('Reasoning'))
@@ -152,7 +167,7 @@ export default function BlackMarketPage() {
     else if (activeFilter === 'trending') list = [...list].sort(byDownloads)
 
     return list
-  }, [entries, matchesQuery, activeFilter])
+  }, [allEntries, matchesQuery, activeFilter])
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -239,14 +254,8 @@ export default function BlackMarketPage() {
         <FlatGrid entries={flatResults} onOpen={setSelected} />
       ) : (
         <div className="space-y-10">
-          {SECTION_ORDER.map((cat) => (
-            <CategorySection
-              key={cat}
-              category={cat}
-              entries={entries.filter((e) => e.categories.includes(cat))}
-              onOpen={setSelected}
-            />
-          ))}
+          <DailyDiscoverySection entries={discovery} date={date} onOpen={setSelected} />
+          <CoreModelsSection entries={core} onOpen={setSelected} />
         </div>
       )}
 
@@ -266,29 +275,58 @@ export default function BlackMarketPage() {
   )
 }
 
-function CategorySection({
-  category, entries, onOpen,
+function DailyDiscoverySection({
+  entries, date, onOpen,
 }: {
-  category: BlackMarketCategory
   entries: BlackMarketEntry[]
+  date: string | null
   onOpen: (e: BlackMarketEntry) => void
 }) {
-  const meta = CATEGORY_META[category]
   return (
     <section>
-      <div className="mb-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
-          <span>{meta.emoji}</span> {meta.label}
-        </h2>
-        <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{meta.blurb}</p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
+            <Sparkles className="h-4 w-4 text-primary" /> Daily Discovery
+          </h2>
+          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+            {date ? `Fresh picks for ${date}` : 'Fresh community models rotating every 24 hours.'}
+          </p>
+        </div>
+        <span className="rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[10px] text-muted-foreground">
+          {entries.length} today
+        </span>
       </div>
       {entries.length === 0 ? (
         <div className="rounded border border-dashed border-border p-6 text-center">
-          <p className="text-[12px] text-muted-foreground">
-            {category === 'verified'
-              ? 'No models verified yet. Models earn this badge from measured benchmark performance — not popularity — once the benchmark engine ships.'
-              : 'No models in this category yet.'}
-          </p>
+          <p className="text-[12px] text-muted-foreground">No discovery models available today. Check back tomorrow.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <AnimatePresence mode="popLayout">
+            {entries.map((e) => <BlackMarketCard key={e.hfId} entry={e} onOpen={onOpen} />)}
+          </AnimatePresence>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function CoreModelsSection({
+  entries, onOpen,
+}: {
+  entries: BlackMarketEntry[]
+  onOpen: (e: BlackMarketEntry) => void
+}) {
+  return (
+    <section>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">Core Community Models</h2>
+        <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">Curated classics that stay in rotation.</p>
+      </div>
+      {entries.length === 0 ? (
+        <div className="rounded border border-dashed border-border p-6 text-center">
+          <p className="text-[12px] text-muted-foreground">No core models loaded.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
