@@ -7,6 +7,15 @@ import { createOpenAI } from '@ai-sdk/openai'
 //   1. Append an entry to MODEL_LIST below (id, label, scopes, etc.)
 //   2. Append a provider row to PROVIDERS (baseURL + env-key getter)
 // All UI pickers drive off MODEL_LIST — no more inline arrays.
+//
+// Free-tier final lineup (July 2026 cleanup):
+//   * DeepSeek V4 Pro  → OpenRouter (DEEPSEEK_API_KEY / OPENROUTER_API_KEY)
+//   * GLM 5.2          → NVIDIA NIM (GLM_API_KEY)
+//   * Gemini 3.5 Flash → Google AI Studio (GEMINI_API_KEY)
+//   * Llama 3.3 70B    → Groq (GROQ_API_KEY)
+//   * Llama 3.1 8B Instant → Groq (GROQ_API_KEY)
+//   * GPT-OSS 120B     → Groq (GROQ_API_KEY)
+// Models are only shown in pickers if their provider key is configured.
 // ───────────────────────────────────────────────────────────────────
 
 export type ModelScope = 'chat' | 'drive' | 'lite'
@@ -21,11 +30,14 @@ export interface ModelMeta {
   defaultEffort?: 'low' | 'medium' | 'high'
   /** Reserved: future flag for models that natively accept image input. */
   supportsVision?: boolean
-  /** Whether the model emits <think>-style reasoning traces that the UI can split out. */
+  /** Whether the model emits reasoning-style trace content the UI can split out. */
   supportsReasoning?: boolean
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
+// Note: listModels() below filters this list at runtime to only models whose
+// provider key is configured, so UI pickers never show a model that cannot
+// actually be called.
 export const MODEL_LIST: ModelMeta[] = [
   {
     id: 'deepseek/deepseek-v4-pro',
@@ -37,27 +49,6 @@ export const MODEL_LIST: ModelMeta[] = [
     supportsReasoning: true,
   },
   {
-    id: 'minimaxai/minimax-m3',
-    label: 'MiniMax M3',
-    company: 'NVIDIA NIM',
-    description: 'Fast and capable. Drive-only. (Still live on NIM catalog — M2.7 not found.)',
-    scopes: ['drive'],
-    defaultEffort: 'medium',
-    supportsVision: true,
-  },
-  {
-    // Replaces qwen/qwen3.5-397b-a17b — deprecated/retired by NIM as of
-    // July 27, 2026. Qwen3 Coder 480B is the current coding-tuned model on
-    // NIM, live and confirmed working.
-    id: 'qwen/qwen3-coder-480b-a35b-instruct',
-    label: 'Qwen3 Coder',
-    company: 'NVIDIA NIM',
-    description: 'Coding-tuned 480B. Replaces deprecated Qwen 3.5 397B.',
-    scopes: ['chat', 'drive'],
-    defaultEffort: 'medium',
-    supportsReasoning: true,
-  },
-  {
     id: 'z-ai/glm-5.2',
     label: 'GLM 5.2',
     company: 'NVIDIA NIM',
@@ -65,62 +56,37 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
   },
   {
-    id: 'nvidia/nemotron-3-ultra-550b-a55b',
-    label: 'Nemotron 3 Ultra',
-    company: 'NVIDIA NIM',
-    description: 'NVIDIA flagship. Heavy reasoning. Drive-only.',
-    scopes: ['drive'],
-    defaultEffort: 'high',
-    supportsReasoning: true,
-  },
-  {
-    id: 'moonshotai/kimi-k2-instruct',
-    label: 'Kimi K2',
-    company: 'Moonshot (NIM)',
-    description: 'Long-context generalist. Drive-only.',
-    scopes: ['drive'],
-  },
-  // ─── New models ──────────────────────────────────────────
-  {
-    // Was gemini-3.1-pro-preview — quota-gated at "limit: 0" for every
-    // metric on this Google Cloud project (Pro tier requires billing
-    // enabled; confirmed via the API's own QuotaFailure detail). Swapped to
-    // 3.5 Flash: the newest Flash generation, stable (no -preview suffix,
-    // unlike 3-flash-preview), and confirmed working at $0 across repeat
-    // calls. Label reflects the real model — do not relabel this "Pro".
     id: 'gemini-3.5-flash',
     label: 'Gemini 3.5 Flash',
     company: 'Google',
-    description: 'Fast multimodal — free-tier quota available (Pro tier requires billing).',
+    description: 'Fast multimodal — free-tier quota available.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
   },
   {
-    id: 'gpt-4o',
-    label: 'GPT-4o',
-    company: 'OpenAI (GitHub Models)',
-    description: 'Versatile multimodal standard.',
-    scopes: ['chat', 'drive', 'lite'],
+    id: 'llama-3.3-70b-versatile',
+    label: 'Llama 3.3 70B',
+    company: 'Groq',
+    description: 'Fast, capable generalist on Groq.',
+    scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
   },
   {
-    id: 'moonshotai/kimi-k2.7-code',
-    label: 'Kimi K2.7 Code',
-    company: 'Moonshot (OpenRouter)',
-    description: 'Drive-only coding-tuned model.',
-    scopes: ['drive'], // ← intentionally NOT in 'chat' or 'lite'
-    defaultEffort: 'medium',
+    id: 'llama-3.1-8b-instant',
+    label: 'Llama 3.1 8B Instant',
+    company: 'Groq',
+    description: 'Ultra-fast lightweight model on Groq.',
+    scopes: ['chat', 'drive'],
+    defaultEffort: 'low',
   },
   {
-    // xAI Grok — OpenAI-compatible endpoint. Model ID "grok-4.5" is the
-    // current flagship per docs.x.ai. Drive-only: strong coding/reasoning
-    // model suitable for agentic work. Chat scope can be added later.
-    id: 'grok-4.5',
-    label: 'Grok 4.5',
-    company: 'xAI',
-    description: 'xAI flagship. Strong reasoning. Drive-only.',
-    scopes: ['drive'],
-    defaultEffort: 'medium',
+    id: 'openai/gpt-oss-120b',
+    label: 'GPT-OSS 120B',
+    company: 'Groq',
+    description: 'Open-source OpenAI model hosted on Groq.',
+    scopes: ['chat', 'drive'],
+    defaultEffort: 'high',
+    supportsReasoning: true,
   },
 ]
 
@@ -128,7 +94,7 @@ export const MODEL_LIST: ModelMeta[] = [
 export const DEFAULT_MODEL_ID = 'deepseek/deepseek-v4-pro'
 
 // ── Provider config (server-only — env reads happen at request time) ──
-// baseURL + apiKey getter per model. All three new providers expose
+// baseURL + apiKey getter per model. All providers expose
 // OpenAI-compatible endpoints, so a single `createOpenAI(...)` does the work
 // across all of them — no per-provider SDK install required.
 interface ProviderConfig {
@@ -205,7 +171,7 @@ function patchSseLine(line: string): string {
 }
 
 const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
-const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
+const GROQ_BASE = 'https://api.groq.com/openai/v1'
 // Hugging Face Inference Providers router — OpenAI-compatible. Community
 // models added from The Black Market route here (see COMMUNITY_MODEL_PREFIX).
 const HF_ROUTER_BASE = 'https://router.huggingface.co/v1'
@@ -229,20 +195,18 @@ export function communityRouteParam(id: string): string {
 }
 
 const PROVIDERS: Record<string, ProviderConfig> = {
-  // DeepSeek V4 Pro — routed via OpenRouter, not NIM. NIM's deepseek-v4-pro
-  // deployment has been persistently DEGRADED (confirmed repeatedly this
-  // session: 500s, then 400 "Function id ... DEGRADED function cannot be
-  // invoked", stuck across retries). DEEPSEEK_API_KEY was rotated to a real
-  // OpenRouter key (sk-or-v1-...) as the workaround; this entry just needed
-  // to catch up to that — it was still pointed at NIM_BASE, so the valid
-  // OpenRouter key was being sent to NIM and correctly rejected (401).
-  'deepseek/deepseek-v4-pro':          { baseURL: OPENROUTER_BASE, getApiKey: () => process.env.DEEPSEEK_API_KEY ?? '' },
-  // NIM-hosted models share the endpoint + apiKey lookup.
-  'minimaxai/minimax-m3':                        { baseURL: NIM_BASE, getApiKey: () => process.env.MINIMAX_API_KEY ?? '' },
-  'qwen/qwen3-coder-480b-a35b-instruct':        { baseURL: NIM_BASE, getApiKey: () => process.env.QWEN_API_KEY ?? '' },
-  'z-ai/glm-5.2':                      { baseURL: NIM_BASE, getApiKey: () => process.env.GLM_API_KEY ?? '' },
-  'nvidia/nemotron-3-ultra-550b-a55b': { baseURL: NIM_BASE, getApiKey: () => process.env.NVIDIA_API_KEY ?? '' },
-  'moonshotai/kimi-k2-instruct':        { baseURL: NIM_BASE, getApiKey: () => process.env.MOONSHOT_API_KEY ?? process.env.NVIDIA_API_KEY ?? '' },
+  // DeepSeek V4 Pro — routed via OpenRouter. The env var name kept the legacy
+  // DEEPSEEK_API_KEY name, but also accept OPENROUTER_API_KEY in case the key
+  // is ever rotated to a generic OpenRouter key.
+  'deepseek/deepseek-v4-pro': {
+    baseURL: 'https://openrouter.ai/api/v1',
+    getApiKey: () => process.env.DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY ?? '',
+  },
+  // GLM 5.2 — NVIDIA NIM, confirmed live and free-tier capable.
+  'z-ai/glm-5.2': {
+    baseURL: NIM_BASE,
+    getApiKey: () => process.env.GLM_API_KEY ?? '',
+  },
   // Google Gemini — OpenAI-compatible endpoint at the v1beta/openai subpath.
   // 3.5 Flash, not Pro — Pro tier is quota-gated at 0 on this Cloud project
   // (needs billing enabled), confirmed via GET /v1beta/openai/models plus a
@@ -250,17 +214,32 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   // fetch: geminiToolCallFetch — patches missing `index` on streamed tool-call
   // deltas (see the function's doc comment); without it, any Gemini message
   // that triggers a tool call fails with a raw Zod validation-error dump.
-  'gemini-3.5-flash':                  { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', getApiKey: () => process.env.GEMINI_API_KEY ?? '', fetch: geminiToolCallFetch },
-  // OpenAI gpt-4o via GitHub Models — OpenAI-compatible inference API. The
-  // actual env var in .env.local/Vercel is GITHUB_MODELS_API_KEY — this was
-  // reading GITHUB_MODELS_TOKEN/GITHUB_TOKEN, neither of which is ever set,
-  // so isModelConfigured() always returned false ("no API key configured")
-  // even though a valid, working token exists under the real name.
-  'gpt-4o':                            { baseURL: 'https://models.inference.ai.azure.com',                getApiKey: () => process.env.GITHUB_MODELS_API_KEY ?? process.env.GITHUB_TOKEN ?? '' },
-  // Moonshot Kimi K2.7 Code via OpenRouter.
-  'moonshotai/kimi-k2.7-code':         { baseURL: OPENROUTER_BASE,                      getApiKey: () => process.env.OPENROUTER_API_KEY ?? '' },
-  // xAI Grok — OpenAI-compatible at api.x.ai/v1. Uses XAI_API_KEY.
-  'grok-4.5':                          { baseURL: 'https://api.x.ai/v1',                getApiKey: () => process.env.XAI_API_KEY ?? '' },
+  'gemini-3.5-flash': {
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    getApiKey: () => process.env.GEMINI_API_KEY ?? '',
+    fetch: geminiToolCallFetch,
+  },
+  // Groq-hosted free-tier models. All three share the Groq OpenAI-compatible
+  // endpoint and GROQ_API_KEY. They are filtered out of pickers when the key
+  // is missing (see listModels below).
+  'llama-3.3-70b-versatile': {
+    baseURL: GROQ_BASE,
+    getApiKey: () => process.env.GROQ_API_KEY ?? '',
+  },
+  'llama-3.1-8b-instant': {
+    baseURL: GROQ_BASE,
+    getApiKey: () => process.env.GROQ_API_KEY ?? '',
+  },
+  'openai/gpt-oss-120b': {
+    baseURL: GROQ_BASE,
+    getApiKey: () => process.env.GROQ_API_KEY ?? '',
+  },
+}
+
+// Runtime diagnostic: if Groq models are in the registry but no GROQ_API_KEY
+// is set, warn once so the operator knows why they are not selectable.
+if (typeof process !== 'undefined' && !process.env.GROQ_API_KEY) {
+  console.warn('[nim] GROQ_API_KEY is missing. Groq models (Llama 3.3 70B, Llama 3.1 8B Instant, GPT-OSS 120B) will be hidden from pickers.')
 }
 
 // ─── Lookup helpers (used by pickers + server routes) ──────────────
@@ -269,11 +248,15 @@ export function getModelMeta(id: string): ModelMeta | undefined {
 }
 
 export function listModels(scope?: ModelScope): ModelMeta[] {
-  if (!scope) return MODEL_LIST
-  return MODEL_LIST.filter((m) => m.scopes.includes(scope))
+  const scoped = scope ? MODEL_LIST.filter((m) => m.scopes.includes(scope)) : MODEL_LIST
+  // Only expose models whose provider key is actually configured. This prevents
+  // pickers from showing models that would immediately fail with
+  // "No API key configured for model ..." and also satisfies the requirement
+  // to hide Groq models when GROQ_API_KEY is absent.
+  return scoped.filter((m) => isModelConfigured(m.id))
 }
 
-/** Returns the default id for a given scope — first entry in `listModels(scope)`. */
+/** Returns the default id for a given scope — first configured entry. */
 export function defaultModelForScope(scope: ModelScope): string {
   return listModels(scope)[0]?.id ?? DEFAULT_MODEL_ID
 }

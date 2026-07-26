@@ -1,7 +1,7 @@
-import { streamText } from 'ai'
+import { streamText, convertToModelMessages } from 'ai'
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
-import { nimClientFor, listModels } from '@/lib/nim'
+import { getChatModel, listModels } from '@/lib/nim'
 import { logUsage } from '@/lib/usage/log'
 import { compactMessages } from '@/lib/compaction'
 import { safeStreamErrorMessage } from '@/lib/stream-error'
@@ -141,9 +141,9 @@ export async function POST(req: Request) {
   const { messages, model } = body
   const selectedModel: string = CHAT_MODELS.includes(model) ? model : DEFAULT_MODEL
 
-  let chatClient: ReturnType<typeof nimClientFor>
+  let chatModel: ReturnType<typeof getChatModel>
   try {
-    chatClient = nimClientFor(selectedModel)
+    chatModel = getChatModel(selectedModel)
   } catch {
     return new Response(
       JSON.stringify({ error: `No API key configured for ${selectedModel}` }),
@@ -155,33 +155,43 @@ export async function POST(req: Request) {
   const googleId = (session?.user as { id?: string })?.id
   const uid = await resolveResourceUserId(googleId ?? null)
 
-  const compactResult = compactMessages(messages)
+  const modelMessages = await convertToModelMessages(messages)
+  const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
   const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
 
   const startedAt = Date.now()
-  const result = streamText({
-    model: chatClient.chat(selectedModel),
-    system: ARCHITECT_SYSTEM_PROMPT,
-    messages: finalMessages as any,
-    maxRetries: 0,
-    maxOutputTokens: 8192,
-    onError: ({ error }) => {
-      console.error('[architect/chat] streamText error:', error)
-    },
-    onFinish: async ({ usage }) => {
-      if (uid) {
-        logUsage({
-          userId: uid,
-          modelId: selectedModel,
-          mode: 'architect',
-          promptTokens: usage?.inputTokens,
-          completionTokens: usage?.outputTokens,
-          totalTokens: usage?.totalTokens,
-          latencyMs: Date.now() - startedAt,
-        }).catch(() => {})
-      }
-    },
-  })
+  let result: ReturnType<typeof streamText>
+  try {
+    result = streamText({
+      model: chatModel,
+      system: ARCHITECT_SYSTEM_PROMPT,
+      messages: finalMessages as any,
+      maxRetries: 0,
+      maxOutputTokens: 8192,
+      onError: ({ error }) => {
+        console.error('[architect/chat] streamText error:', error)
+      },
+      onFinish: async ({ usage }) => {
+        if (uid) {
+          logUsage({
+            userId: uid,
+            modelId: selectedModel,
+            mode: 'architect',
+            promptTokens: usage?.inputTokens,
+            completionTokens: usage?.outputTokens,
+            totalTokens: usage?.totalTokens,
+            latencyMs: Date.now() - startedAt,
+          }).catch(() => {})
+        }
+      },
+    })
+  } catch (err) {
+    console.error('[architect/chat] streamText init error:', err)
+    return new Response(
+      JSON.stringify({ error: sanitizeErrorMessage(err) }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
 
   return result.toUIMessageStreamResponse({
     headers: compacted ? {

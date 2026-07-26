@@ -113,17 +113,13 @@ const EFFORTS = [
 ]
 
 // Per-model default effort levels for the coding agent.
-// Nemotron is new and unproven on this codebase — start at 'medium' so we
-// get reasonable reasoning without the deepest/slowest mode until we have
-// real testing data.
 const MODEL_DEFAULTS: Record<string, EffortId> = {
-  'deepseek/deepseek-v4-pro':      'none',
-  'z-ai/glm-5.2':                    'medium',
-  'qwen/qwen3.5-397b-a17b':           'low',
-  'minimaxai/minimax-m3':               'none',
-  'nvidia/nemotron-3-ultra-550b-a55b': 'medium',
-  // Newer/unproven models default to Medium until we have real testing data.
-  'moonshotai/kimi-k2-instruct':       'medium',
+  'deepseek/deepseek-v4-pro': 'none',
+  'z-ai/glm-5.2': 'medium',
+  'gemini-3.5-flash': 'medium',
+  'llama-3.3-70b-versatile': 'medium',
+  'llama-3.1-8b-instant': 'low',
+  'openai/gpt-oss-120b': 'high',
 }
 
 type EffortId = typeof EFFORTS[number]['id']
