@@ -46,6 +46,8 @@ import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-tr
 import { detectSkillInvocation, SKILLS, filterSkillsByDomain } from '@/lib/skills/registry'
 import { listModels } from '@/lib/nim'
 import type { SkillDefinition } from '@/lib/skills/types'
+import { useMessageQueue } from '@/lib/message-queue'
+import { QueuedMessageBanner } from '@/components/queued-message-banner'
 import type { ActivityEvent } from '@/lib/chat-history'
 import {
   parseSessionFocusId,
@@ -54,6 +56,12 @@ import {
   SESSION_FOCUS_META,
   type SessionFocus,
 } from '@/lib/focus-mode'
+
+type ChatQueueItem = {
+  text: string
+  files?: { type: 'file'; mediaType: string; filename: string; url: string }[]
+  body: Record<string, unknown>
+}
 
 interface CenterPanelProps {
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
@@ -357,6 +365,10 @@ export function CenterPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Message queue — lets the user queue a message while a response is still
+  // streaming, instead of blocking the input.
+  const { queue, enqueue, dequeue, remove } = useMessageQueue<ChatQueueItem>()
+
   // briefingEnabled initialized lazily; no mount-time setState required.
 
   useEffect(() => {
@@ -614,6 +626,24 @@ export function CenterPanel({
 
   const currentChatEffort = CHAT_EFFORTS.find((e) => e.id === chatEffort)
   const isStreaming = status === 'streaming' || status === 'submitted'
+
+  // Auto-flush queued messages when the stream settles back to ready.
+  // sendMessage is stable per the AI SDK, safe as a dep.
+  const sendMessageRef = useRef(sendMessage)
+  sendMessageRef.current = sendMessage
+  useEffect(() => {
+    if (status === 'ready' && queue.length > 0) {
+      const next = dequeue()
+      if (next) {
+        sendMessageRef.current(
+          { text: next.text, ...(next.files ? { files: next.files } : {}) },
+          { body: next.body },
+        )
+        onActivity({ type: 'user-sent', content: next.text, at: Date.now() })
+        onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
+      }
+    }
+  }, [status, queue.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { AlertCircle, GraduationCap, Plus, Trash2, Save } from 'lucide-react'
-import { ModalShell } from '@/components/automations/modal-shell'
+import { ModalShell } from '@/components/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource } from '@/lib/resources'
 

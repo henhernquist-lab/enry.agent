@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Timer, Flag, Trophy, Loader2 } from 'lucide-react'
-import { ModalShell } from '@/components/automations/modal-shell'
+import { ModalShell } from '@/components/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { loadResources, type Resource, type RacePacePayload } from '@/lib/resources'
 

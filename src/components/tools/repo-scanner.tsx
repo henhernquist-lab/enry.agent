@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ModalShell } from '@/components/automations/modal-shell'
+import { ModalShell } from '@/components/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource } from '@/lib/resources'
 import type { RepoReviewPayload, RepoReviewIssue } from '@/lib/resources'

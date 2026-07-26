@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Bell, Plus, Trash2, Loader2, Pencil } from 'lucide-react'
-import { ModalShell } from '@/components/automations/modal-shell'
+import { ModalShell } from '@/components/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { loadResources, saveResource, updateResource, type Resource, type BellSchedulePayload } from '@/lib/resources'
 

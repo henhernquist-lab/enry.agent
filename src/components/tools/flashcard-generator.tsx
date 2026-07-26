@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Brain, ChevronLeft, ChevronRight, RotateCcw, Loader2 } from 'lucide-react'
-import { ModalShell } from '@/components/automations/modal-shell'
+import { ModalShell } from '@/components/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource } from '@/lib/resources'
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { StickyNote, Loader2, Check } from 'lucide-react'
-import { ModalShell } from '@/components/automations/modal-shell'
+import { ModalShell } from '@/components/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { saveResource, type NotePayload } from '@/lib/resources'
 

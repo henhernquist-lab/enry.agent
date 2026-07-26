@@ -11,7 +11,7 @@ import {
   Circle,
   CheckCircle2,
 } from 'lucide-react'
-import { ModalShell } from '@/components/automations/modal-shell'
+import { ModalShell } from '@/components/modal-shell'
 
 interface Repo {
   id: number

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Hourglass, Plus, Trash2, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
-import { ModalShell } from '@/components/automations/modal-shell'
+import { ModalShell } from '@/components/modal-shell'
 import { ToolPanel } from '@/components/tools/tool-panel'
 import { loadResources, deleteResource, type Resource, type CountdownPayload } from '@/lib/resources'
 
