@@ -40,12 +40,59 @@ export default function BlackMarketPage() {
   const [addingId, setAddingId] = useState<string | null>(null)
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set())
 
+  // "Added to Enry" registry state — seeded from the API's `added` flag,
+  // then toggled locally on add/remove.
+  const [enryAddedIds, setEnryAddedIds] = useState<Set<string>>(new Set())
+  const [enryBusyId, setEnryBusyId] = useState<string | null>(null)
+  const [enryError, setEnryError] = useState<string | null>(null)
+
   useEffect(() => {
     fetch('/api/lab/black-market')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d) => setEntries(d.entries ?? []))
+      .then((d) => {
+        const list: BlackMarketEntry[] = d.entries ?? []
+        setEntries(list)
+        setEnryAddedIds(new Set(list.filter((e) => e.added).map((e) => e.hfId)))
+      })
       .catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
+  }, [])
+
+  const handleAddToEnry = useCallback(async (entry: BlackMarketEntry) => {
+    setEnryBusyId(entry.hfId)
+    setEnryError(null)
+    try {
+      const res = await fetch('/api/models/community', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hfId: entry.hfId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) setEnryAddedIds((prev) => new Set(prev).add(entry.hfId))
+      else setEnryError(data.error ?? `Failed to add (HTTP ${res.status})`)
+    } catch {
+      setEnryError('Network error while adding')
+    } finally {
+      setEnryBusyId(null)
+    }
+  }, [])
+
+  const handleRemoveFromEnry = useCallback(async (entry: BlackMarketEntry) => {
+    setEnryBusyId(entry.hfId)
+    setEnryError(null)
+    try {
+      const res = await fetch(`/api/models/community?hfId=${encodeURIComponent(entry.hfId)}`, { method: 'DELETE' })
+      if (res.ok) {
+        setEnryAddedIds((prev) => { const n = new Set(prev); n.delete(entry.hfId); return n })
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setEnryError(data.error ?? `Failed to remove (HTTP ${res.status})`)
+      }
+    } catch {
+      setEnryError('Network error while removing')
+    } finally {
+      setEnryBusyId(null)
+    }
   }, [])
 
   const handleAddToIdeas = useCallback(async (entry: BlackMarketEntry) => {
@@ -209,6 +256,11 @@ export default function BlackMarketPage() {
         onAddToIdeas={handleAddToIdeas}
         addingToIdeas={selected ? addingId === selected.hfId : false}
         addedToIdeas={selected ? addedIds.has(selected.hfId) : false}
+        onAddToEnry={handleAddToEnry}
+        onRemoveFromEnry={handleRemoveFromEnry}
+        busyEnry={selected ? enryBusyId === selected.hfId : false}
+        addedToEnry={selected ? enryAddedIds.has(selected.hfId) : false}
+        enryError={enryError}
       />
     </div>
   )

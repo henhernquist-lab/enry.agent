@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, ExternalLink, BarChart3, GitCompare, Lightbulb, Download,
-  Cpu, GitMerge, Zap, CheckCircle2, AlertTriangle, Ban, Loader2,
+  Cpu, GitMerge, Zap, CheckCircle2, AlertTriangle, Ban, Loader2, Plus, Trash2,
 } from 'lucide-react'
 import type { BlackMarketEntry } from '@/lib/lab/black-market'
 import { BadgePill, formatCount, formatDate } from './black-market-card'
@@ -18,12 +18,22 @@ export function BlackMarketPanel({
   onAddToIdeas,
   addingToIdeas,
   addedToIdeas,
+  onAddToEnry,
+  onRemoveFromEnry,
+  busyEnry,
+  addedToEnry,
+  enryError,
 }: {
   entry: BlackMarketEntry | null
   onClose: () => void
   onAddToIdeas: (entry: BlackMarketEntry) => void
   addingToIdeas: boolean
   addedToIdeas: boolean
+  onAddToEnry: (entry: BlackMarketEntry) => void
+  onRemoveFromEnry: (entry: BlackMarketEntry) => void
+  busyEnry: boolean
+  addedToEnry: boolean
+  enryError: string | null
 }) {
   return (
     <AnimatePresence>
@@ -138,14 +148,58 @@ export function BlackMarketPanel({
 
             {/* Action footer */}
             <div className="border-t border-border p-4">
-              <div className="grid grid-cols-2 gap-2">
+              {/* Add to Enry — the real action. Adds this community model to the
+                  chat picker, served via HF Inference Providers. Disabled with a
+                  reason when no provider can actually run it. */}
+              {addedToEnry ? (
+                <button
+                  onClick={() => onRemoveFromEnry(entry)}
+                  disabled={busyEnry}
+                  className="flex w-full items-center justify-center gap-1.5 rounded border border-destructive/40 bg-destructive/5 px-3 py-2.5 font-mono text-[11px] text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                >
+                  {busyEnry ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  Remove from Enry
+                </button>
+              ) : entry.servable ? (
+                <button
+                  onClick={() => onAddToEnry(entry)}
+                  disabled={busyEnry}
+                  className="flex w-full items-center justify-center gap-1.5 rounded border border-primary/50 bg-primary/10 px-3 py-2.5 font-mono text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
+                >
+                  {busyEnry ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  Add to Enry
+                </button>
+              ) : (
+                <div
+                  title={entry.unservableReason ?? undefined}
+                  className="flex w-full cursor-not-allowed items-center justify-center gap-1.5 rounded border border-border/50 bg-surface-secondary/50 px-3 py-2.5 font-mono text-[11px] text-muted-foreground/50"
+                >
+                  <Ban className="h-3.5 w-3.5" /> Can&apos;t add — {entry.unservableReason ?? 'no inference provider available'}
+                </div>
+              )}
+
+              {/* Carry the experimental warning onto anything added this way. */}
+              {addedToEnry ? (
+                <p className="mt-1.5 text-center font-mono text-[9px] leading-relaxed text-warning/70">
+                  Added as an experimental, unvetted community model. Manually selectable in Chat only — never used by Cruise or any autonomous path.
+                </p>
+              ) : entry.servable ? (
+                <p className="mt-1.5 text-center font-mono text-[9px] leading-relaxed text-muted-foreground/50">
+                  Experimental &amp; unvetted. Adds to the Chat picker (marked Community), served via Hugging Face — first message may be slow while the model cold-starts.
+                </p>
+              ) : null}
+              {enryError && (
+                <p className="mt-1.5 text-center font-mono text-[9px] text-destructive">{enryError}</p>
+              )}
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 <a
                   href={`https://huggingface.co/${entry.hfId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-2 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20"
+                  className="flex items-center justify-center gap-1.5 rounded border border-border bg-surface-elevated px-3 py-2 font-mono text-[11px] text-foreground transition-colors hover:border-primary/40"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" /> View on Hugging Face
+                  <ExternalLink className="h-3.5 w-3.5" /> Hugging Face
                 </a>
                 <button
                   onClick={() => onAddToIdeas(entry)}
@@ -162,9 +216,6 @@ export function BlackMarketPanel({
                 <FutureButton icon={GitCompare} label="Compare" />
                 <FutureButton icon={Download} label="Install" />
               </div>
-              <p className="mt-2 text-center font-mono text-[9px] text-muted-foreground/40">
-                Install, benchmark &amp; routing arrive once the execution layer ships.
-              </p>
             </div>
           </motion.aside>
         </>

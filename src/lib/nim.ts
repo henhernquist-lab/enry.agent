@@ -138,6 +138,28 @@ interface ProviderConfig {
 
 const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
+// Hugging Face Inference Providers router — OpenAI-compatible. Community
+// models added from The Black Market route here (see COMMUNITY_MODEL_PREFIX).
+const HF_ROUTER_BASE = 'https://router.huggingface.co/v1'
+
+// ── Community models (The Black Market) ─────────────────────────────
+// Community models aren't in the static MODEL_LIST/PROVIDERS above — they're
+// added at runtime and persisted in Supabase (community_models). Their id is
+// self-describing so routing needs no DB lookup at call time:
+//   community:<hfId>:<provider>
+//   e.g. community:NousResearch/Hermes-3-Llama-3.1-8B:featherless-ai
+// The part after the prefix is exactly the model param the HF router expects.
+export const COMMUNITY_MODEL_PREFIX = 'community:'
+
+export function isCommunityModelId(id: string): boolean {
+  return id.startsWith(COMMUNITY_MODEL_PREFIX)
+}
+
+/** The HF-router model param for a community id (strips the marker prefix). */
+export function communityRouteParam(id: string): string {
+  return id.slice(COMMUNITY_MODEL_PREFIX.length)
+}
+
 const PROVIDERS: Record<string, ProviderConfig> = {
   // DeepSeek V4 Pro — routed via OpenRouter, not NIM. NIM's deepseek-v4-pro
   // deployment has been persistently DEGRADED (confirmed repeatedly this
@@ -188,12 +210,20 @@ export function defaultModelForScope(scope: ModelScope): string {
 // ─── Server-only: client + chat model factories ────────────────────
 // Use these from API routes. Tree-shake friendly — pickers that only import
 // `MODEL_LIST` and `getModelMeta` won't pull createOpenAI into the client bundle.
+const hfRouterKey = () => process.env.HUGGINGFACE_API_KEY ?? process.env.HF_TOKEN ?? ''
+
 export function isModelConfigured(id: string): boolean {
+  if (isCommunityModelId(id)) return Boolean(hfRouterKey())
   return Boolean(PROVIDERS[id]?.getApiKey())
 }
 
 export function nimClientFor(model?: string) {
   const id = model ?? DEFAULT_MODEL_ID
+  if (isCommunityModelId(id)) {
+    const apiKey = hfRouterKey()
+    if (!apiKey) throw new Error('No Hugging Face API key configured (HUGGINGFACE_API_KEY)')
+    return createOpenAI({ baseURL: HF_ROUTER_BASE, apiKey })
+  }
   const provider = PROVIDERS[id] ?? PROVIDERS[DEFAULT_MODEL_ID]
   const apiKey = provider.getApiKey()
   if (!apiKey) throw new Error(`No API key configured for model ${id}`)
@@ -204,15 +234,58 @@ export function nimClientFor(model?: string) {
 /**
  * One-call helper for `streamText({ model: getChatModel(requested), ... })`.
  * Returns a LanguageModel ready for AI SDK calls. Validates the id is
- * registered but does not enforce scope — that's the caller's job.
+ * registered (or a community id) but does not enforce scope — caller's job.
  */
 export function getChatModel(modelId?: string) {
   const id = modelId ?? DEFAULT_MODEL_ID
+  if (isCommunityModelId(id)) {
+    return nimClientFor(id).chat(communityRouteParam(id))
+  }
   if (!PROVIDERS[id]) {
     // Fall back to default — never let an unknown id take down the route.
     return nimClientFor(DEFAULT_MODEL_ID).chat(DEFAULT_MODEL_ID)
   }
   return nimClientFor(id).chat(id)
+}
+
+/**
+ * Warm up a community model before streaming. HF Inference Providers load
+ * less-popular models on demand; the router returns 503 for the first
+ * ~15–45s while the provider spins the model up (confirmed against
+ * featherless-ai). A tiny non-streaming completion with retries lets that
+ * cold start happen here — where we can retry — instead of erroring the
+ * user's stream. Best-effort: returns true once warm, false if it never
+ * came up in the budget (the caller can still attempt the stream).
+ */
+export async function warmCommunityModel(
+  id: string,
+  opts: { attempts?: number; timeoutMs?: number; gapMs?: number } = {},
+): Promise<boolean> {
+  if (!isCommunityModelId(id)) return true
+  const apiKey = hfRouterKey()
+  if (!apiKey) return false
+  // Defaults are bounded so a caller with a tight request budget (e.g. the
+  // chat route's maxDuration) can't be pushed over it: worst case here is
+  // ~3×12s + 2×6s ≈ 48s. A warm model returns on the first ~1s ping.
+  const attempts = opts.attempts ?? 3
+  const timeoutMs = opts.timeoutMs ?? 12_000
+  const gapMs = opts.gapMs ?? 6_000
+  const param = communityRouteParam(id)
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(`${HF_ROUTER_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: param, messages: [{ role: 'user', content: 'ok' }], max_tokens: 1 }),
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (res.ok) return true
+    } catch {
+      // timeout / network — treat as still-cold and retry
+    }
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, gapMs))
+  }
+  return false
 }
 
 // ─── Backwards compatibility shim ─────────────────────────────────

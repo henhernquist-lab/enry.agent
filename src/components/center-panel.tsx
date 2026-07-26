@@ -116,9 +116,13 @@ const MODELS = listModels('chat').map((m) => ({
   label: m.label,
   company: m.company,
   desc: m.description,
+  community: false,
 }))
 
-type ModelId = typeof MODELS[number]['id']
+// Community ids are dynamic (community:<hfId>:<provider>), so the model id is
+// a plain string, not a fixed union.
+type ModelId = string
+type PickerModel = { id: string; label: string; company: string; desc: string; community: boolean }
 
 // ─── Chatbot effort (3 levels, separate from coding agent's 5) ───
 
@@ -191,6 +195,28 @@ export function CenterPanel({
 }: CenterPanelProps) {
   const [model, setModel] = useState<ModelId>('deepseek/deepseek-v4-pro')
   const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS['deepseek/deepseek-v4-pro'] ?? 'medium')
+
+  // Community models added from The Black Market. Fetched at mount and merged
+  // into the picker below the first-party models, visibly badged.
+  const [communityModels, setCommunityModels] = useState<PickerModel[]>([])
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/models/community')
+      .then((r) => (r.ok ? r.json() : { models: [] }))
+      .then((d: { models?: { modelId: string; label: string; company: string; description: string }[] }) => {
+        if (cancelled) return
+        setCommunityModels(
+          (d.models ?? []).map((m) => ({
+            id: m.modelId, label: m.label, company: m.company, desc: m.description, community: true,
+          })),
+        )
+      })
+      .catch(() => { /* non-fatal — picker just shows first-party models */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const pickerModels: PickerModel[] = [...MODELS, ...communityModels]
+  const findModel = (id: string) => pickerModels.find((m) => m.id === id)
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
 
   // Focus mode (source scope) — controls which DRAWERS the agent reads from
@@ -689,7 +715,7 @@ export function CenterPanel({
               >
                 <Cpu className="h-3 w-3 text-primary" />
                 <span className="font-mono text-[11px] font-medium text-foreground">
-                  {(() => { const m = MODELS.find((x) => x.id === model); return m ? `${m.company} ${m.label}` : ''; })()}
+                  {(() => { const m = findModel(model); return m ? `${m.company} ${m.label}` : ''; })()}
                 </span>
               </motion.div>
 
@@ -1100,10 +1126,10 @@ export function CenterPanel({
                 className="flex h-10 items-center gap-1.5 rounded border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
               >
                 <span className="text-muted-foreground/60 text-[10px]">
-                  {MODELS.find((m) => m.id === model)?.company}
+                  {findModel(model)?.company}
                 </span>
                 <span className="text-primary font-semibold">
-                  {MODELS.find((m) => m.id === model)?.label}
+                  {findModel(model)?.label}
                 </span>
                 <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -1112,7 +1138,7 @@ export function CenterPanel({
                 // top-full would push a long model list off the bottom of the
                 // viewport with nothing able to scroll it back into view.
                 <div className="absolute bottom-full left-0 z-50 mb-1 w-80 max-h-[50vh] overflow-y-auto border border-border bg-surface-secondary shadow-xl scrollbar-hidden">
-                  {MODELS.map((m) => (
+                  {pickerModels.map((m) => (
                     <button
                       type="button"
                       key={m.id}
@@ -1131,9 +1157,16 @@ export function CenterPanel({
                         )}
                       </span>
                       <span className="flex flex-col">
-                        <span>
-                          <span className="text-muted-foreground/60 text-[10px]">{m.company}</span>{' '}
-                          <span>{m.label}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span>
+                            <span className="text-muted-foreground/60 text-[10px]">{m.company}</span>{' '}
+                            <span>{m.label}</span>
+                          </span>
+                          {m.community && (
+                            <span className="rounded border border-warning/30 bg-warning/10 px-1 py-0 font-mono text-[8px] uppercase tracking-wider text-warning">
+                              Community
+                            </span>
+                          )}
                         </span>
                         <span className="font-normal text-[10px] text-muted-foreground leading-tight mt-0.5">
                           {m.desc}

@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { BLACK_MARKET_CATALOG, type BlackMarketEntry, type BlackMarketLiveStats } from '@/lib/lab/black-market'
+import { resolveServability, listCommunityModels } from '@/lib/models/community'
 
 export const maxDuration = 15
 
@@ -42,11 +43,31 @@ export async function GET() {
   const uid = await resolveResourceUserId(googleId ?? null)
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Which of these has the user already added? (by hfId) Never let this break
+  // the browse/discovery function — fall back to "none added" on any error.
+  let added = new Set<string>()
+  try {
+    added = new Set((await listCommunityModels(uid)).map((m) => m.hfId))
+  } catch {
+    /* browse still works; cards just won't show an "added" state */
+  }
+
   const entries: BlackMarketEntry[] = await Promise.all(
-    BLACK_MARKET_CATALOG.map(async (model) => ({
-      ...model,
-      stats: await fetchHfStats(model.hfId),
-    })),
+    BLACK_MARKET_CATALOG.map(async (model) => {
+      const [stats, serv] = await Promise.all([
+        fetchHfStats(model.hfId),
+        resolveServability(model.hfId),
+      ])
+      return {
+        ...model,
+        stats,
+        // Whether an "Add to Enry" action can actually produce a callable
+        // model. Honest gate: false when no live HF inference provider exists.
+        servable: serv.servable,
+        unservableReason: serv.servable ? null : serv.reason,
+        added: added.has(model.hfId),
+      }
+    }),
   )
 
   return Response.json({ entries })

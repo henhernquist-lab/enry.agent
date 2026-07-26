@@ -63,7 +63,16 @@ export interface BlackMarketLiveStats {
   ok: boolean
 }
 
-export type BlackMarketEntry = BlackMarketModel & { stats: BlackMarketLiveStats }
+export type BlackMarketEntry = BlackMarketModel & {
+  stats: BlackMarketLiveStats
+  /** Whether a live HF inference provider can actually serve this model —
+   *  gates the "Add to Enry" action. Resolved live by the API route. */
+  servable: boolean
+  /** Why it can't be added, when servable is false (shown in the UI). */
+  unservableReason: string | null
+  /** Whether the current user has already added this model to their registry. */
+  added: boolean
+}
 
 export const CATEGORY_META: Record<BlackMarketCategory, { emoji: string; label: string; blurb: string }> = {
   trending:     { emoji: '🔥', label: 'Trending',      blurb: 'Most talked-about community models.' },

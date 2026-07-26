@@ -12,7 +12,7 @@ import { parseSessionFocusId, SESSION_FOCUS_PROMPTS, sessionFocusLabel } from '@
 import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
-import { nimClientFor } from '@/lib/nim'
+import { nimClientFor, isCommunityModelId, warmCommunityModel } from '@/lib/nim'
 import { logUsage } from '@/lib/usage/log'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { monidDiscover, monidRun } from '@/lib/monid'
@@ -31,7 +31,10 @@ import { listModels } from '@/lib/nim'
 const CHAT_MODELS = listModels('chat').map((m) => m.id)
 const DEFAULT_MODEL = CHAT_MODELS[0] ?? 'deepseek/deepseek-v4-pro'
 
-export const maxDuration = 60
+// 120 (not 60) so a first message to a freshly-added community model has room
+// for the HF Inference Providers cold-start warm-up (bounded ~48s) plus the
+// actual stream. First-party models return well within the old budget.
+export const maxDuration = 120
 
 const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY ?? '' })
 
@@ -249,7 +252,18 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 export async function POST(req: Request) {
   const body = await req.json()
   const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn, recovery, partialContent } = body
-  const selectedModel: string = CHAT_MODELS.includes(model) ? model : DEFAULT_MODEL
+  // Community models (The Black Market) aren't in the static CHAT_MODELS
+  // allowlist but are valid chat targets — recognized by their id prefix and
+  // routed via HF Inference Providers. Trust of the id itself is fine: routing
+  // is inert for anything that isn't a real, addable model.
+  const selectedModel: string =
+    CHAT_MODELS.includes(model) || isCommunityModelId(model) ? model : DEFAULT_MODEL
+
+  // HF Inference Providers cold-start less-popular models; warm it here (with
+  // retries) so the first message doesn't error mid-stream. No-op otherwise.
+  if (isCommunityModelId(selectedModel)) {
+    await warmCommunityModel(selectedModel)
+  }
 
   // ─── Recovery Mode ─────────────────────────────────────────
   // When the frontend detects a stream interruption, it sends a
