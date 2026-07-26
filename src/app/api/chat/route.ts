@@ -38,6 +38,19 @@ export const maxDuration = 120
 
 const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY ?? '' })
 
+// ─── Error sanitization ───────────────────────────────────────────
+// Never let raw provider JSON (Type validation failed dumps, etc.) leak
+// to the client UI. Log the real error server-side; return a clean message.
+function sanitizeErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? '')
+  // Provider type-validation failures leak raw JSON payloads — catch them.
+  if (raw.includes('Type validation failed') || raw.includes('Value:')) {
+    return 'Something went wrong processing that response — retry or switch models'
+  }
+  // Generic fallback: don't echo unknown error text to the client.
+  return 'Something went wrong'
+}
+
 // ─── Focus Mode — controls which tools are available ────────────────────
 type FocusMode = 'all' | 'memory_only' | 'web_only' | 'repo_only'
 
@@ -454,7 +467,7 @@ export async function POST(req: Request) {
       headers: Object.keys(responseHeaders).length > 0 ? responseHeaders : undefined,
       onError: (error) => {
         console.error('chat route multi-skill error:', error)
-        return error instanceof Error ? error.message : 'Something went wrong'
+        return sanitizeErrorMessage(error)
       },
     })
   }
@@ -795,7 +808,7 @@ ${userProfile ? `\n${userProfile}` : ''}`,
     headers: compacted ? { 'X-Context-Compacted': 'true', 'X-Context-Compacted-Summary': encodeURIComponent(compactionSummary ?? '') } : undefined,
     onError: (error) => {
       console.error('chat route error:', error)
-      return error instanceof Error ? error.message : 'Something went wrong'
+      return sanitizeErrorMessage(error)
     },
   })
 }

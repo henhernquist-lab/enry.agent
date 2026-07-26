@@ -55,6 +55,7 @@ export async function PUT(req: Request) {
     await supabase.from('resources').insert({
       user_id: uid,
       type: 'quick_note',
+      source: 'user',
       title: content.slice(0, 80) || 'Quick note',
       payload: { content },
     })

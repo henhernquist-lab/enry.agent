@@ -160,6 +160,91 @@ export function communityRouteParam(id: string): string {
   return id.slice(COMMUNITY_MODEL_PREFIX.length)
 }
 
+// ── Gemini SSE response transform ───────────────────────────────────
+// Gemini's OpenAI-compatible streaming endpoint wraps tool_call deltas in
+// an `extra_content` field containing `google.thought_signature`. The
+// OpenAI SDK's type validation rejects this non-standard field during
+// streaming, producing "Type validation failed" errors that leak raw
+// provider JSON to the UI. This transform strips `extra_content` from
+// tool_calls in SSE data lines before the SDK parses them, targeting
+// only Gemini's endpoint.
+
+const GEMINI_MODEL_ID = 'gemini-3.5-flash'
+
+function createGeminiFetch(): typeof fetch {
+  const originalFetch = globalThis.fetch.bind(globalThis)
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await originalFetch(input, init)
+    const contentType = response.headers.get('content-type') ?? ''
+    if (!contentType.includes('text/event-stream')) return response
+
+    // Pipe the streaming response through a transform that strips
+    // `extra_content` from tool_calls in each SSE data line.
+    const reader = response.body?.getReader()
+    if (!reader) return response
+
+    const encoder = new TextEncoder()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    const transformedStream = new ReadableStream({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read()
+          if (done) {
+            if (buffer) {
+              controller.enqueue(encoder.encode(buffer))
+              buffer = ''
+            }
+            controller.close()
+            return
+          }
+          buffer += decoder.decode(value, { stream: true })
+
+          // Process complete lines
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? '' // keep the incomplete last line
+
+          const processed = lines.map((line) => {
+            if (!line.startsWith('data: ') && !line.startsWith('data:')) return line
+            const prefix = line.startsWith('data: ') ? 'data: ' : 'data:'
+            const jsonStr = line.slice(prefix.length).trim()
+            if (!jsonStr || jsonStr === '[DONE]') return line
+
+            // Strip extra_content from tool_calls in delta chunks
+            try {
+              const cleaned = jsonStr.replace(
+                /"extra_content"\s*:\s*\{[^}]*\}\s*,?/g,
+                '',
+              )
+              // Clean up trailing commas from removed fields: ,} → }
+              const fixed = cleaned.replace(/,}/g, '}')
+              if (fixed !== jsonStr) return prefix + fixed
+            } catch {
+              // If parsing fails, pass the line through unchanged
+            }
+            return line
+          })
+
+          controller.enqueue(encoder.encode(processed.join('\n')))
+        } catch (err) {
+          console.error('[nim] gemini stream transform error:', err)
+          controller.error(err)
+        }
+      },
+      cancel() {
+        reader.cancel()
+      },
+    })
+
+    return new Response(transformedStream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
+  }
+}
+
 const PROVIDERS: Record<string, ProviderConfig> = {
   // DeepSeek V4 Pro — routed via OpenRouter, not NIM. NIM's deepseek-v4-pro
   // deployment has been persistently DEGRADED (confirmed repeatedly this
@@ -228,7 +313,13 @@ export function nimClientFor(model?: string) {
   const apiKey = provider.getApiKey()
   if (!apiKey) throw new Error(`No API key configured for model ${id}`)
   const baseURL = typeof provider.baseURL === 'function' ? provider.baseURL() : provider.baseURL
-  return createOpenAI({ baseURL, apiKey })
+  const client = createOpenAI({ baseURL, apiKey })
+  // Attach Gemini SSE transform — strips extra_content from tool_call
+  // deltas before the SDK parses them. No-op for non-Gemini providers.
+  if (id === GEMINI_MODEL_ID) {
+    return createOpenAI({ baseURL, apiKey, fetch: createGeminiFetch() })
+  }
+  return client
 }
 
 /**

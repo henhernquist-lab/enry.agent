@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages } from 'ai'
+import { streamText } from 'ai'
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { nimClientFor, listModels } from '@/lib/nim'
@@ -8,6 +8,15 @@ import { compactMessages } from '@/lib/compaction'
 export const maxDuration = 60
 
 const CHAT_MODELS = listModels('chat').map((m) => m.id)
+
+// ─── Error sanitization ───────────────────────────────────────────
+function sanitizeErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? '')
+  if (raw.includes('Type validation failed') || raw.includes('Value:')) {
+    return 'Something went wrong processing that response — retry or switch models'
+  }
+  return 'Something went wrong'
+}
 const DEFAULT_MODEL = CHAT_MODELS[0] ?? 'deepseek/deepseek-v4-pro'
 
 const ARCHITECT_SYSTEM_PROMPT = `# ROLE
@@ -154,8 +163,7 @@ export async function POST(req: Request) {
   const googleId = (session?.user as { id?: string })?.id
   const uid = await resolveResourceUserId(googleId ?? null)
 
-  const modelMessages = await convertToModelMessages(messages)
-  const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
+  const compactResult = compactMessages(messages)
   const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
 
   const startedAt = Date.now()
@@ -190,7 +198,7 @@ export async function POST(req: Request) {
     } : undefined,
     onError: (error) => {
       console.error('[architect/chat] route error:', error)
-      return error instanceof Error ? error.message : 'Something went wrong'
+      return sanitizeErrorMessage(error)
     },
   })
 }
