@@ -7,9 +7,10 @@ import {
   ArrowLeft, FlaskConical, Lightbulb, GitPullRequest, BarChart3,
   Zap, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ExternalLink,
   GitMerge, Dna, XCircle, Code, Sparkles, Moon, Play, Trash2, Plus,
-  Clock, Timer, RefreshCw, Skull,
+  Clock, Timer, RefreshCw, Skull, ScanSearch, Brain, TrendingUp,
+  Target, Wand2, ChevronRight, Star,
 } from 'lucide-react'
-import type { PromptRevisionRow, LabStats, EvolutionCandidate, OvernightIdeaRow, OvernightRunRow } from '@/lib/lab/types'
+import type { PromptRevisionRow, LabStats, EvolutionCandidate, OvernightIdeaRow, OvernightRunRow, LarpResult, LarpFeature } from '@/lib/lab/types'
 import { LiveWorkspace } from '@/components/live-workspace'
 
 const SKILL_SLUGS = [
@@ -60,6 +61,15 @@ export default function LabPage() {
   const [overnightError, setOvernightError] = useState<string | null>(null)
   // Track the active run ID for live workspace polling
   const [activeOvernightRunId, setActiveOvernightRunId] = useState<string | null>(null)
+
+  // LARP Engine state
+  const [larpUrl, setLarpUrl] = useState('')
+  const [larpProjectContext, setLarpProjectContext] = useState('')
+  const [larpFeatureIdea, setLarpFeatureIdea] = useState('')
+  const [larpRunning, setLarpRunning] = useState(false)
+  const [larpResult, setLarpResult] = useState<LarpResult | null>(null)
+  const [larpError, setLarpError] = useState<string | null>(null)
+  const [larpExpandedCards, setLarpExpandedCards] = useState<Set<number>>(new Set())
 
   const loadOvernightData = () => {
     fetch('/api/lab/overnight/ideas')
@@ -165,6 +175,66 @@ export default function LabPage() {
     } catch {}
   }
 
+  const runLarp = async () => {
+    if (!larpUrl.trim() && !larpFeatureIdea.trim()) return
+    setLarpRunning(true)
+    setLarpError(null)
+    setLarpResult(null)
+    setLarpExpandedCards(new Set())
+    try {
+      const res = await fetch('/api/lab/larp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: larpUrl.trim() || undefined,
+          projectContext: larpProjectContext.trim() || undefined,
+          featureIdea: larpFeatureIdea.trim() || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setLarpError(data.error ?? 'Analysis failed')
+        return
+      }
+      setLarpResult(data as LarpResult)
+    } catch (e) {
+      setLarpError(e instanceof Error ? e.message : 'Network error')
+    } finally {
+      setLarpRunning(false)
+    }
+  }
+
+  const toggleLarpCard = (idx: number) => {
+    setLarpExpandedCards((prev) => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  const generateBuildPrompt = (feature: LarpFeature) => {
+    const prompt = [
+      `Build prompt for: ${feature.name}`,
+      '',
+      `## What to build`,
+      feature.what_it_does,
+      '',
+      '## Why',
+      feature.why_valuable,
+      '',
+      '## How Enry could improve it',
+      feature.how_enry_could_improve,
+      '',
+      `## Difficulty: ${feature.difficulty}`,
+      `## Estimated effort: ${feature.build_effort}`,
+      '',
+      '## Architecture notes',
+      `Novelty: ${feature.novelty}/10 | User value: ${feature.user_value}/10 | Architecture fit: ${feature.architecture_fit}/10 | Recommendation: ${feature.recommendation_score}/10`,
+    ].join('\n')
+    navigator.clipboard.writeText(prompt).catch(() => {})
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
       <header className="mb-8 flex items-center gap-3">
@@ -180,7 +250,7 @@ export default function LabPage() {
           Enry Lab
         </h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Experimental features: skill prompt improvement, evolutionary code generation, and overnight R&D.
+          Experimental features: skill prompt improvement, evolutionary code generation, overnight R&D, and the LARP Engine for product idea discovery.
         </p>
       </div>
 
@@ -484,7 +554,295 @@ export default function LabPage() {
         </div>
       </section>
 
-      {/* ── Section 3: Run Review ── */}
+      {/* ── Section 3: LARP Engine ── */}
+      <section className="mb-10">
+        <h2 className="mb-4 font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <ScanSearch className="h-3.5 w-3.5" /> LARP Engine
+          </span>
+        </h2>
+        <div className="rounded border border-border bg-surface-secondary p-4">
+          <p className="mb-3 font-mono text-[11px] text-muted-foreground">
+            Discover what ideas are worth borrowing from other software. Paste a repo URL, describe what you&apos;re building, or name a feature you want to explore — the LARP Engine extracts the product decisions, UX patterns, and architecture concepts actually worth adapting.
+          </p>
+
+          {/* Inputs */}
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={larpUrl}
+              onChange={(e) => setLarpUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && runLarp()}
+              placeholder="https://github.com/owner/repo"
+              spellCheck={false}
+              autoCapitalize="off"
+              autoComplete="off"
+              disabled={larpRunning}
+              className="w-full rounded border border-border bg-surface-elevated px-3 py-2 font-mono text-[12px] text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40"
+            />
+            <input
+              type="text"
+              value={larpProjectContext}
+              onChange={(e) => setLarpProjectContext(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && runLarp()}
+              placeholder='What are you building? (optional — e.g. "an AI coding assistant")'
+              spellCheck={false}
+              autoCapitalize="off"
+              autoComplete="off"
+              disabled={larpRunning}
+              className="w-full rounded border border-border bg-surface-elevated px-3 py-2 font-mono text-[12px] text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40"
+            />
+            <input
+              type="text"
+              value={larpFeatureIdea}
+              onChange={(e) => setLarpFeatureIdea(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && runLarp()}
+              placeholder='Feature idea to explore (optional — e.g. "better autonomous agents")'
+              spellCheck={false}
+              autoCapitalize="off"
+              autoComplete="off"
+              disabled={larpRunning}
+              className="w-full rounded border border-border bg-surface-elevated px-3 py-2 font-mono text-[12px] text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40"
+            />
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={runLarp}
+              disabled={larpRunning || (!larpUrl.trim() && !larpFeatureIdea.trim())}
+              className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-4 py-2 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40"
+            >
+              {larpRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanSearch className="h-3.5 w-3.5" />}
+              {larpRunning ? 'Analyzing…' : 'Analyze'}
+            </button>
+            <span className="font-mono text-[9px] text-muted-foreground/50">
+              Analyzes with DeepSeek V4 Pro — extracts product ideas, not code summaries
+            </span>
+          </div>
+
+          {/* Loading */}
+          {larpRunning && (
+            <div className="mt-4 flex items-center gap-2 rounded border border-border bg-surface-elevated p-3">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="font-mono text-[11px] text-muted-foreground">
+                Fetching repo data and extracting borrowable product ideas…
+              </span>
+            </div>
+          )}
+
+          {/* Error */}
+          {larpError && (
+            <div className="mt-4 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-warning" />
+              <span className="font-mono text-[11px] text-warning">{larpError}</span>
+            </div>
+          )}
+
+          {/* Results */}
+          {larpResult && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-4 space-y-4"
+            >
+              {/* Summary */}
+              <div className="rounded border border-primary/20 bg-primary/5 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-primary">
+                    {larpResult.repo_name ?? 'Analysis'}
+                  </span>
+                  {larpResult.features && (
+                    <span className="font-mono text-[9px] text-muted-foreground">
+                      {larpResult.features.length} idea{larpResult.features.length !== 1 ? 's' : ''} found
+                    </span>
+                  )}
+                </div>
+                {larpResult.analysis_summary && (
+                  <p className="mt-1.5 font-mono text-[11px] leading-relaxed text-foreground/90">
+                    {larpResult.analysis_summary}
+                  </p>
+                )}
+              </div>
+
+              {/* Feature Cards */}
+              {larpResult.features && larpResult.features.length > 0 && (
+                <div>
+                  <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Ideas worth borrowing
+                  </p>
+                  <div className="space-y-2">
+                    {larpResult.features.map((feature, idx) => {
+                      const expanded = larpExpandedCards.has(idx)
+                      return (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.06 }}
+                          className="rounded border border-border bg-surface-elevated"
+                        >
+                          {/* Card header — always visible */}
+                          <button
+                            onClick={() => toggleLarpCard(idx)}
+                            className="flex w-full items-center justify-between gap-3 p-3 text-left transition-colors hover:bg-surface-secondary/50"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate font-mono text-[11px] font-semibold text-foreground">
+                                  {feature.name}
+                                </span>
+                                {feature.category && (
+                                  <span className="flex-shrink-0 rounded border border-border px-1.5 py-0.5 font-mono text-[8px] text-muted-foreground">
+                                    {feature.category}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                {/* Recommendation score bar */}
+                                <div className="flex items-center gap-1">
+                                  <Star className={`h-3 w-3 ${feature.recommendation_score >= 7 ? 'text-primary' : feature.recommendation_score >= 4 ? 'text-warning' : 'text-muted-foreground'}`} />
+                                  <span className="font-mono text-[9px] text-muted-foreground">
+                                    {feature.recommendation_score}/10
+                                  </span>
+                                </div>
+                                {/* Difficulty */}
+                                <span className={`rounded px-1.5 py-0.5 font-mono text-[8px] uppercase ${
+                                  feature.difficulty === 'Low' ? 'bg-primary/10 text-primary' :
+                                  feature.difficulty === 'Medium' ? 'bg-warning/10 text-warning' :
+                                  'bg-destructive/10 text-destructive'
+                                }`}>
+                                  {feature.difficulty}
+                                </span>
+                                {/* Build effort */}
+                                {feature.build_effort && (
+                                  <span className="font-mono text-[9px] text-muted-foreground/70">
+                                    {feature.build_effort}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <ChevronRight className={`h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                          </button>
+
+                          {/* Expanded detail */}
+                          {expanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              className="border-t border-border px-3 py-3"
+                            >
+                              <div className="space-y-3">
+                                {/* What it does */}
+                                <div>
+                                  <p className="mb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">What it does</p>
+                                  <p className="font-mono text-[10px] leading-relaxed text-foreground/90">{feature.what_it_does}</p>
+                                </div>
+
+                                {/* Why valuable */}
+                                <div>
+                                  <p className="mb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Why it&apos;s valuable</p>
+                                  <p className="font-mono text-[10px] leading-relaxed text-foreground/90">{feature.why_valuable}</p>
+                                </div>
+
+                                {/* How Enry could improve */}
+                                {feature.how_enry_could_improve && (
+                                  <div>
+                                    <p className="mb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">How Enry could improve it</p>
+                                    <p className="font-mono text-[10px] leading-relaxed text-foreground/90">{feature.how_enry_could_improve}</p>
+                                  </div>
+                                )}
+
+                                {/* Rating bars */}
+                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                  <RatingBadge label="Novelty" value={feature.novelty} />
+                                  <RatingBadge label="User Value" value={feature.user_value} />
+                                  <RatingBadge label="Arch. Fit" value={feature.architecture_fit} />
+                                  <RatingBadge label="Fits Enry" value={feature.fits_enry} />
+                                </div>
+
+                                {/* Maintenance cost */}
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-[9px] text-muted-foreground">Maintenance cost:</span>
+                                  <span className={`rounded px-1.5 py-0.5 font-mono text-[8px] uppercase ${
+                                    feature.maintenance_cost === 'Low' ? 'bg-primary/10 text-primary' :
+                                    feature.maintenance_cost === 'Medium' ? 'bg-warning/10 text-warning' :
+                                    'bg-destructive/10 text-destructive'
+                                  }`}>
+                                    {feature.maintenance_cost}
+                                  </span>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    onClick={() => generateBuildPrompt(feature)}
+                                    className="flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 py-1 font-mono text-[9px] text-primary transition-colors hover:bg-primary/20"
+                                  >
+                                    <Wand2 className="h-3 w-3" /> Generate Build Prompt
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(
+                                        `Feature: ${feature.name}\nCategory: ${feature.category}\nDifficulty: ${feature.difficulty} | Effort: ${feature.build_effort}\nFits Enry: ${feature.fits_enry}/10 | Recommendation: ${feature.recommendation_score}/10\n\nWhat: ${feature.what_it_does}\n\nWhy: ${feature.why_valuable}\n\nImprovement: ${feature.how_enry_could_improve}`
+                                      ).catch(() => {})
+                                    }}
+                                    className="flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[9px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+                                  >
+                                    <Brain className="h-3 w-3" /> Copy to clipboard
+                                  </button>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </motion.div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* What to skip */}
+              {larpResult.what_to_skip && larpResult.what_to_skip.length > 0 && (
+                <div>
+                  <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    What to skip (and why)
+                  </p>
+                  <div className="space-y-1.5">
+                    {larpResult.what_to_skip.map((skip, idx) => (
+                      <div key={idx} className="flex items-start gap-2 rounded border border-border bg-surface-elevated p-2.5">
+                        <TrendingUp className="mt-0.5 h-3 w-3 flex-shrink-0 rotate-180 text-muted-foreground/50" />
+                        <p className="font-mono text-[10px] leading-relaxed text-muted-foreground">{skip}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* No features found */}
+              {(!larpResult.features || larpResult.features.length === 0) && !larpResult.analysis_summary && (
+                <div className="rounded border border-dashed border-border p-6 text-center">
+                  <p className="text-sm text-muted-foreground">No borrowable ideas detected.</p>
+                  <p className="mt-1 text-xs text-muted-foreground/60">
+                    This repo may be too small, too domain-specific, or the README didn&apos;t reveal enough product decisions.
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Empty state */}
+          {!larpResult && !larpRunning && !larpError && (
+            <div className="mt-4 rounded border border-dashed border-border p-6 text-center">
+              <p className="text-sm text-muted-foreground">Paste a repo URL, describe your project, or name a feature above.</p>
+              <p className="mt-1 font-mono text-[10px] text-muted-foreground/50">
+                The LARP Engine extracts product ideas worth borrowing — not code summaries.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Section 4: Run Review ── */}
       <section className="mb-10">
         <h2 className="mb-4 font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Run Review Pass
@@ -564,7 +922,7 @@ export default function LabPage() {
         </div>
       </section>
 
-      {/* ── Section 4: Proposed Prompt Revisions ── */}
+      {/* ── Section 5: Proposed Prompt Revisions ── */}
       <section>
         <h2 className="mb-4 font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Proposed Prompt Revisions
@@ -768,6 +1126,21 @@ function StatCard({
       </div>
       <div className="text-2xl font-semibold tabular-nums">
         {loading ? <span className="text-muted-foreground/30">—</span> : value}
+      </div>
+    </div>
+  )
+}
+
+function RatingBadge({ label, value }: { label: string; value: number }) {
+  const color = value >= 7 ? 'bg-primary/60' : value >= 4 ? 'bg-warning/60' : 'bg-muted-foreground/30'
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground/70">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <div className="h-1.5 flex-1 rounded-full bg-surface-base overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${(value / 10) * 100}%` }} />
+        </div>
+        <span className="font-mono text-[9px] tabular-nums text-muted-foreground">{value}</span>
       </div>
     </div>
   )
