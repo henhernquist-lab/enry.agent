@@ -58,7 +58,7 @@ export interface HabitStreakPayload {
 
 export interface PromptPayload {
   body: string
-  category: 'coding' | 'writing' | 'study' | 'training' | 'general'
+  category: 'coding' | 'writing' | 'study' | 'training' | 'general' | 'meta'
   tags: string[]
   notes?: string
   use_count?: number

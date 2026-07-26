@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 
 export const maxDuration = 30
 
-const VALID_CATEGORIES = new Set(['coding', 'writing', 'study', 'training', 'general'])
+const VALID_CATEGORIES = new Set(['coding', 'writing', 'study', 'training', 'general', 'meta'])
 
 /*
   Expected Supabase table schema:

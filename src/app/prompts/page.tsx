@@ -41,10 +41,11 @@ const CATEGORIES: { id: PromptPayload['category']; label: string; icon: typeof C
   { id: 'study',    label: 'Study',    icon: BookOpen },
   { id: 'training', label: 'Training', icon: Dumbbell },
   { id: 'general',  label: 'General',  icon: Sparkles },
+  { id: 'meta',     label: 'Meta',     icon: Brain },
 ]
 
 const CATEGORY_ICONS: Record<string, typeof Code2> = {
-  coding: Code2, writing: PenLine, study: BookOpen, training: Dumbbell, general: Sparkles,
+  coding: Code2, writing: PenLine, study: BookOpen, training: Dumbbell, general: Sparkles, meta: Brain,
 }
 
 const TAG_COLORS = [
@@ -72,6 +73,7 @@ function catStyle(cat: string): string {
     case 'study':    return 'text-[#ffb800] border-[#ffb800]/30 bg-[#ffb800]/8'
     case 'training': return 'text-[#ff4d4d] border-[#ff4d4d]/30 bg-[#ff4d4d]/8'
     case 'general':  return 'text-[#a78bfa] border-[#a78bfa]/30 bg-[#a78bfa]/8'
+    case 'meta':     return 'text-[#ec4899] border-[#ec4899]/30 bg-[#ec4899]/8'
     default:         return 'text-muted-foreground border-border bg-surface-elevated'
   }
 }
