@@ -1,6 +1,11 @@
 export type UploadFileType = 'image' | 'pdf' | 'text'
 
-export const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+// Matches the Supabase Storage bucket's real file_size_limit exactly
+// (10,000,000 bytes — a decimal 10MB, not the binary 10*1024*1024 this
+// used to say). The gap between the two let a file pass this check and
+// then fail at the storage API with an opaque 500, so the app-side limit
+// has to mirror the bucket's actual cap, not round it.
+export const MAX_FILE_SIZE = 10_000_000
 export const MAX_EXTRACT_CHARS = 20000 // matches the github_read_file truncation cap
 
 const EXTENSION_TYPE: Record<string, UploadFileType> = {

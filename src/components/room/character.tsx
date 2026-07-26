@@ -1,10 +1,10 @@
 'use client'
 
-import { useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
-import { COLORS } from './constants'
+import { COLORS, VISOR_COLORS } from './constants'
 import { getBreathingOffset, getActivityPose, lerpPose, NEUTRAL_POSE, type ActivityPose } from './animations'
 import { useWalkingController, getWalkingAnimation } from './walking-controller'
 import type { RoomStore } from './room-state'
@@ -27,16 +27,40 @@ import type { Position, Activity } from './types'
 //   - Real events = just dispatch to the store, character reacts
 // ───────────────────────────────────────────────────────────────────
 
+/** Real context shown in the click mini-HUD and speech bubble — no filler. */
+export interface WorkerInfo {
+  /** Which surface opened The Room (drive/cruise/learn/chat), if any. */
+  surface?: string
+  /** That surface's run state at entry. */
+  state?: 'working' | 'idle'
+  /** Top model from today's real usage log. */
+  topModel?: string
+  /** One-line usage summary, e.g. "DeepSeek V4 Pro · 34 req today". */
+  modelLine?: string
+  /** From the shared /api/activity/recent source — same feed as the homepage
+   *  Live Activity widget, e.g. "Drive · DeepSeek V4 Pro · 2m ago". */
+  recentActivityLine?: string
+  /** Real reason from the most recent failure (Cruise run error text), shown
+   *  in the speech bubble during the error state. Undefined when there's no
+   *  failure or the failed run recorded no reason — never a fabricated string. */
+  errorReason?: string
+}
+
 interface CharacterControllerProps {
   store: RoomStore
   walker: ReturnType<typeof useWalkingController>
   spawnPosition?: Position
+  info?: WorkerInfo
+  /** Fired when the character model itself is clicked (opens the worker HUD). */
+  onCharacterClick?: () => void
 }
 
 export function CharacterController({
   store,
   walker,
   spawnPosition = [0, 0, -0.2],
+  info,
+  onCharacterClick,
 }: CharacterControllerProps) {
   const groupRef = useRef<THREE.Group>(null)
   const headRef = useRef<THREE.Group>(null)
@@ -49,9 +73,47 @@ export function CharacterController({
   // Current pose (lerped each frame toward target)
   const currentPoseRef = useRef<ActivityPose>({ ...NEUTRAL_POSE })
 
+  // Visor material — emissive color tracks the activity state
+  const visorMatRef = useRef<THREE.MeshStandardMaterial>(null)
+  const visorTmpColor = useMemo(() => new THREE.Color(), [])
+
   // Status label visibility
   const { activity, label } = useActivitySnapshot(store)
-  const showLabel = label !== '' && activity !== 'walking'
+  const showLabel = activity !== 'walking'
+
+  // ── Speech-bubble fragments — real state only, no filler ────────
+  const fragments = useMemo(() => {
+    // In the error state the bubble shows the real failure reason (if the
+    // failed run recorded one) alongside the "Stuck" label — nothing else,
+    // and never a fabricated detail when no reason exists.
+    if (activity === 'error') {
+      const f = [label || 'Stuck']
+      if (info?.errorReason) f.push(info.errorReason)
+      return f
+    }
+    const f: string[] = []
+    if (label) f.push(label)
+    if (info?.surface) {
+      f.push(`${info.surface} session · ${info.state === 'working' ? 'active' : 'idle'}`)
+    }
+    if (info?.modelLine) f.push(info.modelLine)
+    if (info?.recentActivityLine) f.push(info.recentActivityLine)
+    return f.length > 0 ? f : ['Idle']
+  }, [label, info, activity])
+
+  // Render side uses modulo, so a stale index is always safe when the
+  // fragment list shrinks — no sync reset needed.
+  const [fragIdx, setFragIdx] = useState(0)
+  useEffect(() => {
+    if (fragments.length < 2) return
+    const id = setInterval(() => setFragIdx((i) => i + 1), 4000)
+    return () => clearInterval(id)
+  }, [fragments])
+
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    onCharacterClick?.()
+  }
 
   // Initial position comes from the <group position={spawnPosition}> prop —
   // no ref sync needed (and refs are null during the first render anyway).
@@ -131,6 +193,23 @@ export function CharacterController({
       bodyRef.current.rotation.x = pose.bodyLeanX
     }
 
+    // ── Visor emissive — green idle, blue-white working, amber error ─
+    if (visorMatRef.current) {
+      const targetColor = VISOR_COLORS[currentActivity] ?? VISOR_COLORS.idle
+      visorMatRef.current.emissive.lerp(visorTmpColor.set(targetColor), 0.08)
+      if (currentActivity === 'error') {
+        // Urgent pulse, flashing toward red on the peaks
+        const pulse = Math.sin(t * 6)
+        visorMatRef.current.emissiveIntensity = 0.9 + pulse * 0.5
+        if (pulse > 0.6) {
+          visorMatRef.current.emissive.lerp(visorTmpColor.set('#ff4a3d'), 0.35)
+        }
+      } else {
+        visorMatRef.current.emissiveIntensity +=
+          (0.7 - visorMatRef.current.emissiveIntensity) * 0.08
+      }
+    }
+
     // ── Root position: lerp Y for sit/stand, keep XZ from walker ─
     if (!isWalking) {
       const targetRootY = spawnPosition[1] + (pose.legsVisible ? 0 : 0)
@@ -143,19 +222,29 @@ export function CharacterController({
   })
 
   return (
-    <group ref={groupRef} position={spawnPosition}>
-      {/* Status label — floating above the character */}
+    <group
+      ref={groupRef}
+      position={spawnPosition}
+      onClick={handleClick}
+      onPointerOver={() => { document.body.style.cursor = 'pointer' }}
+      onPointerOut={() => { document.body.style.cursor = 'auto' }}
+    >
+      {/* Speech bubble — rotates through real status fragments */}
       {showLabel && (
         <Html
-          position={[0, 2.3, 0]}
+          position={[0, 2.35, 0]}
           center
           distanceFactor={8}
           zIndexRange={[10, 0]}
           style={{ pointerEvents: 'none' }}
         >
-          <StatusLabel text={label} activity={activity} />
+          <SpeechBubble text={fragments[fragIdx % fragments.length]} activity={activity} />
         </Html>
       )}
+
+      {/* The click mini-HUD renders screen-space in Scene's overlay layer —
+          a drei <Html> mounted conditionally after initial mount fails to
+          portal its children, and a fixed panel is more readable anyway. */}
 
       {/* Body group — breathing + lean moves this, not the root */}
       <group ref={bodyRef}>
@@ -182,14 +271,22 @@ export function CharacterController({
             <sphereGeometry args={[0.28, 24, 24]} />
             <meshStandardMaterial color={COLORS.characterHead} roughness={0.6} metalness={0.1} />
           </mesh>
-          {/* Visor / screen-face */}
-          <mesh position={[0, 0, 0.25]}>
-            <planeGeometry args={[0.35, 0.2]} />
+          {/* Visor — a curved sphere-segment hugging only the FRONT of the
+              head (phi arc centered on +Z, a band at eye level). The old flat
+              plane sat inside the skull and its wide edges poked out the sides
+              as a green arc; a front-only segment reads as a visor from the
+              front and vanishes edge-on from behind. Radius is just proud of
+              the head so it never z-fights the skull. Emissive color/intensity
+              are still driven by activity state via visorMatRef. */}
+          <mesh>
+            <sphereGeometry args={[0.29, 24, 16, Math.PI / 4, Math.PI / 2, 1.12, 0.52]} />
             <meshStandardMaterial
+              ref={visorMatRef}
               color={COLORS.monitorScreen}
               emissive={COLORS.primary}
               emissiveIntensity={0.7}
               roughness={0.2}
+              side={THREE.DoubleSide}
             />
           </mesh>
         </group>
@@ -198,11 +295,11 @@ export function CharacterController({
         <group ref={leftArmRef} position={[-0.42, 1.35, 0]}>
           <mesh position={[0, -0.3, 0]} castShadow>
             <capsuleGeometry args={[0.09, 0.5, 6, 12]} />
-            <meshStandardMaterial color={COLORS.characterBody} roughness={0.7} metalness={0.05} />
+            <meshStandardMaterial color={COLORS.characterLimb} roughness={0.7} metalness={0.05} />
           </mesh>
           <mesh position={[0, -0.62, 0]} castShadow>
             <sphereGeometry args={[0.1, 12, 12]} />
-            <meshStandardMaterial color={COLORS.characterHead} roughness={0.6} metalness={0.1} />
+            <meshStandardMaterial color={COLORS.characterJoint} roughness={0.55} metalness={0.15} />
           </mesh>
         </group>
 
@@ -210,11 +307,11 @@ export function CharacterController({
         <group ref={rightArmRef} position={[0.42, 1.35, 0]}>
           <mesh position={[0, -0.3, 0]} castShadow>
             <capsuleGeometry args={[0.09, 0.5, 6, 12]} />
-            <meshStandardMaterial color={COLORS.characterBody} roughness={0.7} metalness={0.05} />
+            <meshStandardMaterial color={COLORS.characterLimb} roughness={0.7} metalness={0.05} />
           </mesh>
           <mesh position={[0, -0.62, 0]} castShadow>
             <sphereGeometry args={[0.1, 12, 12]} />
-            <meshStandardMaterial color={COLORS.characterHead} roughness={0.6} metalness={0.1} />
+            <meshStandardMaterial color={COLORS.characterJoint} roughness={0.55} metalness={0.15} />
           </mesh>
         </group>
 
@@ -222,7 +319,7 @@ export function CharacterController({
         <group ref={leftLegRef} position={[-0.18, 0.65, 0]}>
           <mesh position={[0, -0.32, 0]} castShadow>
             <capsuleGeometry args={[0.12, 0.55, 6, 12]} />
-            <meshStandardMaterial color={COLORS.characterBody} roughness={0.7} metalness={0.05} />
+            <meshStandardMaterial color={COLORS.characterLimb} roughness={0.7} metalness={0.05} />
           </mesh>
         </group>
 
@@ -230,7 +327,7 @@ export function CharacterController({
         <group ref={rightLegRef} position={[0.18, 0.65, 0]}>
           <mesh position={[0, -0.32, 0]} castShadow>
             <capsuleGeometry args={[0.12, 0.55, 6, 12]} />
-            <meshStandardMaterial color={COLORS.characterBody} roughness={0.7} metalness={0.05} />
+            <meshStandardMaterial color={COLORS.characterLimb} roughness={0.7} metalness={0.05} />
           </mesh>
         </group>
       </group>
@@ -238,36 +335,53 @@ export function CharacterController({
   )
 }
 
-// ── Status Label ───────────────────────────────────────────────────
+// ── Speech Bubble ──────────────────────────────────────────────────
 
-function StatusLabel({ text, activity }: { text: string; activity: Activity }) {
-  // Color shifts subtly based on activity type
+function SpeechBubble({ text, activity }: { text: string; activity: Activity }) {
   const colorClass =
-    activity === 'celebrating'
-      ? 'text-primary'
-      : activity === 'typing'
-        ? 'text-foreground/85'
+    activity === 'error'
+      ? 'text-warning'
+      : activity === 'celebrating'
+        ? 'text-primary'
         : activity === 'thinking'
           ? 'text-blue-300/80'
-          : 'text-muted-foreground'
+          : 'text-foreground/85'
+
+  const borderColor = activity === 'error' ? 'rgba(255,154,61,0.55)' : 'rgba(58,158,96,0.4)'
 
   return (
-    <div
-      style={{
-        background: 'rgba(10,13,15,0.92)',
-        border: '1px solid rgba(58,158,96,0.4)',
-        borderRadius: '6px',
-        padding: '4px 12px',
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        whiteSpace: 'nowrap',
-        backdropFilter: 'blur(8px)',
-        userSelect: 'none',
-        transition: 'opacity 0.4s ease',
-      }}
-      className={colorClass}
-    >
-      {text}
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div
+        key={text}
+        style={{
+          background: 'rgba(10,13,15,0.92)',
+          border: `1px solid ${borderColor}`,
+          borderRadius: '10px',
+          padding: '4px 12px',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          whiteSpace: 'nowrap',
+          backdropFilter: 'blur(8px)',
+          userSelect: 'none',
+          animation: 'roomBubbleIn 0.35s ease',
+        }}
+        className={colorClass}
+      >
+        {text}
+      </div>
+      {/* Tail */}
+      <div
+        style={{
+          width: 0,
+          height: 0,
+          borderLeft: '5px solid transparent',
+          borderRight: '5px solid transparent',
+          borderTop: `6px solid ${borderColor}`,
+          marginTop: '-1px',
+        }}
+      />
+      <style>{`@keyframes roomBubbleIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </div>
   )
 }
+

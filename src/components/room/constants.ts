@@ -36,10 +36,15 @@ export const COLORS = {
   monitorGlow: '#3a7ab8',
   monitorFrame: '#282d31',
 
-  // Character — light warm gray so it's the brightest object in frame
-  characterBody: '#4a5258',
-  characterHead: '#5c646a',
-  characterAccent: '#3a9e60',
+  // Character — differentiated materials so Enry reads as a designed figure,
+  // not a monochrome blank. Teal-slate body against a bright silver head keeps
+  // the character the clear focal point under the warm key + green accent
+  // lights, while green stays an ACCENT only (visor + chest stripe).
+  characterBody: '#3f6f7e',   // torso — saturated teal-slate
+  characterLimb: '#33565f',   // arms / legs — darker teal, distinct from torso
+  characterJoint: '#294048',  // hands / joints — deep teal
+  characterHead: '#c3cace',   // head — bright silver so the visor green pops
+  characterAccent: '#3a9e60', // green accent — visor + stripe only
 
   // Lighting
   ambientColor: '#dfe8ee',
@@ -144,6 +149,29 @@ export const ACTIVITY_CONFIG: Record<Activity, ActivityConfig> = {
     label: '',
     standing: true,
   },
+  error: {
+    duration: { min: 10, max: 15 },
+    label: 'Stuck',
+    station: 'desk',
+    standing: false,
+  },
+}
+
+/**
+ * Visor emissive color per activity — the character's "eye" reads its
+ * state at a glance: green = idle/ready, blue-white = working,
+ * amber = error (the material also pulse-flashes toward red in error).
+ */
+export const VISOR_COLORS: Record<Activity, string> = {
+  idle: '#3a9e60',
+  waiting: '#3a9e60',
+  lookingAround: '#3a9e60',
+  celebrating: '#3a9e60',
+  walking: '#3a9e60',
+  typing: '#bcd8ff',
+  thinking: '#bcd8ff',
+  inspecting: '#bcd8ff',
+  error: '#ff9a3d',
 }
 
 /** Maps room events to activities. */
@@ -159,6 +187,9 @@ export const EVENT_ACTIVITY_MAP: Record<string, { activity: Activity; station?: 
   'lab.evolving': { activity: 'thinking', station: 'whiteboard' },
   'memory.storing': { activity: 'celebrating', station: 'desk' },
   'system.idle': { activity: 'idle', station: 'desk' },
+  'drive.error': { activity: 'error', station: 'desk' },
+  'cruise.error': { activity: 'error', station: 'desk' },
+  'system.error': { activity: 'error', station: 'desk' },
 }
 
 /**

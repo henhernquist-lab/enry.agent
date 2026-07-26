@@ -17,6 +17,7 @@ export function providerFor(modelId: string): string {
   if (c.includes('Google')) return 'Google'
   if (c.includes('OpenAI')) return 'OpenAI'
   if (c.includes('Moonshot')) return 'Moonshot'
+  if (c.includes('xAI')) return 'xAI'
   return c
 }
 

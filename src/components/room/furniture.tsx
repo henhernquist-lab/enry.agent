@@ -130,9 +130,10 @@ export function Chair() {
         <boxGeometry args={[0.8, 0.1, 0.8]} />
         <meshStandardMaterial color={COLORS.chairSeat} roughness={0.6} metalness={0.1} />
       </mesh>
-      {/* Backrest */}
-      <mesh position={[0, 1.15, -0.35]} castShadow>
-        <boxGeometry args={[0.8, 1.0, 0.08]} />
+      {/* Backrest — kept below head height; the old 1.0-tall slab reached
+          y=1.65 and clipped straight through the seated character's head */}
+      <mesh position={[0, 0.95, -0.44]} castShadow>
+        <boxGeometry args={[0.76, 0.6, 0.07]} />
         <meshStandardMaterial color={COLORS.chair} roughness={0.6} metalness={0.1} />
       </mesh>
       {/* Center column */}
@@ -337,26 +338,28 @@ export function Whiteboard() {
         <planeGeometry args={[2.3, 1.3]} />
         <meshStandardMaterial color={COLORS.whiteboardSurface} roughness={0.9} metalness={0} />
       </mesh>
-      {/* Subtle green line on the board — like a diagram */}
-      <mesh position={[0, 2.1, 0.05]}>
-        <boxGeometry args={[1.5, 0.015, 0.002]} />
-        <meshStandardMaterial
-          color={COLORS.primary}
-          emissive={COLORS.primary}
-          emissiveIntensity={0.5}
-          roughness={0.4}
-        />
-      </mesh>
-      {/* Another line */}
-      <mesh position={[-0.3, 1.8, 0.05]}>
-        <boxGeometry args={[0.015, 0.6, 0.002]} />
-        <meshStandardMaterial
-          color={COLORS.primaryDim}
-          emissive={COLORS.primaryDim}
-          emissiveIntensity={0.4}
-          roughness={0.4}
-        />
-      </mesh>
+      {/* Diagram content — enough strokes/nodes that the board reads as a
+          used planning surface, not a blank gray placeholder slab */}
+      {[
+        { pos: [0, 2.45, 0.05], size: [1.5, 0.018, 0.002], c: COLORS.primary, e: 0.6 },
+        { pos: [-0.55, 2.05, 0.05], size: [0.018, 0.65, 0.002], c: COLORS.primaryDim, e: 0.45 },
+        { pos: [-0.15, 1.78, 0.05], size: [0.8, 0.015, 0.002], c: COLORS.primaryDim, e: 0.45 },
+        { pos: [0.55, 2.1, 0.05], size: [0.6, 0.015, 0.002], c: '#5a646c', e: 0.15 },
+        { pos: [0.55, 1.95, 0.05], size: [0.45, 0.015, 0.002], c: '#5a646c', e: 0.15 },
+        { pos: [0.4, 1.62, 0.05], size: [0.7, 0.015, 0.002], c: '#5a646c', e: 0.15 },
+      ].map((s, i) => (
+        <mesh key={i} position={s.pos as [number, number, number]}>
+          <boxGeometry args={s.size as [number, number, number]} />
+          <meshStandardMaterial color={s.c} emissive={s.c} emissiveIntensity={s.e} roughness={0.4} />
+        </mesh>
+      ))}
+      {/* Diagram nodes */}
+      {[[-0.55, 2.42], [-0.55, 1.78], [0.35, 2.42]].map(([x, y], i) => (
+        <mesh key={`n${i}`} position={[x, y, 0.05]}>
+          <boxGeometry args={[0.09, 0.09, 0.002]} />
+          <meshStandardMaterial color={COLORS.primary} emissive={COLORS.primary} emissiveIntensity={0.7} roughness={0.4} />
+        </mesh>
+      ))}
       {/* Marker tray */}
       <mesh position={[0, 1.2, 0.08]} castShadow>
         <boxGeometry args={[2.4, 0.06, 0.08]} />

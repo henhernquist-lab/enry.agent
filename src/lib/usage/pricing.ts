@@ -24,6 +24,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'gemini-3.5-flash':                   { inputPer1m: 0.3, outputPer1m: 1.2 },
   'gpt-4o':                             { inputPer1m: 2.5, outputPer1m: 10 },
   'moonshotai/kimi-k2.7-code':          { inputPer1m: 1.0, outputPer1m: 4.0 },
+  'grok-4':                             { inputPer1m: 3.0, outputPer1m: 15 },
 }
 
 export function getPricing(modelId: string): ModelPricing {

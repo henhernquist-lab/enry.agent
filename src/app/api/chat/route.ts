@@ -431,8 +431,13 @@ export async function POST(req: Request) {
         }
       },
     })
+    const responseHeaders: Record<string, string> = compacted
+      ? { 'X-Context-Compacted': 'true', 'X-Context-Compacted-Summary': encodeURIComponent(compactionSummary ?? '') }
+      : {}
+    if (invocationId) responseHeaders['X-Skill-Invocation-Id'] = invocationId
+
     return skillResult.toUIMessageStreamResponse({
-      headers: compacted ? { 'X-Context-Compacted': 'true', 'X-Context-Compacted-Summary': encodeURIComponent(compactionSummary ?? '') } : undefined,
+      headers: Object.keys(responseHeaders).length > 0 ? responseHeaders : undefined,
       onError: (error) => {
         console.error('chat route multi-skill error:', error)
         return error instanceof Error ? error.message : 'Something went wrong'

@@ -22,14 +22,13 @@ export function newConversationId(): string {
 }
 
 // ─── localStorage safety net ────────────────────────────────────────────────
-// Restored 2026-07-16 after discovering the Supabase `chats`/`messages` tables
-// referenced below never existed (migration 017) — every save had silently
-// failed since the localStorage path was removed on 2026-07-03 (ececba2),
-// with zero durable persistence in between. This is a best-effort BACKUP
-// layer only, not the primary store: it runs alongside every Supabase call so
-// a conversation survives even if a save request fails for any reason (a
-// table missing again, a network blip, an RLS misconfiguration) — the kind of
-// failure that's otherwise invisible until someone loses a conversation.
+// Restored 2026-07-16 after discovering the Supabase `chats`/`messages`
+// tables referenced below didn't exist yet — migration 017 has since run and
+// they're live now (verified against Supabase 2026-07-23). This remains a
+// best-effort BACKUP layer only, not the primary store: it runs alongside
+// every Supabase call so a conversation survives even if a save request
+// fails for any reason (a network blip, an RLS misconfiguration) — the kind
+// of failure that's otherwise invisible until someone loses a conversation.
 // Single-user local cache, so no per-account scoping needed.
 const LOCAL_KEY = 'enry_conversations_backup'
 const LOCAL_MAX = 50

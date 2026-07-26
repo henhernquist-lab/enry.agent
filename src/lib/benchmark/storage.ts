@@ -24,6 +24,7 @@ function contextWindowFor(modelId: string): number {
   if (modelId.includes('deepseek')) return 128_000
   if (modelId.includes('minimax')) return 64_000
   if (modelId.includes('gpt-4o')) return 128_000
+  if (modelId.includes('grok')) return 131_072
   return 128_000
 }
 

@@ -7,7 +7,7 @@ import {
   ArrowLeft, FlaskConical, Lightbulb, GitPullRequest, BarChart3,
   Zap, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ExternalLink,
   GitMerge, Dna, XCircle, Code, Sparkles, Moon, Play, Trash2, Plus,
-  Clock, Timer, RefreshCw,
+  Clock, Timer, RefreshCw, Skull,
 } from 'lucide-react'
 import type { PromptRevisionRow, LabStats, EvolutionCandidate, OvernightIdeaRow, OvernightRunRow } from '@/lib/lab/types'
 import { LiveWorkspace } from '@/components/live-workspace'
@@ -190,6 +190,30 @@ export default function LabPage() {
         <StatCard icon={GitPullRequest} label="Proposed revisions" value={stats?.proposedRevisions ?? 0} loading={loading} />
         <StatCard icon={GitPullRequest} label="Approved revisions" value={stats?.approvedRevisions ?? 0} loading={loading} />
       </div>
+
+      {/* ── The Black Market — community model gallery ── */}
+      <section className="mb-10">
+        <Link
+          href="/lab/black-market"
+          className="group flex items-center justify-between gap-4 rounded border border-border bg-surface-secondary p-4 transition-colors hover:border-primary/40"
+        >
+          <div className="flex items-start gap-3">
+            <Skull className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold tracking-tight text-foreground">The Black Market</span>
+                <span className="rounded bg-warning/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-warning">
+                  Experimental
+                </span>
+              </div>
+              <p className="mt-0.5 max-w-xl font-mono text-[11px] leading-relaxed text-muted-foreground">
+                Explore cutting-edge community fine-tunes, model merges, and experimental checkpoints — separate from Enry&apos;s official registry.
+              </p>
+            </div>
+          </div>
+          <ExternalLink className="h-4 w-4 flex-shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary" />
+        </Link>
+      </section>
 
       {/* ── Section 1: Evolutionary Code Generation ── */}
       <section className="mb-10">
