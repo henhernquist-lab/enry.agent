@@ -13,6 +13,7 @@ import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOver
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { nimClientFor, isCommunityModelId, communityRouteParam, warmCommunityModel } from '@/lib/nim'
+import { safeStreamErrorMessage } from '@/lib/stream-error'
 import { logUsage } from '@/lib/usage/log'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { monidDiscover, monidRun } from '@/lib/monid'
@@ -459,10 +460,7 @@ export async function POST(req: Request) {
 
     return skillResult.toUIMessageStreamResponse({
       headers: Object.keys(responseHeaders).length > 0 ? responseHeaders : undefined,
-      onError: (error) => {
-        console.error('chat route multi-skill error:', error)
-        return error instanceof Error ? error.message : 'Something went wrong'
-      },
+      onError: (error) => safeStreamErrorMessage(error, 'chat route multi-skill error'),
     })
   }
 
@@ -800,9 +798,6 @@ ${userProfile ? `\n${userProfile}` : ''}`,
 
   return result.toUIMessageStreamResponse({
     headers: compacted ? { 'X-Context-Compacted': 'true', 'X-Context-Compacted-Summary': encodeURIComponent(compactionSummary ?? '') } : undefined,
-    onError: (error) => {
-      console.error('chat route error:', error)
-      return error instanceof Error ? error.message : 'Something went wrong'
-    },
+    onError: (error) => safeStreamErrorMessage(error, 'chat route error'),
   })
 }

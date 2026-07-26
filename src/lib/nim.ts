@@ -134,6 +134,74 @@ export const DEFAULT_MODEL_ID = 'deepseek/deepseek-v4-pro'
 interface ProviderConfig {
   baseURL: string | (() => string)
   getApiKey: () => string
+  /** Optional per-provider fetch override — used to patch response shapes
+   *  that don't match what @ai-sdk/openai expects (see geminiToolCallFetch). */
+  fetch?: typeof fetch
+}
+
+// Gemini's OpenAI-compatible endpoint (v1beta/openai) streams tool-call
+// deltas that omit the per-call `index` field the AI SDK's chat chunk schema
+// requires (it uses `index` to accumulate parallel tool calls across
+// chunks). Real repro: a tool_calls delta arrives as
+//   {"delta":{"tool_calls":[{"extra_content":{...},"function":{...},"id":"...","type":"function"}]}}
+// — everything OpenAI's shape has, minus `index` — so Zod's required-field
+// check fails with "Type validation failed" and the SDK surfaces the raw
+// payload as the stream error instead of a tool call. Since Gemini only ever
+// sends one tool call per delta chunk in this shape, position in the array
+// (0) is the correct index; this wrapper fills it in before the response
+// body reaches the SDK's parser, which is the only point we can intervene at
+// (the parsing happens inside @ai-sdk/openai, not in our route code).
+function geminiToolCallFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetch(input, init).then((res) => {
+    const contentType = res.headers.get('content-type') ?? ''
+    if (!res.body || !contentType.includes('text/event-stream')) return res
+
+    const decoder = new TextDecoder()
+    const encoder = new TextEncoder()
+    let buffer = ''
+
+    const transform = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        buffer += decoder.decode(chunk, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          controller.enqueue(encoder.encode(patchSseLine(line) + '\n'))
+        }
+      },
+      flush(controller) {
+        if (buffer) controller.enqueue(encoder.encode(patchSseLine(buffer)))
+      },
+    })
+
+    return new Response(res.body.pipeThrough(transform), {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    })
+  })
+}
+
+function patchSseLine(line: string): string {
+  if (!line.startsWith('data: ') || line === 'data: [DONE]') return line
+  try {
+    const data = JSON.parse(line.slice(6))
+    let mutated = false
+    for (const choice of data.choices ?? []) {
+      const toolCalls = choice?.delta?.tool_calls
+      if (Array.isArray(toolCalls)) {
+        toolCalls.forEach((tc: Record<string, unknown>, i: number) => {
+          if (typeof tc.index !== 'number') {
+            tc.index = i
+            mutated = true
+          }
+        })
+      }
+    }
+    return mutated ? `data: ${JSON.stringify(data)}` : line
+  } catch {
+    return line // not JSON (or malformed) — pass through untouched
+  }
 }
 
 const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
@@ -179,7 +247,10 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   // 3.5 Flash, not Pro — Pro tier is quota-gated at 0 on this Cloud project
   // (needs billing enabled), confirmed via GET /v1beta/openai/models plus a
   // real completion at $0. Flash-tier models on the same key work fine.
-  'gemini-3.5-flash':                  { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', getApiKey: () => process.env.GEMINI_API_KEY ?? '' },
+  // fetch: geminiToolCallFetch — patches missing `index` on streamed tool-call
+  // deltas (see the function's doc comment); without it, any Gemini message
+  // that triggers a tool call fails with a raw Zod validation-error dump.
+  'gemini-3.5-flash':                  { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', getApiKey: () => process.env.GEMINI_API_KEY ?? '', fetch: geminiToolCallFetch },
   // OpenAI gpt-4o via GitHub Models — OpenAI-compatible inference API. The
   // actual env var in .env.local/Vercel is GITHUB_MODELS_API_KEY — this was
   // reading GITHUB_MODELS_TOKEN/GITHUB_TOKEN, neither of which is ever set,
@@ -228,7 +299,7 @@ export function nimClientFor(model?: string) {
   const apiKey = provider.getApiKey()
   if (!apiKey) throw new Error(`No API key configured for model ${id}`)
   const baseURL = typeof provider.baseURL === 'function' ? provider.baseURL() : provider.baseURL
-  return createOpenAI({ baseURL, apiKey })
+  return createOpenAI({ baseURL, apiKey, ...(provider.fetch ? { fetch: provider.fetch } : {}) })
 }
 
 /**
