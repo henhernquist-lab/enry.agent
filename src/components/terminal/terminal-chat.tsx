@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import Link from 'next/link'
 import {
   ChevronDown, Loader2, TerminalSquare, GitBranch,
   Send, Check, X, Copy, ArrowRight, Zap, Sliders,
@@ -516,13 +517,13 @@ export function TerminalChat({ autoFocus = true }: { autoFocus?: boolean }) {
 
 function LinkToTerminal() {
   return (
-    <a
+    <Link
       href="/resources/terminal"
       className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary"
     >
       <TerminalSquare className="h-2.5 w-2.5" />
       Raw terminal
       <ArrowRight className="h-2.5 w-2.5" />
-    </a>
+    </Link>
   )
 }

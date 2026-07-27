@@ -42,11 +42,13 @@ const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY ?? '' })
 // ─── Focus Mode — controls which tools are available ────────────────────
 type FocusMode = 'all' | 'memory_only' | 'web_only' | 'repo_only'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: string | undefined, uid: string | null): Record<string, any> {
   const enableMemory = mode === 'all' || mode === 'memory_only'
   const enableWeb = mode === 'all' || mode === 'web_only'
   const enableRepo = mode === 'all' || mode === 'repo_only'
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tools: Record<string, any> = {}
 
   if (enableWeb) {
@@ -414,6 +416,7 @@ export async function POST(req: Request) {
     const skillResult = streamText({
       model: chatClient.chat(modelParam),
       system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}${isRecovery ? recoverySystemPrompt : ''}`,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
         providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
@@ -465,6 +468,7 @@ export async function POST(req: Request) {
   }
 
   // Build tools based on focus mode
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allTools: Record<string, any> = {}
   if (focusMode === 'all' || focusMode === 'web_only') {
     allTools.web_search = tool({
@@ -472,6 +476,7 @@ export async function POST(req: Request) {
       inputSchema: z.object({ query: z.string().describe('The search query'), max_results: z.number().optional().default(5).describe('Number of results to return') }),
       execute: async ({ query, max_results }: { query: string; max_results?: number }) => {
         const response = await tavilyClient.search(query, { maxResults: max_results, includeAnswer: true })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return { answer: response.answer, results: response.results.map((r: any) => ({ title: r.title, url: r.url, content: r.content })) }
       },
     })
@@ -505,6 +510,7 @@ export async function POST(req: Request) {
       execute: async () => {
         const { repos, error } = await listRepos(githubToken)
         if (error) return { repos: [], error }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return { repos: repos.map((r: any) => ({ name: r.full_name, private: r.private, description: r.description, language: r.language, stars: r.stargazers_count, updated_at: r.updated_at, url: r.html_url })) }
       },
     })
@@ -533,7 +539,9 @@ export async function POST(req: Request) {
       execute: async ({ owner, repo }: { owner: string; repo: string }) => {
         const { issues, error } = await listIssues(githubToken, owner, repo)
         if (error) return { issues: [], error }
-        return { issues: issues.map((i: any) => ({ number: i.number, title: i.title, labels: i.labels.map((l: any) => l.name), created_at: i.created_at, url: i.html_url })) }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return { issues: issues.map((i: any) => ({ number: i.number, title: i.title, // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        labels: i.labels.map((l: any) => l.name), created_at: i.created_at, url: i.html_url })) }
       },
     })
     allTools.github_create_branch = tool({
@@ -757,6 +765,7 @@ GITHUB WRITE SAFETY RAILS — these are non-negotiable, enforced server-side:
 Bound strictly to the above. If a task needs a tool not on this list, state that instead of improvising.
 ${focusDirective}${sessionFocusDirective}
 ${userProfile ? `\n${userProfile}` : ''}`,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     messages: finalMessages as any,
     stopWhen: stepCountIs(7),
     ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {

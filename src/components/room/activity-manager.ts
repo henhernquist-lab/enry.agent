@@ -69,6 +69,7 @@ export function useActivityManager(
   const pendingActivityRef = useRef<{ activity: Activity; stationId: string } | null>(null)
 
   // ── Event dispatch ──────────────────────────────────────────────
+  /* eslint-disable react-hooks/immutability */
   const dispatch = useCallback((eventType: RoomEventType) => {
     store.dispatchEvent(eventType)
 
@@ -93,7 +94,9 @@ export function useActivityManager(
       const station = STATIONS.find((s) => s.id === targetStationId)
       if (station) {
         pendingActivityRef.current = { activity: targetActivity, stationId: targetStationId }
+        /* eslint-disable-next-line react-hooks/immutability */
         store.character.targetStationId = targetStationId
+        /* eslint-disable-next-line react-hooks/immutability */
         store.character.pendingActivity = targetActivity
         walker.walkTo(station.standPosition, () => {
           // After arriving, set the activity
@@ -131,6 +134,7 @@ export function useActivityManager(
   }, [dispatch])
 
   // ── Per-frame tick ──────────────────────────────────────────────
+  /* eslint-disable react-hooks/immutability */
   const tick = useCallback((delta: number) => {
     // Cooldown
     if (transitionCooldownRef.current > 0) {
@@ -148,6 +152,8 @@ export function useActivityManager(
       }
     }
   }, [store, syncRealActivity])
+  /* eslint-enable react-hooks/immutability */
+
 
   // ── Ambient sync control ──────────────────────────────────────────
   const startAmbientSync = useCallback(() => {

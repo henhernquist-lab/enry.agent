@@ -13,6 +13,7 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status') || undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ideas = await getOvernightIdeas(uid, status ? { status: status as any } : undefined)
   return Response.json({ ideas })
 }
@@ -56,6 +57,7 @@ export async function PATCH(req: Request) {
   const id = String(body.id ?? '').trim()
   if (!id) return Response.json({ error: 'id is required' }, { status: 400 })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updates: Record<string, any> = {}
   if (body.status !== undefined) updates.status = body.status
   if (body.verdict !== undefined) updates.verdict = body.verdict

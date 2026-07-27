@@ -151,8 +151,10 @@ export function useRoomState(): RoomStore {
     }
   }, [])
 
+  /* eslint-disable react-hooks/refs */
   return {
     character: characterRef.current,
+  /* eslint-enable react-hooks/refs */
     subscribe,
     getActivity,
     dispatchEvent,

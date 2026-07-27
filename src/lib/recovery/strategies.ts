@@ -53,6 +53,7 @@ export const continueLastResponse: RecoveryStrategy = {
 
     // Append the continuation as a new user message
     const continuationMessage = { role: 'user', content: continuationMsg }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const recoveryMessages = [...(request.messages as any[]), continuationMessage]
 
     return generator(recoveryMessages, request.system)
@@ -86,6 +87,7 @@ export const retrySameProvider: RecoveryStrategy = {
     generator: (messages: unknown[], system: string) => Promise<string>,
   ): Promise<string> {
     // If we have partial content, append a continue message
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const messages = [...(request.messages as any[])]
     if (request.partialContent) {
       messages.push({ role: 'user', content: this.buildContinuation(request) })

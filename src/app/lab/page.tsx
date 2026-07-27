@@ -849,7 +849,7 @@ export default function LabPage() {
         </h2>
         <div className="rounded border border-border bg-surface-secondary p-4">
           <p className="mb-3 font-mono text-[11px] text-muted-foreground">
-            Analyze a skill's invocation history and propose a better system prompt.
+            Analyze a skill{'\''}s invocation history and propose a better system prompt.
             Requires invocations with negative feedback signals (missed/corrected).
           </p>
           <div className="flex items-center gap-3">

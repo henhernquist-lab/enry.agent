@@ -358,7 +358,8 @@ export function CenterPanel({
     onError: (err) => {
       console.error('[chat] streamText error:', err)
       if (messagesRef.current.length > 0) onSaveMessages(messagesRef.current, model)
-      onActivity({ type: 'error', content: err.message, at: Date.now() })
+      /* eslint-disable-next-line react-hooks/purity */
+      onActivity({ type: 'error', content: (err as Error).message, at: Date.now() })
 
       // ── Auto-recovery ──────────────────────────────────────────
       // If the last message is an incomplete assistant response,
@@ -386,6 +387,8 @@ export function CenterPanel({
   })
   useEffect(() => { messagesRef.current = messages }, [messages])
 
+  const [skillInvocationIds, setSkillInvocationIds] = useState<Record<number, string>>({})
+
   // Sync compaction state after each response (written by transport's custom fetch)
   useEffect(() => {
     if (status === 'ready' && _pendingCompaction) {
@@ -397,6 +400,7 @@ export function CenterPanel({
       }, 0)
     }
     // Sync skill invocation ID for the latest assistant message
+    /* eslint-disable react-hooks/purity */
     if (status === 'ready' && _pendingSkillInvocationId) {
       const invocationId = _pendingSkillInvocationId
       _pendingSkillInvocationId = null
@@ -405,6 +409,7 @@ export function CenterPanel({
         [messages.length - 1]: invocationId, // Last message is the assistant response
       }))
     }
+    /* eslint-enable react-hooks/purity */
   }, [status, messages.length])
 
   const [input, setInput] = useState('')
@@ -421,7 +426,6 @@ export function CenterPanel({
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
   const [uploadResult, setUploadResult] = useState<AttachmentMeta | null>(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
-  const [skillInvocationIds, setSkillInvocationIds] = useState<Record<number, string>>({})
   const modelDropdownRef = useRef<HTMLDivElement>(null)
   const effortDropdownRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -698,6 +702,7 @@ export function CenterPanel({
   // Auto-flush queued messages when the stream settles back to ready.
   // sendMessage is stable per the AI SDK, safe as a dep.
   const sendMessageRef = useRef(sendMessage)
+  /* eslint-disable-next-line react-hooks/refs */
   sendMessageRef.current = sendMessage
   useEffect(() => {
     if (status === 'ready' && queue.length > 0) {

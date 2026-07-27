@@ -177,8 +177,8 @@ function ArchitectPageInner() {
           setSaveStatus('idle')
         }
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err: unknown) {
+      if ((err as Error).name === 'AbortError') {
         setLines((l) => [...l, { kind: 'error', text: 'Request cancelled' }])
       } else {
         setLines((l) => [...l, { kind: 'error', text: 'Network error — retry' }])

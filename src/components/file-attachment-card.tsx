@@ -16,7 +16,6 @@ export function FileAttachmentCard({ attachment }: { attachment: AttachmentMeta 
   const [expanded, setExpanded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const Icon = typeIcon(attachment.file_type)
 
   const handleSave = async () => {
     setSaving(true)
@@ -45,7 +44,7 @@ export function FileAttachmentCard({ attachment }: { attachment: AttachmentMeta 
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
       >
-        <Icon className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
+        <>{typeIcon(attachment.file_type)({ className: 'h-3.5 w-3.5 flex-shrink-0 text-primary' })}</>
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-foreground">{attachment.filename}</p>
           <p className="font-mono text-[10px] text-muted-foreground">

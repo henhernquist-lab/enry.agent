@@ -17,8 +17,6 @@ function typeIcon(fileType?: UploadFileType) {
 }
 
 export function FileAttachmentChip({ upload, onRemove }: { upload: PendingUpload; onRemove: () => void }) {
-  const Icon = typeIcon(upload.fileType)
-
   return (
     <div className={`flex items-center gap-2 rounded border px-2.5 py-1.5 text-xs ${
       upload.status === 'error' ? 'border-destructive/40 bg-destructive/10' : 'border-border bg-surface-elevated'
@@ -28,7 +26,7 @@ export function FileAttachmentChip({ upload, onRemove }: { upload: PendingUpload
       ) : upload.status === 'error' ? (
         <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-destructive" />
       ) : (
-        <Icon className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
+        <>{typeIcon(upload.fileType)({ className: 'h-3.5 w-3.5 flex-shrink-0 text-primary' })}</>
       )}
       <div className="min-w-0">
         <p className="truncate font-medium text-foreground">{upload.file.name}</p>

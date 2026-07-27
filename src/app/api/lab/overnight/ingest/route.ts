@@ -99,6 +99,7 @@ export async function POST(req: Request) {
     // Update the parent idea
     await updateOvernightIdea(run.idea_id, run.user_id, {
       status: newStatus === 'failed' ? 'error' : (verdict === 'worth_pursuing' ? 'completed' : 'dead_end'),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       verdict: verdict as any || null,
       verdict_reasoning: verdictReasoning || null,
       morning_note: resultSummary || null,

@@ -165,6 +165,7 @@ export async function POST(req: Request) {
     result = streamText({
       model: chatModel,
       system: ARCHITECT_SYSTEM_PROMPT,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: finalMessages as any,
       maxRetries: 0,
       maxOutputTokens: 8192,
@@ -188,7 +189,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error('[architect/chat] streamText init error:', err)
     return new Response(
-      JSON.stringify({ error: sanitizeErrorMessage(err) }),
+      JSON.stringify({ error: safeStreamErrorMessage(err, '[architect/chat] stream init') }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
     )
   }

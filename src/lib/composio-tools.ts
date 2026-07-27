@@ -68,6 +68,7 @@ async function wrapTool(args: {
   inputSchema: z.ZodTypeAny
   userId: string
   toolKey: string
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 }): Promise<Record<string, any> | null> {
   return {
     [args.toolKey]: tool({
@@ -95,11 +96,13 @@ async function wrapTool(args: {
 // the user's connections on demand, only attaches tools for toolkits where the
 // user is actually connected (no point handing the model a tool that would
 // just fail-401 on execute). Returns {} for focus modes that disallow composio.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function buildComposioTools(uid: string | null, focusMode: FocusMode): Promise<Record<string, any>> {
   if (!uid) return {}
   if (!FOCUS_ALLOWS[focusMode]) return {}
 
   const connections = await loadConnections(uid)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tools: Record<string, any> = {}
   // loadConnections returns composio_connected_account_id per toolkit, but the
   // SDK doesn't need that ID at execute time — it resolves the connected

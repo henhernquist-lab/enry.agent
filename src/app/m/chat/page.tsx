@@ -77,10 +77,12 @@ export default function MobileChatPage() {
   const [voiceListening, setVoiceListening] = useState(false)
   const handleVoice = useCallback(() => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition
     const recognition = new SpeechRecognition()
     recognition.interimResults = true
     recognition.continuous = false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript
       setInput((prev) => prev + transcript)
