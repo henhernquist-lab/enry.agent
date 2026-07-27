@@ -2,11 +2,7 @@ import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { Card } from '@/components/card'
-import type { CruiseGoalRun, CruiseRepo } from '@/lib/cruise/types'
-
-interface RepoWithRuns extends CruiseRepo {
-  cruise_goal_runs: CruiseGoalRun[]
-}
+import type { CruiseGoalRun, CruiseRepo, CruiseScan } from '@/lib/cruise/types'
 
 export async function CruiseStatusCard() {
   const session = await auth()
@@ -15,6 +11,7 @@ export async function CruiseStatusCard() {
 
   let repos: CruiseRepo[] = []
   let recentRuns: CruiseGoalRun[] = []
+  let recentScans: CruiseScan[] = []
 
   if (uid) {
     const reposRes = await supabase.from('cruise_repos').select('*').eq('user_id', uid).eq('enabled', true).order('updated_at', { ascending: false })
@@ -22,18 +19,35 @@ export async function CruiseStatusCard() {
 
     const repoIds = repos.map((r) => r.id)
     if (repoIds.length > 0) {
-      const runsRes = await supabase
-        .from('cruise_goal_runs')
-        .select('*')
-        .in('repo_id', repoIds)
-        .order('dispatched_at', { ascending: false })
-        .limit(5)
+      const [runsRes, scansRes] = await Promise.all([
+        supabase
+          .from('cruise_goal_runs')
+          .select('*')
+          .in('repo_id', repoIds)
+          .order('dispatched_at', { ascending: false })
+          .limit(5),
+        supabase
+          .from('cruise_scans')
+          .select('*')
+          .in('repo_id', repoIds)
+          .order('dispatched_at', { ascending: false })
+          .limit(5),
+      ])
       recentRuns = (runsRes.data ?? []) as CruiseGoalRun[]
+      recentScans = (scansRes.data ?? []) as CruiseScan[]
     }
   }
 
   const scheduled = repos.filter((r) => r.auto_run_enabled)
-  const latestRun = recentRuns[0]
+
+  const latestRunCandidate = recentRuns[0]
+  const latestScanCandidate = recentScans[0]
+  const latestRun =
+    latestRunCandidate && latestScanCandidate
+      ? new Date(latestRunCandidate.dispatched_at) >= new Date(latestScanCandidate.dispatched_at)
+        ? latestRunCandidate
+        : latestScanCandidate
+      : latestRunCandidate ?? latestScanCandidate ?? null
 
   return (
     <Card padding="lg" className="h-full">
