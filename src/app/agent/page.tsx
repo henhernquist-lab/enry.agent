@@ -651,7 +651,7 @@ export default function AgentPage() {
   // bound via useCallback. Recreated every render like the rest of this
   // file's handlers that reference it; harmless, nothing depends on exec's
   // identity being stable.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   async function exec(command: string, opts?: {
     proceed?: boolean; targetFile?: string; isNewFile?: boolean; instruction?: string
     skillSlug?: string; skillSlugs?: string[]; reasoningTrace?: string; reasoningLineId?: string; _chainDepth?: number

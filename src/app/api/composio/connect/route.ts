@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       userId: uid,
       toolkit,
     }
-    // eslint-disable-next-line no-console
+     
     console.error('[composio/connect] failed to create link', diagnostic)
     return Response.json(
       {

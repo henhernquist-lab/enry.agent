@@ -105,7 +105,6 @@ export async function POST(req: Request) {
     })
 
     // Log a morning-report summary to console (can be extended to notifications later)
-    console.log(`[overnight] Run ${runId} finished: ${newStatus} — ${resultSummary || error || 'no summary'}`)
 
     return Response.json({ ok: true, phase: 'result' })
   }

@@ -52,7 +52,6 @@ async function enryReceiptsDetector(params: {
     //    bias the interrupt copy based on this signal.
     const looksLikeNegation = NEGATION_RE.test(trimmed)
     if (looksLikeNegation) {
-      console.log('[receipts-detector] outgoing message starts with a negation prefix')
     }
 
     return (matches as { id: string; content: string; similarity: number }[]).map((m) => ({

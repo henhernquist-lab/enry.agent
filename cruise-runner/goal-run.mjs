@@ -261,23 +261,19 @@ async function checkControlSignal() {
   const resp = await api('POST', '/api/cruise/goal-runs/' + GOAL_RUN_ID + '/ingest', { phase: 'heartbeat' })
   const signal = resp.json?.control_signal
   if (signal === 'cancel') {
-    console.log('[enry-cruise-goal] cancel signal received, exiting cleanly')
     await api('POST', '/api/cruise/goal-runs/' + GOAL_RUN_ID + '/ingest', { phase: 'finalize', status: 'cancelled' })
     process.exit(0)
   }
   if (signal === 'pause') {
-    console.log('[enry-cruise-goal] pause signal received, waiting...')
     await stepUpdate('control: paused by user', { output_preview: (resp.json?.control_instructions || 'Waiting for resume signal') })
     while (true) {
       await sleep(10000)
       const check = await api('POST', '/api/cruise/goal-runs/' + GOAL_RUN_ID + '/ingest', { phase: 'heartbeat' })
       if (check.json?.control_signal === 'cancel') {
-        console.log('[enry-cruise-goal] cancel during pause, exiting')
         await api('POST', '/api/cruise/goal-runs/' + GOAL_RUN_ID + '/ingest', { phase: 'finalize', status: 'cancelled' })
         process.exit(0)
       }
       if (!check.json?.control_signal) {
-        console.log('[enry-cruise-goal] pause cleared, resuming')
         await stepUpdate('control: resumed')
         return 'paused'
       }
@@ -468,7 +464,6 @@ async function runScanfix(ctx) {
     build_ok: buildOk,
     build_error: buildError,
   })
-  console.log(`[enry-cruise-goal] scanfix done: status=${status} files_changed=${filesChanged} build_ok=${buildOk}`)
 }
 
 async function main() {
@@ -520,7 +515,6 @@ Keep each step small enough that ONE model call can generate its content quickly
     }
     if (parsed.safe === false) {
       await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'clarify', question: parsed.question || 'This goal is ambiguous — can you clarify what you want?' })
-      console.log('[enry-cruise-goal] paused for clarification')
       return
     }
     plan = Array.isArray(parsed.plan) ? parsed.plan.slice(0, MAX_PLAN_STEPS).map(String) : []
@@ -700,7 +694,6 @@ Keep each step small enough that ONE model call can generate its content quickly
     build_ok: buildOk,
     build_error: buildError,
   })
-  console.log(`[enry-cruise-goal] done: status=${status} files_changed=${filesChanged} build_ok=${buildOk}`)
 }
 
 main().catch(async (e) => {

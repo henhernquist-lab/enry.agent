@@ -81,6 +81,5 @@ export async function GET(req: Request) {
   }
 
   const fired = results.filter((r) => r.action === 'fired').length
-  console.log(`[cron/cruise-tick] evaluated ${results.length} repo(s), fired ${fired}`)
   return Response.json({ ok: true, evaluated: results.length, fired, results })
 }

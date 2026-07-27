@@ -467,7 +467,6 @@ export default function LabPage() {
               controlId={activeOvernightRunId}
               hidden={!activeOvernightRunId}
               onFinished={(status) => {
-                console.log(`[lab] overnight run finished: ${status}`)
                 loadOvernightData()
               }}
             />

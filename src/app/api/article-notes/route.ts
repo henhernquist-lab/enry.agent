@@ -14,16 +14,13 @@ function userId(session: { user?: { id?: string } } | null): string | null {
 export async function POST(req: Request) {
   // Outer catch — ensures the client always gets JSON, never an HTML error page
   try {
-    console.log('[article-notes] POST received')
 
     const session = await auth()
     const uid = await resolveResourceUserId(userId(session))
-    console.log('[article-notes] auth uid:', uid ?? 'null')
     if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
     const { url, user_note } = body
-    console.log('[article-notes] url:', url)
 
     const result = await processArticleUrl(url)
     if (!result.ok) {
@@ -32,7 +29,6 @@ export async function POST(req: Request) {
     const { articleTitle, sourceDomain, rawTextLength, summary, keyClaims, flashcards, tags, processingFailed } = result.data
 
     // ── Save to DB ────────────────────────────────────────────────────────────
-    console.log('[article-notes] DB insert, processingFailed:', processingFailed)
     const payload: ArticleNotePayload = {
       url,
       source_domain: sourceDomain,
@@ -64,7 +60,6 @@ export async function POST(req: Request) {
       return Response.json({ error: 'Failed to save to database.' }, { status: 500 })
     }
 
-    console.log('[article-notes] saved, id:', data.id)
 
     // ── Embed fire-and-forget ─────────────────────────────────────────────────
     if (!processingFailed) {

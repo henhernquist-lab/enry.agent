@@ -138,19 +138,14 @@ async function runAll() {
     const ok = s.expect(result)
     if (ok) {
       passCount++
-      console.log(`  PASS  ${s.name}`)
     } else {
       failCount++
       // Defensive: result may contain large nested structures; JSON-ify
       // truncated for visibility without leaking API key etc. (model just
       // returned what we mocked, so safe.)
       const preview = JSON.stringify(result).slice(0, 300)
-      console.log(`  FAIL  ${s.name}`)
-      console.log(`        returned: ${preview}`)
     }
   }
-  console.log('')
-  console.log(`Result: ${passCount} pass, ${failCount} fail`)
   process.exit(failCount > 0 ? 1 : 0)
 }
 

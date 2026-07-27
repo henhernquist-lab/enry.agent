@@ -137,7 +137,6 @@ export function pushConfigured(): boolean {
 
 export async function sendAmbientPush(subscription: PushSubscriptionData, payload: ProbePushPayload): Promise<PushResult> {
   if (!pushConfigured()) {
-    console.log(`[ambient] STUB send (no VAPID keys) → ${subscription.endpoint.slice(0, 40)}…: ${payload.body.slice(0, 60)}…`)
     return { sent: false, stubbed: true }
   }
 
@@ -152,7 +151,6 @@ export async function sendAmbientPush(subscription: PushSubscriptionData, payloa
     // this subscription — the browser unregistered it, the user cleared site
     // data, etc. That's an expiry, not a transient failure.
     if (err.statusCode === 404 || err.statusCode === 410) {
-      console.log(`[ambient] push subscription expired (${err.statusCode})`)
       return { sent: false, stubbed: false, expired: true, error: `push_${err.statusCode}` }
     }
     console.error('[ambient] push send failed:', err.statusCode, err.message)
