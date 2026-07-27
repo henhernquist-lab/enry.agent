@@ -88,33 +88,22 @@ for (const s of liveScenarios) {
   try {
     r = await classify(fileList, s.instruction, 'z-ai/glm-5.2', s.history)
   } catch (e) {
-    console.log(`THREW: ${e.message}`)
     fail++
     continue
   }
   if (s.expect(r)) {
-    console.log('PASS')
     if (r.multiFile) {
-      console.log(`        decision=multi_file, ${r.multiFile.steps.length} steps:`)
       r.multiFile.steps.forEach((st, i) => console.log(`          ${i + 1}. ${st.isNewFile ? 'create' : 'edit'} ${st.file}`))
     } else if (r.ok) {
-      console.log(`        resolve ${r.target.file}${r.target.isNewFile ? ' (new)' : ''}`)
     } else {
-      console.log(`        refuse/other: ${r.error.slice(0, 120)}`)
     }
     pass++
   } else if (/backend latency|timed out/i.test(r.error ?? '')) {
     // Transient NIM latency — not a code logic fault. Re-running scoring:
     // count as "live skipped", not a hard FAIL, so the test suite reads as
     // "code logic PASS / flaky backend SKIPPED" rather than "FAIL".
-    console.log('SKIPPED (NIM latency timeout — retry will pass)')
-    console.log(`        err: ${r.error.slice(0, 100)}`)
   } else {
-    console.log('FAIL')
-    console.log(`        returned: ${JSON.stringify(r).slice(0, 300)}`)
     fail++
   }
 }
-console.log('')
-console.log(`Live verify: ${pass} pass, ${fail} fail`)
 process.exit(fail > 0 ? 1 : 0)

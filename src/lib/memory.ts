@@ -21,10 +21,8 @@ export async function saveMemory(
   content: string,
 ): Promise<{ id: string; error?: string }> {
   try {
-    console.log('[memory] Generating embedding for content:', content.slice(0, 80))
     const embedding = await generateEmbedding(content)
 
-    console.log('[memory] Inserting memory for google_id:', googleId)
     const { data, error } = await supabase
       .from('memories')
       .insert({
@@ -40,7 +38,6 @@ export async function saveMemory(
       return { id: '', error: error.message }
     }
 
-    console.log('[memory] Memory saved with id:', data.id)
     return { id: data.id }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -58,7 +55,6 @@ export async function searchMemories(
   limit = 5,
 ): Promise<{ results: Array<{ id: string; content: string; similarity: number }>; error?: string }> {
   try {
-    console.log('[memory] Searching memories for google_id:', googleId, 'query:', query.slice(0, 80))
     const embedding = await generateEmbedding(query, 'query')
 
     const { data, error } = await supabase.rpc('match_memories', {
@@ -72,7 +68,6 @@ export async function searchMemories(
       return { results: [], error: error.message }
     }
 
-    console.log('[memory] Found', data?.length ?? 0, 'memories')
     return { results: data ?? [] }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

@@ -19,7 +19,6 @@ const BUCKET = 'user-uploads'
 
 const { data: existing } = await supabase.storage.getBucket(BUCKET)
 if (existing) {
-  console.log(`Bucket "${BUCKET}" already exists — nothing to do.`)
   process.exit(0)
 }
 
@@ -34,4 +33,3 @@ if (error) {
   process.exit(1)
 }
 
-console.log(`Created private bucket "${BUCKET}" (10MB limit, image/pdf/text MIME types).`)

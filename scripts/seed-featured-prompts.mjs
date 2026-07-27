@@ -73,4 +73,3 @@ for (const p of SEED_PROMPTS) {
   inserted++
 }
 
-console.log(`Done. Inserted ${inserted}, skipped ${skipped} (already present).`)

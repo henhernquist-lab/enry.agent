@@ -96,23 +96,19 @@ async function checkControlSignal() {
   const { json } = await heartbeat()
   const signal = json?.control_signal
   if (signal === 'cancel') {
-    console.log('[enry-overnight] cancel signal received, exiting cleanly')
     await postResult({ error: 'Cancelled by user', run_time_ms: Date.now() - startTime })
     process.exit(0)
   }
   if (signal === 'pause') {
-    console.log('[enry-overnight] pause signal received, waiting...')
     await stepUpdate('control: paused by user', { output_preview: json?.control_instructions || 'Waiting for resume signal' })
     while (true) {
       await sleep(10000)
       const check = await heartbeat()
       if (check.json?.control_signal === 'cancel') {
-        console.log('[enry-overnight] cancel during pause, exiting')
         await postResult({ error: 'Cancelled by user', run_time_ms: Date.now() - startTime })
         process.exit(0)
       }
       if (!check.json?.control_signal) {
-        console.log('[enry-overnight] pause cleared, resuming')
         await stepUpdate('control: resumed')
         return 'paused'
       }
@@ -196,8 +192,6 @@ function detectTechStack() {
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`[enry-overnight] starting run ${RUN_ID}`)
-  console.log(`[enry-overnight] idea: ${IDEA_TITLE}`)
 
   // Heartbeat immediately so the system knows we're alive
   await heartbeat()
@@ -334,7 +328,6 @@ async function main() {
       `Run completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`,
     ].join('\n')
 
-    console.log(`[enry-overnight] done: ${verdict} — ${passedTests}/${totalTests} checks passed`)
 
   } catch (e) {
     error = String(e && e.message || e)

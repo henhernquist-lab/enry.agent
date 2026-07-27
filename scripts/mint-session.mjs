@@ -6,4 +6,3 @@ const token = await encode({
   secret,
   salt: 'authjs.session-token',
 })
-console.log(token)

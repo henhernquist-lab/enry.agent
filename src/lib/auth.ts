@@ -230,7 +230,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           }
 
           if (resolvedGoogleId) {
-            console.log('[auth] Resolved missing googleId:', resolvedGoogleId, 'for', token.email ?? token.sub)
             return { ...token, googleId: resolvedGoogleId }
           }
 

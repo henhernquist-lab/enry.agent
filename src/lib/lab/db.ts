@@ -462,7 +462,6 @@ export async function reclaimStaleOvernightRuns(): Promise<number> {
   }
 
   if (staleRuns.length > 0) {
-    console.log(`[lab/db] reclaimed ${staleRuns.length} stale overnight run(s) at ${now}`)
   }
   return staleRuns.length
 }

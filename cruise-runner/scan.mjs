@@ -67,24 +67,20 @@ async function checkControlSignal() {
   const resp = await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'heartbeat' })
   const signal = resp.control_signal
   if (signal === 'cancel') {
-    console.log('[enry-cruise] cancel signal received, exiting cleanly')
     await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'finalize', status: 'cancelled' })
     process.exit(0)
   }
   if (signal === 'pause') {
-    console.log('[enry-cruise] pause signal received, waiting...')
     await stepUpdate('control: paused by user', { output_preview: resp.control_instructions || 'Waiting for resume signal' })
     // Poll every 10 seconds until the signal clears or changes to cancel
     while (true) {
       await new Promise(r => setTimeout(r, 10000))
       const check = await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'heartbeat' })
       if (check.control_signal === 'cancel') {
-        console.log('[enry-cruise] cancel during pause, exiting')
         await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'finalize', status: 'cancelled' })
         process.exit(0)
       }
       if (!check.control_signal) {
-        console.log('[enry-cruise] pause cleared, resuming')
         await stepUpdate('control: resumed')
         return 'paused'
       }
@@ -109,7 +105,6 @@ async function main() {
       layer_status: { static: 'done' },
       counts: { static: findings.length },
     })
-    console.log('[enry-cruise] done: ' + findings.length + ' findings')
   } catch (e) {
     await post('/api/cruise/ingest', { scan_id: SCAN_ID, phase: 'finalize', status: 'failed', error: String(e && e.message || e) })
     process.exit(1)
