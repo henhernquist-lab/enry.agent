@@ -435,9 +435,11 @@ function temporalPatterns(rows: { type: ResourceType; created_at: string }[]): C
   const out: CrossToolPattern[] = []
   for (const { count, lag, a, b } of pairCounts.values()) {
     if (count < 3) continue
-    out.push({
+      const labelA = TYPE_LABELS[a] ?? a
+      const labelB = TYPE_LABELS[b] ?? b
+      out.push({
       kind: 'temporal',
-      summary: `${a} tends to precede ${b} by ${lag} day${lag === 1 ? '' : 's'}`,
+      summary: `${labelA} tends to precede ${labelB} by ${lag} day${lag === 1 ? '' : 's'}`,
       evidence: [`observed ${count} times in the last 60 days`],
       strength: Math.min(1, count / 6),
     })

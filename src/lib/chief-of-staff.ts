@@ -154,11 +154,14 @@ export async function generateBriefingForUser(
       ? `\n\n## Recent Gmail activity (last 24 hours)\n${gmailContext.emailCount} emails received.\n\n${gmailContext.text}`
       : '\n\n## Gmail\n(Gmail not connected — no email data available.\nSkip the email_summary section in your output.)'
 
+    // Fetch recent briefings so the model can avoid repeating itself.
+    const recentBriefings = await recentBriefingsText(userId, date)
+
     const client = nimClientFor()
     const { text } = await generateText({
       model: client.chat(DEFAULT_NIM_MODEL),
       system: BRIEFING_SYSTEM_PROMPT,
-      prompt: `${stateText}\n\n## Today's Aperture question\n${aperture}${gmailBlock}\n\nProduce today's briefing now.`,
+      prompt: `${stateText}\n\n## Today's Aperture question\n${aperture}\n\n## Recent briefings (do not repeat these observations)\n${recentBriefings}${gmailBlock}\n\nProduce today's briefing now.`,
       temperature: 0.6,
       maxOutputTokens: 1500,
       // Runs in the same cron route as prompt/article generation (see
@@ -238,6 +241,25 @@ export async function findBriefingForDate(
     .limit(5)
   const match = (data ?? []).find((r) => (r.payload as BriefingPayload)?.date === date)
   return match ? { id: match.id, payload: match.payload as BriefingPayload } : null
+}
+
+async function recentBriefingsText(userId: string, excludeDate: string): Promise<string> {
+  const { data } = await supabase
+    .from('resources')
+    .select('payload, created_at')
+    .eq('user_id', userId)
+    .eq('type', 'briefing')
+    .order('created_at', { ascending: false })
+    .limit(5)
+  const recent = (data ?? []).filter((r) => (r.payload as BriefingPayload)?.date !== excludeDate)
+  if (!recent.length) return '(no prior briefings yet)'
+  return recent
+    .map((r) => {
+      const p = r.payload as BriefingPayload
+      const obs = p.observations?.map((o) => `  - ${o.text}`).join('\n') ?? '  (no observations)'
+      return `### ${p.date}\n${obs}`
+    })
+    .join('\n\n')
 }
 
 async function todaysApertureText(userId: string, date: string): Promise<string> {
