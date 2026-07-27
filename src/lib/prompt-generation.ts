@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { createOpenAI } from '@ai-sdk/openai'
+import { getChatModel } from '@/lib/nim'
 
 export type PromptCategory = 'coding' | 'writing' | 'study' | 'training' | 'general'
 
@@ -33,13 +33,9 @@ Rules:
 
 export async function generatePrompt(category: PromptCategory): Promise<GeneratedPrompt | null> {
   try {
-    const client = createOpenAI({
-      baseURL: 'https://integrate.api.nvidia.com/v1',
-      apiKey: process.env.QWEN_API_KEY ?? '',
-    })
-
     const { text } = await generateText({
-      model: client.chat('qwen/qwen3.5-397b-a17b'),
+      // Use GLM 5.2: fast NIM all-rounder, replaces the dead Qwen model.
+      model: getChatModel('z-ai/glm-5.2'),
       prompt: buildPrompt(category),
       temperature: 0.7,
       maxOutputTokens: 2048,

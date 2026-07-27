@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { createOpenAI } from '@ai-sdk/openai'
+import { getChatModel } from '@/lib/nim'
 import { tavily } from '@tavily/core'
 
 export interface ArticleAnalysis {
@@ -95,15 +95,11 @@ export async function processArticleUrl(url: string): Promise<ProcessArticleResu
   let processingFailed = false
 
   try {
-    // Qwen instead of the app-wide default (deepseek-v4-pro) — deepseek took
-    // 90s-3min on long articles, blowing past any reasonable request timeout.
-    const client = createOpenAI({
-      baseURL: 'https://integrate.api.nvidia.com/v1',
-      apiKey: process.env.QWEN_API_KEY ?? '',
-    })
-
+    // Use GLM 5.2 (fast NIM all-rounder) instead of the old dead Qwen model.
+    // DeepSeek can run 90s-3min on long articles, so a lighter model keeps the
+    // cron route within its timeout budget.
     const { text } = await generateText({
-      model: client.chat('qwen/qwen3.5-397b-a17b'),
+      model: getChatModel('z-ai/glm-5.2'),
       prompt: buildPrompt(articleTitle, url, truncated),
       temperature: 0.1,
       maxOutputTokens: 4096,

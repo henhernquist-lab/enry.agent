@@ -26,18 +26,15 @@ type ChatLine =
   | { kind: 'error'; text: string }
 
 // ─── Model definitions ──────────────────────────────────────
+// Drive the picker from the central model registry so dead/unavailable models
+// never reappear here while the single source of truth stays current.
+import { MODEL_LIST } from '@/lib/nim'
 
-// DeepSeek is back in front (and default). It was previously demoted here
-// because NIM's deepseek-ai deployment was DEGRADED/hanging on NVIDIA's
-// side. It's now routed through OpenRouter instead (see src/lib/nim.ts —
-// DEEPSEEK_API_KEY was rotated to a real OpenRouter key), which sidesteps
-// that outage entirely rather than waiting on NVIDIA to resolve it.
-const MODELS = [
-  { id: 'deepseek/deepseek-v4-pro',    label: 'DeepSeek V4 Pro',  desc: 'Strongest — best for complex work.' },
-  { id: 'qwen/qwen3.5-397b-a17b',      label: 'Qwen 3.5 397B',    desc: 'Large reasoning model. Great for analysis.' },
-  { id: 'z-ai/glm-5.2',                label: 'GLM 5.2',          desc: 'Versatile all-rounder. Good at following instructions.' },
-  { id: 'minimaxai/minimax-m3',          label: 'MiniMax M3',        desc: 'Fast and capable. Great for general tasks.' },
-] as const
+const MODELS = MODEL_LIST.filter((m) => m.scopes.includes('drive')).map((m) => ({
+  id: m.id,
+  label: m.label,
+  desc: m.description,
+}))
 
 const EFFORTS = [
   { id: 'none',    label: 'Auto',     desc: 'Default reasoning' },

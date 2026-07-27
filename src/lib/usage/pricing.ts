@@ -15,16 +15,12 @@ export interface ModelPricing {
 const DEFAULT_PRICING: ModelPricing = { inputPer1m: 1.5, outputPer1m: 6 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  'deepseek/deepseek-v4-pro':           { inputPer1m: 1.1, outputPer1m: 4.4 },
-  'minimaxai/minimax-m3':               { inputPer1m: 1.0, outputPer1m: 2.0 },
-  'qwen/qwen3.5-397b-a17b':             { inputPer1m: 1.2, outputPer1m: 3.0 },
-  'z-ai/glm-5.2':                       { inputPer1m: 1.0, outputPer1m: 2.5 },
-  'nvidia/nemotron-3-ultra-550b-a55b':  { inputPer1m: 2.0, outputPer1m: 5.0 },
-  'moonshotai/kimi-k2-instruct':        { inputPer1m: 1.2, outputPer1m: 3.5 },
-  'gemini-3.5-flash':                   { inputPer1m: 0.3, outputPer1m: 1.2 },
-  'gpt-4o':                             { inputPer1m: 2.5, outputPer1m: 10 },
-  'moonshotai/kimi-k2.7-code':          { inputPer1m: 1.0, outputPer1m: 4.0 },
-  'grok-4':                             { inputPer1m: 3.0, outputPer1m: 15 },
+  'deepseek/deepseek-v4-pro': { inputPer1m: 1.1, outputPer1m: 4.4 },
+  'z-ai/glm-5.2':             { inputPer1m: 1.0, outputPer1m: 2.5 },
+  'gemini-3.5-flash':         { inputPer1m: 0.3, outputPer1m: 1.2 },
+  'llama-3.3-70b-versatile':  { inputPer1m: 0.5, outputPer1m: 0.8 },
+  'llama-3.1-8b-instant':     { inputPer1m: 0.1, outputPer1m: 0.2 },
+  'openai/gpt-oss-120b':      { inputPer1m: 0.8, outputPer1m: 1.5 },
 }
 
 export function getPricing(modelId: string): ModelPricing {

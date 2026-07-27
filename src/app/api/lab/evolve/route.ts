@@ -10,9 +10,9 @@ export const maxDuration = 120
 // Three models used for the evolutionary fan-out. DeepSeek is the default
 // and strongest; MiniMax and Qwen provide alternative solution perspectives.
 const EVOLVE_MODELS = [
-  { id: 'deepseek/deepseek-v4-pro',    label: 'DeepSeek V4 Pro' },
-  { id: 'minimaxai/minimax-m3',              label: 'MiniMax M3' },
-  { id: 'qwen/qwen3-coder-480b-a35b-instruct', label: 'Qwen3 Coder' },
+  { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  { id: 'z-ai/glm-5.2', label: 'GLM 5.2' },
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
 ] as const
 
 const SYNTHESIS_MODEL = 'deepseek/deepseek-v4-pro'
@@ -154,8 +154,8 @@ Your task:
   "hybrid_code": "the complete hybrid implementation",
   "trait_breakdown": {
     "DeepSeek V4 Pro": "specific trait from that candidate",
-    "MiniMax M3": "specific trait from that candidate",
-    "Qwen 3.5 397B": "specific trait from that candidate"
+    "GLM 5.2": "specific trait from that candidate",
+    "Llama 3.3 70B": "specific trait from that candidate"
   },
   "reasoning": "2-3 sentences explaining the synthesis choices"
 }

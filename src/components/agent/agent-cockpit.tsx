@@ -11,14 +11,15 @@ import {
 import { DiffView } from '@/components/terminal/diff-view'
 
 // ── Config ───────────────────────────────────────────────────────────────────
+import { MODEL_LIST } from '@/lib/nim'
+
 interface RepoOption { full_name: string; default_branch: string; private: boolean }
 
-const MODELS = [
-  { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro', hint: 'strongest · complex work' },
-  { id: 'minimaxai/minimax-m3',          label: 'MiniMax M3',       hint: 'fast · general' },
-  { id: 'qwen/qwen3-coder-480b-a35b-instruct', label: 'Qwen3 Coder', hint: 'coding-tuned · 480B' },
-  { id: 'z-ai/glm-5.2',                label: 'GLM 5.2',          hint: 'versatile · instructions' },
-] as const
+const MODELS = MODEL_LIST.filter((m) => m.scopes.includes('drive')).map((m) => ({
+  id: m.id,
+  label: m.label,
+  hint: m.description,
+}))
 
 // Fast / Balanced / Thorough map to the backend effort tiers (low/medium/high).
 const EFFORTS = [
