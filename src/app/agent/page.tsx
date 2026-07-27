@@ -77,7 +77,7 @@ type Mode = 'auto' | 'manual'
 // model exposed to coding-agent calls, including Kimi K2.7 Code (the
 // intentional Drive-only entry). New models become available here the
 // instant they're added to the registry with `scopes: ['drive']`.
-import { listModels } from '@/lib/nim'
+import { listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
 
 const MODELS = listModels('drive').map((m) => ({
   id: m.id,
@@ -273,9 +273,12 @@ export default function AgentPage() {
   const [repos, setRepos] = useState<RepoOption[]>([])
   const [repo, setRepo] = useState<string>('')
   const [repoMenuOpen, setRepoMenuOpen] = useState(false)
-  const [model, setModel] = useState<string>(MODELS[0].id)
+  // Optional-chained on purpose: an empty MODELS list must degrade to a
+  // disabled picker, never crash the page. `MODELS[0].id` here previously took
+  // the whole /agent route down whenever the registry resolved empty.
+  const [model, setModel] = useState<string>(MODELS[0]?.id ?? DEFAULT_MODEL_ID)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
-  const [effort, setEffort] = useState<EffortId>(MODEL_DEFAULTS[MODELS[0].id] ?? 'none')
+  const [effort, setEffort] = useState<EffortId>(MODEL_DEFAULTS[MODELS[0]?.id ?? ''] ?? 'none')
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('auto')
   // Plan-first review step — was previously bundled into `mode` (manual mode

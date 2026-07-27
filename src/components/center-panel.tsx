@@ -219,17 +219,32 @@ export function CenterPanel({
   const [communityModels, setCommunityModels] = useState<PickerModel[]>([])
   useEffect(() => {
     let cancelled = false
-    fetch('/api/models/community')
-      .then((r) => (r.ok ? r.json() : { models: [] }))
-      .then((d: { models?: { modelId: string; label: string; company: string; description: string }[] }) => {
+    ;(async () => {
+      try {
+        const res = await fetch('/api/models/community')
+        if (!res.ok) return
+        const data = await res.json()
         if (cancelled) return
+        // Defensive: this list is an optional enhancement to the picker. Any
+        // shape surprise (missing field, non-array, malformed row) must drop
+        // the bad rows, never throw — first-party models stay selectable.
+        const rows: unknown[] = Array.isArray(data?.models) ? data.models : []
         setCommunityModels(
-          (d.models ?? []).map((m) => ({
-            id: m.modelId, label: m.label, company: m.company, desc: m.description, community: true,
-          })),
+          rows
+            .filter((m): m is Record<string, unknown> => Boolean(m) && typeof m === 'object')
+            .filter((m) => typeof m.modelId === 'string' && m.modelId.length > 0)
+            .map((m) => ({
+              id: m.modelId as string,
+              label: typeof m.label === 'string' && m.label ? m.label : (m.modelId as string),
+              company: typeof m.company === 'string' ? m.company : 'Community',
+              desc: typeof m.description === 'string' ? m.description : 'Experimental community model.',
+              community: true,
+            })),
         )
-      })
-      .catch(() => { /* non-fatal — picker just shows first-party models */ })
+      } catch {
+        /* non-fatal — picker just shows first-party models */
+      }
+    })()
     return () => { cancelled = true }
   }, [])
 

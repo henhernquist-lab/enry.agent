@@ -239,7 +239,7 @@ const PROVIDERS: Record<string, ProviderConfig> = {
 // Runtime diagnostic: if Groq models are in the registry but no GROQ_API_KEY
 // is set, warn once so the operator knows why they are not selectable.
 if (typeof process !== 'undefined' && !process.env.GROQ_API_KEY) {
-  console.warn('[nim] GROQ_API_KEY is missing. Groq models (Llama 3.3 70B, Llama 3.1 8B Instant, GPT-OSS 120B) will be hidden from pickers.')
+  console.warn('[nim] GROQ_API_KEY is missing. Groq models (Llama 3.3 70B, Llama 3.1 8B Instant, GPT-OSS 120B) are still listed in pickers but will fail on use until the key is set.')
 }
 
 // ─── Lookup helpers (used by pickers + server routes) ──────────────
@@ -247,13 +247,27 @@ export function getModelMeta(id: string): ModelMeta | undefined {
   return MODEL_LIST.find((m) => m.id === id)
 }
 
+// CLIENT-SAFE — must stay pure (scope filter only, no process.env reads).
+//
+// This is imported at module scope by client components ('use client':
+// agent/page.tsx, center-panel.tsx, m/chat/page.tsx). Provider keys are
+// server-only secrets: Next.js inlines just NEXT_PUBLIC_* into the client
+// bundle, so any process.env.*_API_KEY read here is undefined in the browser.
+// A previous version filtered by isModelConfigured() and so returned the full
+// list during SSR but [] after hydration — which collapsed every picker to
+// zero first-party models and crashed /agent on `MODELS[0].id`. Keep env
+// access out of this function; use listConfiguredModels() on the server.
 export function listModels(scope?: ModelScope): ModelMeta[] {
-  const scoped = scope ? MODEL_LIST.filter((m) => m.scopes.includes(scope)) : MODEL_LIST
-  // Only expose models whose provider key is actually configured. This prevents
-  // pickers from showing models that would immediately fail with
-  // "No API key configured for model ..." and also satisfies the requirement
-  // to hide Groq models when GROQ_API_KEY is absent.
-  return scoped.filter((m) => isModelConfigured(m.id))
+  return scope ? MODEL_LIST.filter((m) => m.scopes.includes(scope)) : MODEL_LIST
+}
+
+/**
+ * SERVER-ONLY: models whose provider key is actually configured. Use this for
+ * autonomous selection (which must never pick a model that can't run) and for
+ * telling clients what's available. Never call from a client component.
+ */
+export function listConfiguredModels(scope?: ModelScope): ModelMeta[] {
+  return listModels(scope).filter((m) => isModelConfigured(m.id))
 }
 
 /** Returns the default id for a given scope — first configured entry. */
