@@ -238,7 +238,10 @@ const PROVIDERS: Record<string, ProviderConfig> = {
 
 // Runtime diagnostic: if Groq models are in the registry but no GROQ_API_KEY
 // is set, warn once so the operator knows why they are not selectable.
-if (typeof process !== 'undefined' && !process.env.GROQ_API_KEY) {
+// Server-only: this module is imported by client components, where every
+// non-NEXT_PUBLIC env var is undefined — without the window guard this warning
+// fires in every visitor's browser console regardless of the real server config.
+if (typeof window === 'undefined' && typeof process !== 'undefined' && !process.env.GROQ_API_KEY) {
   console.warn('[nim] GROQ_API_KEY is missing. Groq models (Llama 3.3 70B, Llama 3.1 8B Instant, GPT-OSS 120B) are still listed in pickers but will fail on use until the key is set.')
 }
 
