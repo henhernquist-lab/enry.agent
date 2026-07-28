@@ -1,7 +1,7 @@
 import { streamText, convertToModelMessages } from 'ai'
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
-import { getChatModel, listModels } from '@/lib/nim'
+import { getChatModel, listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
 import { logUsage } from '@/lib/usage/log'
 import { compactMessages } from '@/lib/compaction'
 import { safeStreamErrorMessage } from '@/lib/stream-error'
@@ -9,7 +9,7 @@ import { safeStreamErrorMessage } from '@/lib/stream-error'
 export const maxDuration = 60
 
 const CHAT_MODELS = listModels('chat').map((m) => m.id)
-const DEFAULT_MODEL = CHAT_MODELS[0] ?? 'deepseek/deepseek-v4-pro'
+const DEFAULT_MODEL = CHAT_MODELS[0] ?? DEFAULT_MODEL_ID
 
 const ARCHITECT_SYSTEM_PROMPT = `# ROLE
 You are a Prompt Architect. You turn vague intentions into precise, testable, production-grade prompts. You do not write prompts that merely sound thorough — you write prompts whose failure modes you have already hunted for and closed.

@@ -45,7 +45,7 @@ import { ChatToolSteps } from './chat-tool-steps'
 import { SkillFeedbackBar } from './skill-feedback-bar'
 import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS, filterSkillsByDomain } from '@/lib/skills/registry'
-import { listModels } from '@/lib/nim'
+import { listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
 import type { SkillDefinition } from '@/lib/skills/types'
 import { useMessageQueue } from '@/lib/message-queue'
 import { QueuedMessageBanner } from '@/components/queued-message-banner'
@@ -211,8 +211,8 @@ export function CenterPanel({
   onStreamUpdate,
   onModelChange,
 }: CenterPanelProps) {
-  const [model, setModel] = useState<ModelId>('deepseek/deepseek-v4-pro')
-  const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS['deepseek/deepseek-v4-pro'] ?? 'medium')
+  const [model, setModel] = useState<ModelId>(DEFAULT_MODEL_ID)
+  const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS[DEFAULT_MODEL_ID] ?? 'medium')
 
   // Community models added from The Black Market. Fetched at mount and merged
   // into the picker below the first-party models, visibly badged.

@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL_ID } from '@/lib/nim'
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
         id,
         google_id: googleId,
         title: title ?? 'New chat',
-        model: model ?? 'deepseek/deepseek-v4-pro',
+        model: model ?? DEFAULT_MODEL_ID,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'id' },

@@ -15,7 +15,7 @@ export interface ModelPricing {
 const DEFAULT_PRICING: ModelPricing = { inputPer1m: 1.5, outputPer1m: 6 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  'deepseek/deepseek-v4-pro': { inputPer1m: 1.1, outputPer1m: 4.4 },
+  'deepseek-ai/deepseek-v4-flash': { inputPer1m: 1.1, outputPer1m: 4.4 },
   'z-ai/glm-5.2':             { inputPer1m: 1.0, outputPer1m: 2.5 },
   'gemini-3.5-flash':         { inputPer1m: 0.3, outputPer1m: 1.2 },
   'llama-3.3-70b-versatile':  { inputPer1m: 0.5, outputPer1m: 0.8 },

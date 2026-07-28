@@ -38,22 +38,40 @@ export interface ModelMeta {
 // Note: listModels() below filters this list at runtime to only models whose
 // provider key is configured, so UI pickers never show a model that cannot
 // actually be called.
+// Order matters: several call sites treat the first entry of a scope as that
+// scope's default (chat/architect routes' CHAT_MODELS[0] fallback,
+// defaultModelForScope, Drive auto-select tiebreaks). GLM 5.2 leads so those
+// all resolve to the same model DEFAULT_MODEL_ID names — otherwise the
+// "default" would silently be whichever model happened to be listed first.
 export const MODEL_LIST: ModelMeta[] = [
-  {
-    id: 'deepseek/deepseek-v4-pro',
-    label: 'DeepSeek V4 Pro',
-    company: 'DeepSeek (OpenRouter)',
-    description: 'Default. Best for complex tasks.',
-    scopes: ['chat', 'drive'],
-    defaultEffort: 'high',
-    supportsReasoning: true,
-  },
   {
     id: 'z-ai/glm-5.2',
     label: 'GLM 5.2',
     company: 'NVIDIA NIM',
-    description: 'Versatile all-rounder.',
+    description: 'Default. Versatile all-rounder.',
     scopes: ['chat', 'drive'],
+  },
+  {
+    // Was deepseek/deepseek-v4-pro on OpenRouter — removed, not renamed. That
+    // account is a free tier that ran out of credit (402: "requested up to 800
+    // tokens, but can only afford 197"), which made the app's own default model
+    // fail on the first message of every new chat.
+    //
+    // NIM's catalog carries DeepSeek under a different prefix (deepseek-ai/,
+    // not deepseek/), and its v4-pro deployment is still unusable — a real
+    // streaming request sat for 150s without returning headers, matching the
+    // DEGRADED behaviour that moved DeepSeek off NIM originally. v4-flash is
+    // the current DeepSeek on NIM that actually responds, so that's what this
+    // entry routes to. It is NOT the default: under shared free-tier load it
+    // returns ResourceExhausted a fair fraction of the time (measured 3/5,
+    // queue depth 1863/48), so it's offered as a choice, not a foundation.
+    id: 'deepseek-ai/deepseek-v4-flash',
+    label: 'DeepSeek V4 Flash',
+    company: 'DeepSeek (NVIDIA NIM)',
+    description: 'Fast DeepSeek. Free-tier capacity is shared — can be busy at peak.',
+    scopes: ['chat', 'drive'],
+    defaultEffort: 'medium',
+    supportsReasoning: true,
   },
   {
     id: 'gemini-3.5-flash',
@@ -91,7 +109,12 @@ export const MODEL_LIST: ModelMeta[] = [
 ]
 
 // Default chat model — falls back here if a request supplies an unknown id.
-export const DEFAULT_MODEL_ID = 'deepseek/deepseek-v4-pro'
+// GLM 5.2, not DeepSeek: the default is the model every new chat opens on, so
+// it has to be the most reliable one available, not the most capable on paper.
+// Measured back-to-back on NIM: GLM 5.2 5/5, DeepSeek V4 Flash 3/5
+// (ResourceExhausted under shared load). Must never point at an OpenRouter-
+// routed model — a credit-exhausted account there is what broke every new chat.
+export const DEFAULT_MODEL_ID = 'z-ai/glm-5.2'
 
 // ── Provider config (server-only — env reads happen at request time) ──
 // baseURL + apiKey getter per model. All providers expose
@@ -195,12 +218,13 @@ export function communityRouteParam(id: string): string {
 }
 
 const PROVIDERS: Record<string, ProviderConfig> = {
-  // DeepSeek V4 Pro — routed via OpenRouter. The env var name kept the legacy
-  // DEEPSEEK_API_KEY name, but also accept OPENROUTER_API_KEY in case the key
-  // is ever rotated to a generic OpenRouter key.
-  'deepseek/deepseek-v4-pro': {
-    baseURL: 'https://openrouter.ai/api/v1',
-    getApiKey: () => process.env.DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY ?? '',
+  // DeepSeek V4 Flash — NVIDIA NIM, same baseURL + client path as GLM 5.2.
+  // DEEPSEEK_API_KEY now holds an nvapi-* key (verified working against NIM);
+  // NVIDIA_API_KEY is the fallback. No OpenRouter route remains in this
+  // registry — see the MODEL_LIST entry for why it was removed outright.
+  'deepseek-ai/deepseek-v4-flash': {
+    baseURL: NIM_BASE,
+    getApiKey: () => process.env.DEEPSEEK_API_KEY ?? process.env.NVIDIA_API_KEY ?? '',
   },
   // GLM 5.2 — NVIDIA NIM, confirmed live and free-tier capable.
   'z-ai/glm-5.2': {

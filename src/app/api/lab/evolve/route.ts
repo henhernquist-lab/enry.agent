@@ -10,12 +10,12 @@ export const maxDuration = 120
 // Three models used for the evolutionary fan-out. DeepSeek is the default
 // and strongest; MiniMax and Qwen provide alternative solution perspectives.
 const EVOLVE_MODELS = [
-  { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  { id: 'deepseek-ai/deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { id: 'z-ai/glm-5.2', label: 'GLM 5.2' },
   { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
 ] as const
 
-const SYNTHESIS_MODEL = 'deepseek/deepseek-v4-pro'
+const SYNTHESIS_MODEL = 'z-ai/glm-5.2'
 const SYNTHESIS_THRESHOLD = 0.85
 const MIN_OUTPUT_LENGTH = 50
 

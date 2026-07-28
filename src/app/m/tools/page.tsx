@@ -29,7 +29,7 @@ export default function MobileToolsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: `Search the web for: ${searchInput}. Be concise — limit to 3 key findings.` }],
-          model: 'deepseek/deepseek-v4-pro',
+          model: 'z-ai/glm-5.2',
           focusMode: 'web_only',
         }),
       })
@@ -66,7 +66,7 @@ export default function MobileToolsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: `Recall memories about: ${memoryQuery}. List what you find.` }],
-          model: 'deepseek/deepseek-v4-pro',
+          model: 'z-ai/glm-5.2',
           focusMode: 'memory_only',
         }),
       })

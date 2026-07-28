@@ -26,11 +26,11 @@ import { RecoveryManager } from '@/lib/recovery/recovery-manager'
 import '@/lib/learn/receipts-detector'
 import type { GitHubActionPayload } from '@/lib/resources'
 
-import { listModels } from '@/lib/nim'
+import { listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
 
 // Chat-scoped model allowlist — subset of MODEL_LIST that has 'chat' scope.
 const CHAT_MODELS = listModels('chat').map((m) => m.id)
-const DEFAULT_MODEL = CHAT_MODELS[0] ?? 'deepseek/deepseek-v4-pro'
+const DEFAULT_MODEL = CHAT_MODELS[0] ?? DEFAULT_MODEL_ID
 
 // 120 (not 60) so a first message to a freshly-added community model has room
 // for the HF Inference Providers cold-start warm-up (bounded ~48s) plus the

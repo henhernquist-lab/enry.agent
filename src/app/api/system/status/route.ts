@@ -11,7 +11,7 @@ const NIM_BASE = 'https://integrate.api.nvidia.com/v1'
 // env var is set. The catalog call is made once and cached 60s so page
 // renders / polls don't re-hit NIM.
 const MODELS: { id: string; keyEnv: string; skipCatalog?: boolean }[] = [
-  { id: 'deepseek/deepseek-v4-pro', keyEnv: 'DEEPSEEK_API_KEY', skipCatalog: true },
+  { id: 'deepseek-ai/deepseek-v4-flash', keyEnv: 'DEEPSEEK_API_KEY' },
   { id: 'z-ai/glm-5.2', keyEnv: 'GLM_API_KEY' },
   { id: 'gemini-3.5-flash', keyEnv: 'GEMINI_API_KEY', skipCatalog: true },
   { id: 'llama-3.3-70b-versatile', keyEnv: 'GROQ_API_KEY', skipCatalog: true },

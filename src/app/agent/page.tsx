@@ -114,7 +114,7 @@ const EFFORTS = [
 
 // Per-model default effort levels for the coding agent.
 const MODEL_DEFAULTS: Record<string, EffortId> = {
-  'deepseek/deepseek-v4-pro': 'none',
+  'deepseek-ai/deepseek-v4-flash': 'none',
   'z-ai/glm-5.2': 'medium',
   'gemini-3.5-flash': 'medium',
   'llama-3.3-70b-versatile': 'medium',

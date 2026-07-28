@@ -1,5 +1,6 @@
 'use client'
 
+import { DEFAULT_MODEL_ID } from '@/lib/nim'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -40,7 +41,7 @@ function ChatPageInner() {
 
   const [activities, setActivities] = useState<ActivityEvent[]>([])
   const [streamingText, setStreamingText] = useState('')
-  const [currentModel, setCurrentModel] = useState('deepseek/deepseek-v4-pro')
+  const [currentModel, setCurrentModel] = useState(DEFAULT_MODEL_ID)
   const [lastResponseMs, setLastResponseMs] = useState<number | null>(null)
   const responseStartRef = useRef<number | null>(null)
 
