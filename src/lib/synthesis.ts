@@ -25,6 +25,7 @@ const TYPE_LABELS: Record<ResourceType, string> = {
   countdown: 'countdowns',
   checkin: 'daily check-ins',
   note: 'notes',
+  note_draft: 'note drafts',
   bell_schedule: 'bell schedule',
   uploaded_file: 'uploaded files',
   aperture: 'The Aperture',
