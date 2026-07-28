@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { LoadingScreen } from './loading-screen'
+import { LoadingScreen } from './atelier-loading'
 
 /**
  * The Room — client-only lazy-loaded 3D headquarters.

@@ -22,7 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const body = await req.json().catch(() => null)
   const files = Array.isArray(body?.files) ? body.files.slice(0, MAX_FILES_PER_CALL) : []
-  const message = typeof body?.message === 'string' ? body.message.slice(0, 500) : 'Enry Cruise: goal-run edit'
+  const message = typeof body?.message === 'string' ? body.message.slice(0, 500) : 'Golem Cruise: goal-run edit'
   if (files.length === 0) return Response.json({ error: 'Bad request: no files' }, { status: 400 })
   for (const f of files) {
     if (typeof f?.path !== 'string' || typeof f?.content !== 'string' || f.content.length > MAX_CONTENT_LEN) {

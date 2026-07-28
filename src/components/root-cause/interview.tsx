@@ -56,7 +56,7 @@ export function RootCauseInterview({ onExit, onSaved, initialDescription = '' }:
     let content = ''
     if (t.phase === 'probe') content = `${t.candidate_cause} — ${t.question_to_henry}`
     else if (t.phase === 'pushback') content = `${t.response_to_henry}${t.candidate_cause ? ` (alternative: ${t.candidate_cause})` : ''}`
-    const msg: InterviewMessage = { role: 'enry', content }
+    const msg: InterviewMessage = { role: 'golem', content }
     return content ? [...history, msg] : history
   }
 
@@ -98,7 +98,7 @@ export function RootCauseInterview({ onExit, onSaved, initialDescription = '' }:
     setProposeMode(false)
     setResponseText('')
 
-    // Fold the current enry turn + Henry's reply into history.
+    // Fold the current Golem turn + Henry's reply into history.
     const withEnry = turn ? recordEnryTurn(turn) : history
     const updatedHistory: InterviewMessage[] = [...withEnry, { role: 'henry', content: henryMessage }]
     const updatedChain = newlyAccepted ? [...acceptedChain, newlyAccepted] : acceptedChain
@@ -231,7 +231,7 @@ export function RootCauseInterview({ onExit, onSaved, initialDescription = '' }:
             <div className="space-y-5">
               <div>
                 <h1 className="font-display text-xl font-bold tracking-tight text-foreground">Something went wrong.</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Describe the failure in one sentence. enry will investigate it against your real logged data.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Describe the failure in one sentence. Golem will investigate it against your real logged data.</p>
               </div>
               <textarea
                 value={description}

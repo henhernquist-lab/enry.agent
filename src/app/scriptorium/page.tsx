@@ -28,7 +28,7 @@ import { LEARN_TABS, getLearnTab } from '@/components/learn/tab-registry'
 import { LearnActionsProvider, type LearnActions } from '@/components/learn/learn-actions'
 import { AmbientSettingsModal } from '@/components/learn/ambient-settings'
 
-// Enry Learn — base scaffolding. Mirrors app/agent/page.tsx's structure
+// Golem Learn — base scaffolding. Mirrors app/agent/page.tsx's structure
 // (client page, one exec endpoint, a scrollback of typed verbs) sized down
 // to what the base actually supports: `learn`/`probe` are real, the rest are
 // stubs that round-trip to the server and echo back "not yet implemented" —
@@ -129,7 +129,7 @@ const COLOR: Record<ColorKey, {
 }
 
 const VERB_META: Record<string, { label: string; icon: LucideIcon; color: ColorKey }> = {
-  learn: { label: 'Learn', icon: BookOpen, color: 'primary' },
+  learn: { label: 'The Scriptorium', icon: BookOpen, color: 'primary' },
   probe: { label: 'Probe', icon: Brain, color: 'accent' },
   gap: { label: 'Gap', icon: Search, color: 'warning' },
   defend: { label: 'Defend', icon: ShieldAlert, color: 'destructive' },
@@ -164,7 +164,7 @@ function LearnPageContent() {
   const tabMenuRef = useRef<HTMLDivElement>(null)
   const [ambientOpen, setAmbientOpen] = useState(false)
   const [lines, setLines] = useState<Line[]>([
-    { kind: 'system', text: 'enry learn — every belief starts as a claim. learn "<topic>" to begin, or probe to check in on what\'s due.' },
+    { kind: 'system', text: 'Golem learn — every belief starts as a claim. learn "<topic>" to begin, or probe to check in on what\'s due.' },
   ])
   const [input, setInput] = useState('')
   const [running, setRunning] = useState(false)
@@ -391,15 +391,15 @@ function LearnPageContent() {
             {pendingVerb === 'defend' ? 'Awaiting rebuttal' : pendingVerb === 'teach' ? 'Awaiting explanation' : 'Awaiting answer'}
           </span>
         )}
-        {/* Ambient Mode — a background layer; its settings live here in Learn,
+        {/* Ambient Mode — a background layer; its settings live here in The Scriptorium,
             opened from this header (not a tab, not the global app settings). */}
-        {/* See Enry — opens The Room reflecting whether Learn is mid-run */}
+        {/* See Golem — opens The Atelier reflecting whether Learn is mid-run */}
         <Link
           href={`/room?from=learn&state=${running ? 'working' : 'idle'}`}
-          title="Watch Enry work in The Room"
+          title="Watch Golem work in The Atelier"
           className="ml-auto flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50 transition-colors hover:text-primary"
         >
-          <Eye className="h-3 w-3" /> See Enry
+          <Eye className="h-3 w-3" /> See Golem
         </Link>
         <button
           onClick={() => setAmbientOpen(true)}

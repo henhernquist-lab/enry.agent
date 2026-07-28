@@ -56,7 +56,7 @@ export interface NLHistoryTurn {
   resultDetail?: string
 }
 
-const SCOPE_SYSTEM_PROMPT = `You route natural-language requests typed into enry.agent's Live Terminal —
+const SCOPE_SYSTEM_PROMPT = `You route natural-language requests typed into Golem's Live Terminal —
 a coding interface whose job is to make ONE edit to ONE file per propose/apply
 step in the active repository. Your only job: given a request, the repo's file
 list, and (when available) the recent turns from this same session, decide if

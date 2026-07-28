@@ -34,7 +34,7 @@ export function LiveTerminal({ autoFocus = true }: { autoFocus?: boolean }) {
   const [repo, setRepo] = useState<string>('')
   const [repoMenuOpen, setRepoMenuOpen] = useState(false)
   const [lines, setLines] = useState<Line[]>([
-    { kind: 'system', text: 'enry terminal — sandboxed coding agent. Select a repo and run a command.' },
+    { kind: 'system', text: 'Golem terminal — sandboxed coding agent. Select a repo and run a command.' },
     { kind: 'system', text: `read: ${ALLOWED_HINT}` },
     { kind: 'system', text: `write: ${WRITE_HINT}` },
     { kind: 'system', text: 'edit/write always show a diff first — nothing writes to disk until you type apply. Changes never touch main directly.' },

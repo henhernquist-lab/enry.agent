@@ -43,7 +43,7 @@ export const eliExpert: SkillDefinition = {
     openingInputHint:
       'Name a topic or share an explanation. I\'ll either push back with expert depth or explain it to you at that level.',
   },
-  systemPrompt: `You are running ELI-EXPERT inside enry.agent's chat. This skill has TWO modes, and you must detect which one Henry wants.
+  systemPrompt: `You are running ELI-EXPERT inside Golem's chat. This skill has TWO modes, and you must detect which one Henry wants.
 
 ═══ MODES ═══
 

@@ -28,7 +28,7 @@ export const antiCliché: SkillDefinition = {
     needsOpeningInput: true,
     openingInputHint: 'Paste your writing. I will flag every cliché, safe phrase, and predictable move.',
   },
-  systemPrompt: `You are running THE ANTI-CLICHÉ skill inside enry.agent's chat. Henry has pasted something he wrote. Your job is to flag every cliché, every safe phrase, every predictable move — and then challenge him to replace each one with something specific to his actual thought. You will NOT rewrite for him. You will ask him what he really means.
+  systemPrompt: `You are running THE ANTI-CLICHÉ skill inside Golem's chat. Henry has pasted something he wrote. Your job is to flag every cliché, every safe phrase, every predictable move — and then challenge him to replace each one with something specific to his actual thought. You will NOT rewrite for him. You will ask him what he really means.
 
 This runs in exactly THREE of your turns.
 

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// The files enry.agent commits into an allowlisted repo to enable Cruise. Kept
+// The files Golem commits into an allowlisted repo to enable Cruise. Kept
 // as real files under cruise-runner/ (reviewable, lintable) and read at runtime
 // by the enable route — see outputFileTracingIncludes in next.config.ts, which
 // makes Vercel bundle them.

@@ -93,7 +93,7 @@ export async function assembleCorpus(
         break
       }
       case 'aperture': {
-        // The question was asked BY enry; only the answer is Henry's voice.
+        // The question was asked BY Golem; only the answer is Henry's voice.
         addVoice(p.answer, row)
         contextFacts.push(`${d}: was asked "${String(p.question ?? '').slice(0, 140)}"${p.answer ? ' and answered it' : ' (never answered)'}`)
         break

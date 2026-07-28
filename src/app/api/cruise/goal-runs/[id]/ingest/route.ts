@@ -106,9 +106,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const { data: repoRow } = await supabase.from('cruise_repos').select('full_name').eq('id', run.repo_id).maybeSingle()
         if (repoRow?.full_name) {
           const [owner, name] = repoRow.full_name.split('/')
-          const title = `Enry Cruise: ${clampStr(body.goal_title ?? 'autonomous goal run', 200)}`
+          const title = `Golem Cruise: ${clampStr(body.goal_title ?? 'autonomous goal run', 200)}`
           const prBody = [
-            body.pr_summary ? clampStr(body.pr_summary, 4000) : 'Opened by Enry Cruise goal mode.',
+            body.pr_summary ? clampStr(body.pr_summary, 4000) : 'Opened by Golem Cruise goal mode.',
             status === 'capped' && body.remaining_summary ? `\n**Capped before completion.** Remaining:\n${clampStr(body.remaining_summary, 4000)}` : '',
             buildFailed ? `\n⚠️ **Build is failing** — opened as a draft. Not mergeable as-is:\n\`\`\`\n${clampStr(body.build_error ?? '', 3000)}\n\`\`\`` : '',
           ].join('\n')

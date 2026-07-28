@@ -32,7 +32,7 @@ Return a JSON object with exactly this structure — no preamble, no markdown wr
       "why_valuable": "Why this is worth borrowing — what problem it solves, what insight it represents",
       "difficulty": "Low" | "Medium" | "High",
       "build_effort": "Rough estimate (e.g. '2-4 days', '1-2 weeks')",
-      "how_enry_could_improve": "How enry.agent could do this better — a concrete improvement over the original",
+      "how_enry_could_improve": "How Golem could do this better — a concrete improvement over the original",
       "fits_enry": 1-10,
       "category": "UX Pattern" | "Architecture" | "Workflow" | "Implementation" | "Product Decision",
       "novelty": 1-10,

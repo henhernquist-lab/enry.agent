@@ -384,7 +384,7 @@ function ArchitectPageInner() {
                       }`}
                     >
                       <Wand2 className="h-3 w-3" />
-                      {isIntake ? 'Intake' : 'Architect'}
+                      {isIntake ? 'Intake' : 'The Scribe'}
                     </div>
                     <div className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-foreground">
                       {line.text}

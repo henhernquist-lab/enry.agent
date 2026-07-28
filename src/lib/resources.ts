@@ -1,7 +1,7 @@
 import type { ResourceSource } from './resource-source'
 import { emitResourceSaved } from './resource-events'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret' | 'memory' | 'learn_session'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'note_draft' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret' | 'memory' | 'learn_session'
 
 export interface Resource<T = unknown> {
   id: string
@@ -136,10 +136,10 @@ export interface NotePayload {
   title?: string
 }
 
-// Memory entries are plain-text facts/notes Enry has stored about Henry.
+// Memory entries are plain-text facts/notes Golem has stored about Henry.
 // `imported: true` marks entries pasted in from another AI (ChatGPT custom
 // instructions, Claude memory export, …) via the "Import Memory" flow so the
-// UI can badge them separately from memories Enry itself captured.
+// UI can badge them separately from memories Golem itself captured.
 export interface MemoryPayload {
   content: string
   imported?: boolean
@@ -480,6 +480,10 @@ export function resourceSummary(resource: Resource): string {
     case 'github_action': {
       const ga = p as unknown as GitHubActionPayload
       return `${ga.action} · ${ga.repo}`
+    }
+    case 'note_draft': {
+      const np = p as unknown as NotePayload
+      return `draft · ${np.content.slice(0, 40)}`
     }
     case 'memory': {
       const mp = p as unknown as MemoryPayload

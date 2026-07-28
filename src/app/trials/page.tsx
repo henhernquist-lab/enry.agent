@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, GitCompare, Loader2, Play, CheckCircle2, AlertCircle } from 'lucide-react'
-import { BenchmarkCard } from '@/components/models/benchmark-card'
+import { BenchmarkCard } from '@/components/models/trials-card'
 import { ComparisonTable } from '@/components/models/comparison-table'
 import {
   SORT_OPTIONS,
@@ -24,7 +24,7 @@ export default function BenchmarkPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/models/benchmarks')
+      const res = await fetch('/api/trialss')
       if (res.ok) {
         const data = await res.json()
         setBenchmarks(data.benchmarks ?? [])
@@ -75,13 +75,13 @@ export default function BenchmarkPage() {
   const currentSort = SORT_OPTIONS.find((s) => s.id === sortKey)
 
   // Poll a run's live status until it completes or fails. Same shape family
-  // as the Cruise scan live-steps polling.
+  // as the The Rounds scan live-steps polling.
   const pollRun = useCallback(async (runId: string, modelId: string) => {
     while (true) {
       await new Promise((r) => setTimeout(r, 2000))
       let data: { status?: string; progress?: { completed: number; total: number } | null; error?: string }
       try {
-        const res = await fetch(`/api/models/benchmarks/status?runId=${encodeURIComponent(runId)}`)
+        const res = await fetch(`/api/trialss/status?runId=${encodeURIComponent(runId)}`)
         if (!res.ok) throw new Error('status fetch failed')
         data = await res.json()
       } catch {
@@ -114,7 +114,7 @@ export default function BenchmarkPage() {
     setRunState('starting')
     setRunMessage(null)
     try {
-      const res = await fetch('/api/models/benchmarks', {
+      const res = await fetch('/api/trialss', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId: runModelId }),

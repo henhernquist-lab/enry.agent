@@ -180,7 +180,7 @@ export default function MobileToolsPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            href="/agent"
+            href="/forge"
             className="flex items-center justify-between rounded-xl border border-border bg-surface-secondary p-4 transition-colors hover:border-primary/20"
             style={{ minHeight: 44 }}
           >
@@ -215,7 +215,7 @@ export default function MobileToolsPage() {
             { label: 'Race Pace Calculator', note: 'Open on desktop' },
             { label: 'Bell Schedule', note: 'Open on desktop' },
             { label: 'Chief of Staff', note: 'Open on desktop' },
-            { label: 'The Aperture', note: 'Open on desktop' },
+            { label: 'The Oculus', note: 'Open on desktop' },
             { label: 'The Root Cause', note: 'Open on desktop' },
             { label: 'Ghost Mode', note: 'Open on desktop' },
             { label: 'Repos & Coding', note: 'Open on desktop' },

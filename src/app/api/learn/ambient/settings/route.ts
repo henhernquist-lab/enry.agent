@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { getAmbientSettings, saveAmbientSettings, type AmbientSettings } from '@/lib/learn/ambient'
 
-// Ambient settings — lives in Learn's own settings, not the global app settings.
+// Ambient settings — lives in The Scriptorium's own settings, not the global app settings.
 export const maxDuration = 30
 
 async function uidFrom(): Promise<string | null> {

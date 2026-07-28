@@ -82,14 +82,14 @@ export function QuickNotes({ onClose, mode = 'modal', onSave }: QuickNotesProps)
 
   if (mode === 'page') {
     return (
-      <ToolPanel title="Quick Notes" subtitle="Fast capture, no fuss" icon={icon} onClose={onClose}>
+      <ToolPanel title="The Grimoire" subtitle="Fast capture, no fuss" icon={icon} onClose={onClose}>
         {body}
       </ToolPanel>
     )
   }
 
   return (
-    <ModalShell title="Quick Notes" subtitle="Fast capture, no fuss" icon={icon} onClose={onClose} width="w-[480px]">
+    <ModalShell title="The Grimoire" subtitle="Fast capture, no fuss" icon={icon} onClose={onClose} width="w-[480px]">
       {body}
     </ModalShell>
   )

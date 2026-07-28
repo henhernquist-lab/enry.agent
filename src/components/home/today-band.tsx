@@ -9,7 +9,7 @@ import { BriefingCard } from './briefing-card'
 import { ApertureCard } from './aperture-card'
 
 // The "Today" band sits above chat on the homepage: the Chief of Staff
-// briefing (primary, wider) beside The Aperture (narrower). Collapsible so it
+// briefing (primary, wider) beside The Oculus (narrower). Collapsible so it
 // costs a single row once Henry has processed the morning and chat reclaims
 // the viewport.
 export function TodayBand() {

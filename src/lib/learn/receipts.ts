@@ -6,7 +6,7 @@
 //    that contradicts a prior claim)
 // 4. Returns contradictions for surfacing as an inline interrupt in chat
 //
-// The Receipts tab in Learn shows the full ledger of every contradiction
+// The Receipts tab in The Scriptorium shows the full ledger of every contradiction
 // ever surfaced, whether the user resolved it, and which claim "won."
 
 import { supabase } from '../supabase'

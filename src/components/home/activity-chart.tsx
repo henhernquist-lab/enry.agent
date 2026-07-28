@@ -67,7 +67,7 @@ export function ActivityChart() {
             <path d="M0 26 L20 20 L40 24 L60 12 L80 18 L100 8 L120 14" fill="none" stroke="currentColor" strokeWidth="1.5" />
           </svg>
           <p className="font-mono text-[10px] text-muted-foreground">
-            Activity will show up here as you use enry
+            Activity will show up here as you use Golem
           </p>
         </div>
       ) : (

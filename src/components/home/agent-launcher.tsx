@@ -6,7 +6,7 @@ import { Code2 } from 'lucide-react'
 export function AgentLauncher() {
   return (
     <Link
-      href="/agent"
+      href="/forge"
       className="flex w-full items-center justify-between rounded border border-border bg-surface-elevated/50 px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-surface-elevated"
     >
       <span className="flex items-center gap-2">

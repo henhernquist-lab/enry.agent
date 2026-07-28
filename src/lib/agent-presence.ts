@@ -1,4 +1,4 @@
-// Minimal global store for "is enry busy right now" — no state library
+// Minimal global store for "is Golem busy right now" — no state library
 // exists anywhere in this app yet, so this uses React's built-in
 // useSyncExternalStore rather than pulling in Zustand for a single boolean.
 // Any part of the app can call setAgentBusy(true/false); any part can read

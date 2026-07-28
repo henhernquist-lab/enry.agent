@@ -1,8 +1,8 @@
 // ───────────────────────────────────────────────────────────────────
-// Model Intelligence — benchmark metrics + health monitoring data layer.
+// The Trials — benchmark metrics + health monitoring data layer.
 //
 // Benchmark result data now lives entirely in Supabase (benchmark_runs),
-// read via /api/models/benchmarks → src/lib/benchmark/storage.ts. This
+// read via /api/trialss → src/lib/benchmark/storage.ts. This
 // module only re-exports the shared benchmark types + display metadata and
 // the model-health type/helpers; it holds no static performance data.
 // ───────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ export const SORT_OPTIONS: BenchmarkSortKey[] = [
 
 // ── Health snapshots ───────────────────────────────────────────────
 // Real per-model health data lives in src/lib/usage/health.ts, aggregated
-// from usage_log by /api/models/health. This module only defines the
+// from usage_log by /api/trials/health. This module only defines the
 // shared type + display helpers so the API route and UI agree on shape.
 
 export type HealthStatus = 'online' | 'slow' | 'offline' | 'unknown'

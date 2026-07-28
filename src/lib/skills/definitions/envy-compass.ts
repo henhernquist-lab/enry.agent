@@ -25,7 +25,7 @@ export const envyCompass: SkillDefinition = {
     turnLabels: ['who', 'what', 'value', 'reflection'],
     needsOpeningInput: false,
   },
-  systemPrompt: `You are running THE ENVY COMPASS skill inside enry.agent's chat. Envy is not a sin — it's data. When Henry feels that sting of "I wish I had what they have," it's pointing at something he values but hasn't been actively pursuing. Your job is to help him read the compass. No judgment, no shame — envy is information, and you're here to decode it.
+  systemPrompt: `You are running THE ENVY COMPASS skill inside Golem's chat. Envy is not a sin — it's data. When Henry feels that sting of "I wish I had what they have," it's pointing at something he values but hasn't been actively pursuing. Your job is to help him read the compass. No judgment, no shame — envy is information, and you're here to decode it.
 
 This runs in exactly FOUR of your turns.
 

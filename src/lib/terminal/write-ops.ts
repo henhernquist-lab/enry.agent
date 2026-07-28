@@ -202,7 +202,7 @@ export async function proposeEdit(
 // file's own code — which routinely contains quotes, braces, and backslashes
 // that would break JSON parsing.
 const CONTENT_SENTINEL = '===FILE==='
-const BASE_EDIT_SYSTEM_PROMPT = `You are enry's coding agent, proposing exactly one file's new full content.
+const BASE_EDIT_SYSTEM_PROMPT = `You are Golem's coding agent, proposing exactly one file's new full content.
 
 You receive the target file's current content (empty for a new file) and an instruction. Respond in TWO parts, in this exact order:
 
@@ -343,7 +343,7 @@ export async function generateFileContent(
 // sentinel-split output — the corruption risk that was the reason this wasn't
 // wired in the first time. Only the resulting TEXT crosses over, folded into
 // generateFileContent's prompt as inert context (see reasoningContext above).
-const REASONING_SYSTEM_PROMPT = `You are enry's coding agent, thinking through a change BEFORE writing any code.
+const REASONING_SYSTEM_PROMPT = `You are Golem's coding agent, thinking through a change BEFORE writing any code.
 
 Given a file's current content and an instruction, reason through it out loud: what actually needs to change and why, what the cleanest complete approach looks like, what could go wrong, and any edge cases or repo conventions that matter here. This is preparation for a second pass that will write the actual diff — your job here is ONLY to think, not to write code or propose file content.
 
@@ -541,7 +541,7 @@ export async function planEdit(
 
   const effort = EFFORT_PARAMS[ctx.effort ?? 'none']
   const rules = await loadEnryRules(ctx)
-  const PLAN_SYSTEM = `You are enry's coding agent, producing a plan BEFORE writing code.
+  const PLAN_SYSTEM = `You are Golem's coding agent, producing a plan BEFORE writing code.
 
 Given a file and an instruction, produce a clear, structured plan for what you will change.
 ${effort.planDepth}

@@ -13,21 +13,21 @@ interface Crumb {
 const CRUMBS: Record<string, Crumb[]> = {
   '/': [{ label: 'Home', href: '/' }],
   '/chat': [{ label: 'Workspace', href: '/' }, { label: 'Chat' }],
-  '/agent': [{ label: 'Workspace', href: '/' }, { label: 'Drive' }],
-  '/learn': [{ label: 'Workspace', href: '/' }, { label: 'Learn' }],
+  '/agent': [{ label: 'Workspace', href: '/' }, { label: 'The Forge' }],
+  '/learn': [{ label: 'Workspace', href: '/' }, { label: 'The Scriptorium' }],
   '/lab': [{ label: 'Workspace', href: '/' }, { label: 'Lab' }],
   '/resources': [{ label: 'Library', href: '/' }, { label: 'Tools' }],
   '/prompts': [{ label: 'Library', href: '/' }, { label: 'Prompts' }],
   '/resources/memory': [{ label: 'Library', href: '/' }, { label: 'Memory' }],
-  '/room': [{ label: 'Library', href: '/' }, { label: 'The Room' }],
-  '/models': [{ label: 'Platform', href: '/' }, { label: 'Model Intelligence' }],
+  '/room': [{ label: 'Library', href: '/' }, { label: 'The Atelier' }],
+  '/models': [{ label: 'Platform', href: '/' }, { label: 'The Trials' }],
   '/usage': [{ label: 'Platform', href: '/' }, { label: 'Usage' }],
   '/settings': [{ label: 'System', href: '/' }, { label: 'Settings' }],
 }
 
 const DESCRIPTIONS: Record<string, string> = {
   '/': 'Dashboard overview',
-  '/chat': 'Ask Enry anything',
+  '/chat': 'Ask Golem anything',
   '/agent': 'Autonomous coding agent',
   '/learn': 'Tutorials and skills',
   '/lab': 'Experiments and overnight runs',
@@ -59,7 +59,7 @@ function setTheme(theme: Theme) {
 export function TopBar() {
   const pathname = usePathname()
   const crumbs = CRUMBS[pathname] ?? [{ label: 'Home', href: '/' }]
-  const description = DESCRIPTIONS[pathname] ?? 'Enry dashboard'
+  const description = DESCRIPTIONS[pathname] ?? 'Golem dashboard'
 
   const [langOpen, setLangOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)

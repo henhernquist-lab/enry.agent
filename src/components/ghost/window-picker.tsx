@@ -73,7 +73,7 @@ export function WindowPicker({ onStart }: { onStart: (sel: GhostWindowSelection)
   const presets = [
     { ...monthsBack(1) },
     { ...monthsBack(0), label: 'This month so far' },
-    { start: '2026-07-01', end: '2026-07-10', label: 'The enry.agent build sprint' },
+    { start: '2026-07-01', end: '2026-07-10', label: 'The Golem build sprint' },
   ]
 
   return (

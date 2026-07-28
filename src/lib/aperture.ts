@@ -5,7 +5,7 @@ import { nimClientFor, DEFAULT_NIM_MODEL, parseJsonLoose } from './nim'
 import { getContextSnapshot, findCrossToolPatterns, snapshotToText } from './synthesis'
 import type { AperturePayload } from './resources'
 
-// The Aperture: exactly one question per day, generated from Henry's real
+// The Oculus: exactly one question per day, generated from Henry's real
 // current state. Not a list. Not advice. One question he answers in 2–5
 // sentences, building an archive of his own thinking over time.
 

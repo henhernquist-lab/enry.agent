@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { BarChart3, Zap, ArrowUpRight, Sparkles, Shield } from 'lucide-react'
-import type { BlackMarketEntry, BlackMarketBadge, DiscoveryBadge } from '@/lib/lab/black-market'
+import type { BlackMarketEntry, BlackMarketBadge, DiscoveryBadge } from '@/lib/lab/foundry'
 
 // ── Badge styling ──────────────────────────────────────────────────
 // Tone per badge family. Uses design tokens only (no raw Tailwind colors).
@@ -75,7 +75,7 @@ export function formatDate(iso: string | null): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export function BlackMarketCard({
+export function FoundryModelCard({
   entry,
   onOpen,
 }: {

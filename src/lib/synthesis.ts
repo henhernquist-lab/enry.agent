@@ -25,9 +25,10 @@ const TYPE_LABELS: Record<ResourceType, string> = {
   countdown: 'countdowns',
   checkin: 'daily check-ins',
   note: 'notes',
+  note_draft: 'note drafts',
   bell_schedule: 'bell schedule',
   uploaded_file: 'uploaded files',
-  aperture: 'The Aperture',
+  aperture: 'The Oculus',
   briefing: 'daily briefings',
   root_cause: 'root cause analysis',
   terminal_session: 'terminal sessions',
@@ -524,7 +525,7 @@ function divergencePatterns(snapshot: ContextSnapshot): CrossToolPattern[] {
 }
 
 // ─── Serialization for LLM prompts ──────────────────────────────────────────
-// Compact, human-readable rendering the Aperture / Chief of Staff / Root Cause
+// Compact, human-readable rendering the Oculus / Chief of Staff / Root Cause
 // features drop straight into a system or user message.
 export function snapshotToText(snapshot: ContextSnapshot, patterns: CrossToolPattern[]): string {
   const lines: string[] = []

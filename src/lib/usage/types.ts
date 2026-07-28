@@ -1,4 +1,4 @@
-// Types for the Enry Engine usage system. Shared by the logging path
+// Types for the Golem Engine usage system. Shared by the logging path
 // (src/lib/usage/log.ts), the dashboard API + UI, and the alerts system
 // (src/lib/usage/quota.ts). Kept free of runtime imports so it is safe to
 // pull into both server and client bundles.

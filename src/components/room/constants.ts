@@ -4,7 +4,7 @@ import type { RoomDefinition, RoomRegistry, Position, Activity, ActivityConfig, 
 // The Room — constants
 // ───────────────────────────────────────────────────────────────────
 
-/** Enry's brand colors mapped to 3D-friendly hex values.
+/** Golem's brand colors mapped to 3D-friendly hex values.
  *
  * Albedos are deliberately lifted well above the CSS token values —
  * meshStandardMaterial only reflects what its color allows, so
@@ -26,7 +26,7 @@ export const COLORS = {
   chair: '#2e3438',
   chairSeat: '#3a4145',
 
-  // Accent — Enry green
+  // Accent — Golem green
   primary: '#3a9e60',
   primaryDim: '#2d7a4a',
   primaryGlow: '#00ff66',
@@ -36,7 +36,7 @@ export const COLORS = {
   monitorGlow: '#3a7ab8',
   monitorFrame: '#282d31',
 
-  // Character — differentiated materials so Enry reads as a designed figure,
+  // Character — differentiated materials so Golem reads as a designed figure,
   // not a monochrome blank. Teal-slate body against a bright silver head keeps
   // the character the clear focal point under the warm key + green accent
   // lights, while green stays an ACCENT only (visor + chest stripe).
@@ -193,7 +193,7 @@ export const EVENT_ACTIVITY_MAP: Record<string, { activity: Activity; station?: 
 }
 
 /**
- * Maps an opening surface ("See Enry" entry points) to the event dispatched
+ * Maps an opening surface ("See Golem" entry points) to the event dispatched
  * on arrival — working if the surface had an active run, idle otherwise.
  * Keys match the `from` query param on /room.
  */
@@ -290,8 +290,8 @@ export const STATIONS: Station[] = [
 /** The office room — the first and currently only room. */
 export const OFFICE_ROOM: RoomDefinition = {
   id: 'office',
-  name: 'Enry Headquarters',
-  description: 'The main office where Enry works',
+  name: 'Golem Headquarters',
+  description: 'The main office where Golem works',
   cameraInitial: CAMERA_DEFAULTS.position,
   cameraTarget: CAMERA_DEFAULTS.target,
   focusTargets: [

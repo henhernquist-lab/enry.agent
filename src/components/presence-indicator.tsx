@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useAgentBusy } from '@/lib/agent-presence'
 
-// Ambient "enry is here" signal — bottom-right, always present on
+// Ambient "Golem is here" signal — bottom-right, always present on
 // authenticated pages. Deliberately not a button: no click behavior, no
 // menu, no unread-badge energy. At rest it should be nearly subconscious;
 // only the busy state should draw any real attention.

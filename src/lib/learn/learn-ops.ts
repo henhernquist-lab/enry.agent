@@ -63,7 +63,7 @@ function buildRecoveryContinuation(partialContent?: string): string {
   return `\n\nCONTINUATION REQUEST: Your previous response was interrupted unexpectedly. Continue exactly where you left off. Do NOT restart, summarize, or repeat any previous content. Do NOT apologize or acknowledge the interruption. The last content sent before the interruption was:\n\n${partialContent.slice(-500)}\n\nContinue from the exact point this was cut off.`
 }
 
-const CLAIM_EXTRACTION_SYSTEM_PROMPT = `You are enry's learning agent, breaking a topic or source text into atomic claims — single, standalone things a learner should come to know or believe, each independently provable true or false.
+const CLAIM_EXTRACTION_SYSTEM_PROMPT = `You are Golem's learning agent, breaking a topic or source text into atomic claims — single, standalone things a learner should come to know or believe, each independently provable true or false.
 
 Rules:
 - Each claim is ONE idea in plain prose — not a paragraph, not a list, not multiple facts joined by "and".
@@ -83,7 +83,7 @@ export async function learnTopic(ctx: LearnOpsContext, input: string): Promise<L
   const trimmed = input.trim()
   if (!trimmed) return { output: 'learn: give me a topic or paste a source, e.g. learn "spaced repetition"', exitCode: 1 }
 
-  // The unfair advantage: enry already has a pgvector memory of what this
+  // The unfair advantage: Golem already has a pgvector memory of what this
   // user has asked, built, and decided. Ground claim generation in it instead
   // of treating every topic as a cold start.
   let memoryContext = ''

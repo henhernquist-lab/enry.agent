@@ -486,7 +486,7 @@ async function runSkillResponse(
     ? wrappedCommand.slice(userIdx + userMarker.length).trim()
     : wrappedCommand
 
-  // Detect whether an Enry Lab prompt override is active for this skill.
+  // Detect whether an Golem Lab prompt override is active for this skill.
   const baseSkill = getSkill(skillSlug)
   const hasOverride = baseSkill && skill.systemPrompt !== baseSkill.systemPrompt
 

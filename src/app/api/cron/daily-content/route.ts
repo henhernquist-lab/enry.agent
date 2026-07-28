@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     generateDailyArticles(uid),
   ])
 
-  // The Aperture generates first, then the Chief of Staff briefing (which can
+  // The Oculus generates first, then the Chief of Staff briefing (which can
   // reference the day's question). Each is independently guarded so a failure
   // in one never blocks the other — log, skip, retry next day.
   let aperture: { status: string; id?: string } = { status: 'skipped' }

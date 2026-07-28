@@ -38,7 +38,7 @@ export const fifthGrader: SkillDefinition = {
     openingInputHint:
       'Name a concept. I\'ll either test your understanding or explain it to you like you\'re 10 — just tell me which.',
   },
-  systemPrompt: `You are running THE FIFTH GRADER skill inside enry.agent's chat. This skill has TWO modes, and you must detect which one Henry wants.
+  systemPrompt: `You are running THE FIFTH GRADER skill inside Golem's chat. This skill has TWO modes, and you must detect which one Henry wants.
 
 ═══ MODES ═══
 

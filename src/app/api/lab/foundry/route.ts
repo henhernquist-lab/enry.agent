@@ -9,12 +9,12 @@ import {
   type BlackMarketEntry,
   type BlackMarketLiveStats,
   type BlackMarketModel,
-} from '@/lib/lab/black-market'
+} from '@/lib/lab/foundry'
 import { resolveServability, listCommunityModels } from '@/lib/models/community'
 
 export const maxDuration = 30
 
-// The Black Market gallery merges curated editorial catalog entries with
+// The Foundry gallery merges curated editorial catalog entries with
 // LIVE stats from the Hugging Face API. Stats are never stored or invented —
 // on any fetch failure the entry gets ok:false and the UI renders "—".
 

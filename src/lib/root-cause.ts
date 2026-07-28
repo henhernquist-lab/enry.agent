@@ -412,7 +412,7 @@ Output JSON only, exactly one of:
   "root_cause": string, "preventions": string[], "external_root": boolean }`
 
 export interface InterviewMessage {
-  role: 'enry' | 'henry'
+  role: 'golem' | 'henry'
   content: string
 }
 
@@ -442,7 +442,7 @@ export async function runInterviewTurn(input: InterviewTurnInput): Promise<Inter
   const transcript =
     input.history.length === 0
       ? '(interview just started — this is the first layer)'
-      : input.history.map((m) => `${m.role === 'enry' ? 'enry' : 'Henry'}: ${m.content}`).join('\n')
+      : input.history.map((m) => `${m.role === 'golem' ? 'Golem' : 'Henry'}: ${m.content}`).join('\n')
 
   const chainSoFar =
     input.acceptedChain.length === 0

@@ -4,13 +4,13 @@ import { redirect } from 'next/navigation'
 import { MobileNav } from '@/components/mobile/MobileNav'
 
 export const metadata: Metadata = {
-  title: 'enry lite',
-  description: 'Mobile companion for enry.agent — chat, alerts, and quick actions on the go.',
+  title: 'Shard',
+  description: 'Mobile companion for Golem — chat, alerts, and quick actions on the go.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'enry lite',
+    title: 'Shard',
   },
 }
 

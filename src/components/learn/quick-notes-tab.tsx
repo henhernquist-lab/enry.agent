@@ -1,6 +1,6 @@
 'use client'
 
-// Quick Notes — moved into Learn as a tab.
+// The Grimoire — moved into Learn as a tab.
 // Wraps the existing QuickNotes component from tools, unchanged.
 // Same zero-prop pattern as grade-calc-tab.tsx.
 

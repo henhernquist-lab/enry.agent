@@ -62,7 +62,7 @@ export default function LabPage() {
   // Track the active run ID for live workspace polling
   const [activeOvernightRunId, setActiveOvernightRunId] = useState<string | null>(null)
 
-  // LARP Engine state
+  // larp engine state
   const [larpUrl, setLarpUrl] = useState('')
   const [larpProjectContext, setLarpProjectContext] = useState('')
   const [larpFeatureIdea, setLarpFeatureIdea] = useState('')
@@ -223,7 +223,7 @@ export default function LabPage() {
       '## Why',
       feature.why_valuable,
       '',
-      '## How Enry could improve it',
+      '## How Golem could improve it',
       feature.how_enry_could_improve,
       '',
       `## Difficulty: ${feature.difficulty}`,
@@ -241,16 +241,16 @@ export default function LabPage() {
         <Link href="/" className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Home
         </Link>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">Enry Lab</span>
+        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">Golem Lab</span>
       </header>
 
       <div className="mb-10">
         <h1 className="mb-2 flex items-center gap-2 text-2xl font-semibold tracking-tight">
           <FlaskConical className="h-6 w-6 text-primary" />
-          Enry Lab
+          Golem Lab
         </h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Experimental features: skill prompt improvement, evolutionary code generation, overnight R&D, and the LARP Engine for product idea discovery.
+          Experimental features: skill prompt improvement, evolutionary code generation, overnight R&D, and the larp engine for product idea discovery.
         </p>
       </div>
 
@@ -261,7 +261,7 @@ export default function LabPage() {
         <StatCard icon={GitPullRequest} label="Approved revisions" value={stats?.approvedRevisions ?? 0} loading={loading} />
       </div>
 
-      {/* ── The Black Market — community model gallery ── */}
+      {/* ── The Foundry — community model gallery ── */}
       <section className="mb-10">
         <Link
           href="/lab/black-market"
@@ -271,13 +271,13 @@ export default function LabPage() {
             <Skull className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold tracking-tight text-foreground">The Black Market</span>
+                <span className="text-sm font-semibold tracking-tight text-foreground">The Foundry</span>
                 <span className="rounded bg-warning/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-warning">
                   Experimental
                 </span>
               </div>
               <p className="mt-0.5 max-w-xl font-mono text-[11px] leading-relaxed text-muted-foreground">
-                Explore cutting-edge community fine-tunes, model merges, and experimental checkpoints — separate from Enry&apos;s official registry.
+                Explore cutting-edge community fine-tunes, model merges, and experimental checkpoints — separate from Golem&apos;s official registry.
               </p>
             </div>
           </div>
@@ -554,16 +554,16 @@ export default function LabPage() {
         </div>
       </section>
 
-      {/* ── Section 3: LARP Engine ── */}
+      {/* ── Section 3: larp engine ── */}
       <section className="mb-10">
         <h2 className="mb-4 font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <span className="flex items-center gap-1.5">
-            <ScanSearch className="h-3.5 w-3.5" /> LARP Engine
+            <ScanSearch className="h-3.5 w-3.5" /> larp engine
           </span>
         </h2>
         <div className="rounded border border-border bg-surface-secondary p-4">
           <p className="mb-3 font-mono text-[11px] text-muted-foreground">
-            Discover what ideas are worth borrowing from other software. Paste a repo URL, describe what you&apos;re building, or name a feature you want to explore — the LARP Engine extracts the product decisions, UX patterns, and architecture concepts actually worth adapting.
+            Discover what ideas are worth borrowing from other software. Paste a repo URL, describe what you&apos;re building, or name a feature you want to explore — the larp engine extracts the product decisions, UX patterns, and architecture concepts actually worth adapting.
           </p>
 
           {/* Inputs */}
@@ -744,10 +744,10 @@ export default function LabPage() {
                                   <p className="font-mono text-[10px] leading-relaxed text-foreground/90">{feature.why_valuable}</p>
                                 </div>
 
-                                {/* How Enry could improve */}
+                                {/* How Golem could improve */}
                                 {feature.how_enry_could_improve && (
                                   <div>
-                                    <p className="mb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">How Enry could improve it</p>
+                                    <p className="mb-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">How Golem could improve it</p>
                                     <p className="font-mono text-[10px] leading-relaxed text-foreground/90">{feature.how_enry_could_improve}</p>
                                   </div>
                                 )}
@@ -757,7 +757,7 @@ export default function LabPage() {
                                   <RatingBadge label="Novelty" value={feature.novelty} />
                                   <RatingBadge label="User Value" value={feature.user_value} />
                                   <RatingBadge label="Arch. Fit" value={feature.architecture_fit} />
-                                  <RatingBadge label="Fits Enry" value={feature.fits_enry} />
+                                  <RatingBadge label="Fits Golem" value={feature.fits_enry} />
                                 </div>
 
                                 {/* Maintenance cost */}
@@ -783,7 +783,7 @@ export default function LabPage() {
                                   <button
                                     onClick={() => {
                                       navigator.clipboard.writeText(
-                                        `Feature: ${feature.name}\nCategory: ${feature.category}\nDifficulty: ${feature.difficulty} | Effort: ${feature.build_effort}\nFits Enry: ${feature.fits_enry}/10 | Recommendation: ${feature.recommendation_score}/10\n\nWhat: ${feature.what_it_does}\n\nWhy: ${feature.why_valuable}\n\nImprovement: ${feature.how_enry_could_improve}`
+                                        `Feature: ${feature.name}\nCategory: ${feature.category}\nDifficulty: ${feature.difficulty} | Effort: ${feature.build_effort}\nFits Golem: ${feature.fits_enry}/10 | Recommendation: ${feature.recommendation_score}/10\n\nWhat: ${feature.what_it_does}\n\nWhy: ${feature.why_valuable}\n\nImprovement: ${feature.how_enry_could_improve}`
                                       ).catch(() => {})
                                     }}
                                     className="flex items-center gap-1 rounded border border-border px-2 py-1 font-mono text-[9px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
@@ -835,7 +835,7 @@ export default function LabPage() {
             <div className="mt-4 rounded border border-dashed border-border p-6 text-center">
               <p className="text-sm text-muted-foreground">Paste a repo URL, describe your project, or name a feature above.</p>
               <p className="mt-1 font-mono text-[10px] text-muted-foreground/50">
-                The LARP Engine extracts product ideas worth borrowing — not code summaries.
+                The larp engine extracts product ideas worth borrowing — not code summaries.
               </p>
             </div>
           )}

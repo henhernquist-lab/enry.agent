@@ -1,7 +1,7 @@
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Enry Lab',
+  title: 'Golem Lab',
   description: 'Experimental multi-model features and skill improvement loops.',
 }
 

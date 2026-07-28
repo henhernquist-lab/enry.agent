@@ -188,7 +188,7 @@ export default function LoginPage() {
               transition={{ delay: 0.3, duration: 0.6 }}
               className="font-display text-4xl font-bold tracking-tight"
             >
-              <span className="text-foreground">ENRY</span>
+              <span className="text-foreground">Golem</span>
               <span className="text-primary">.</span>
               <span className="text-foreground">AGENT</span>
             </motion.h1>

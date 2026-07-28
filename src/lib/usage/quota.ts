@@ -29,7 +29,7 @@ const COST_LIMIT = numEnv('USAGE_COST_LIMIT_USD', 25)
 
 export const localUsageQuotaSource: QuotaSource = {
   id: 'local',
-  label: 'Enry Engine',
+  label: 'Golem Engine',
   async getUsage(userId): Promise<QuotaUsage | null> {
     const data = await getUsageData(userId, 'month')
     const s = data.summary
@@ -41,9 +41,9 @@ export const localUsageQuotaSource: QuotaSource = {
       ? Math.min(100, (s.estimatedCostUsd / COST_LIMIT) * 100)
       : 0
     if (costPercent >= reqPercent && costPercent > 0) {
-      return { sourceId: 'local', sourceLabel: 'Enry Engine', used: s.estimatedCostUsd, limit: COST_LIMIT, unit: 'cost_usd', percent: costPercent }
+      return { sourceId: 'local', sourceLabel: 'Golem Engine', used: s.estimatedCostUsd, limit: COST_LIMIT, unit: 'cost_usd', percent: costPercent }
     }
-    return { sourceId: 'local', sourceLabel: 'Enry Engine', used: s.requests, limit: REQUEST_LIMIT, unit: 'requests', percent: reqPercent }
+    return { sourceId: 'local', sourceLabel: 'Golem Engine', used: s.requests, limit: REQUEST_LIMIT, unit: 'requests', percent: reqPercent }
   },
 }
 

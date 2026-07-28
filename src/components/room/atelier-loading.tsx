@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react'
 
 /**
  * Loading screen — shown while the 3D scene assets are loading.
- * Polished, branded, matches Enry's dark aesthetic.
+ * Polished, branded, matches Golem's dark aesthetic.
  */
 export function LoadingScreen() {
   return (
@@ -27,14 +27,14 @@ export function LoadingScreen() {
       >
         {/* Logo */}
         <div className="font-display text-xl font-bold tracking-tight text-foreground">
-          ENRY<span className="text-primary">.</span>AGENT
+          Golem<span className="text-primary">.</span>AGENT
         </div>
 
         {/* Loading indicator */}
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
           <span className="font-mono text-[11px] text-muted-foreground">
-            Loading The Room…
+            Loading The Atelier…
           </span>
         </div>
 

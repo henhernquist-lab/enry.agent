@@ -1,8 +1,8 @@
 import { createOpenAI } from '@ai-sdk/openai'
 
 // ───────────────────────────────────────────────────────────────────
-// Model registry — single source of truth for every model Enry Engine
-// exposes to the chat picker, Drive picker, enry lite picker, and server
+// Model registry — single source of truth for every model Golem Engine
+// exposes to the chat picker, Drive picker, Shard picker, and server
 // routes. Replaces the old NIM-only MODEL_KEYS map. Adding a model:
 //   1. Append an entry to MODEL_LIST below (id, label, scopes, etc.)
 //   2. Append a provider row to PROVIDERS (baseURL + env-key getter)

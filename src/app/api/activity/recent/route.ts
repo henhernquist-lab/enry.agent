@@ -5,7 +5,7 @@ import { getRecentActivity } from '@/lib/usage/activity'
 export const maxDuration = 10
 export const dynamic = 'force-dynamic'
 
-// Shared "what is Enry doing right now" endpoint — the homepage Live
+// Shared "what is Golem doing right now" endpoint — the homepage Live
 // Activity widget, the Room's worker HUD/speech bubble, and the Room's
 // ambient idle state all read this so the three surfaces can't disagree.
 export async function GET() {

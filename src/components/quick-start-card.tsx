@@ -7,7 +7,7 @@ const STEPS = [
   {
     number: '1',
     title: 'Start a chat',
-    desc: 'Ask Enry anything, search the web, or write code.',
+    desc: 'Ask Golem anything, search the web, or write code.',
     icon: MessageSquare,
     href: '/',
   },

@@ -11,7 +11,7 @@ function userId(session: { user?: { id?: string } } | null): string | null {
 }
 
 // Memories are stored as rows in `resources` with type='memory'. source is
-// always 'user' (Enry-captured or imported by Henry). An `imported` flag in the
+// always 'user' (Golem-captured or imported by Henry). An `imported` flag in the
 // payload marks entries pasted from another AI so the UI can badge them.
 
 export async function GET() {

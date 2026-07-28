@@ -5,14 +5,14 @@ import {
   X, ExternalLink, BarChart3, GitCompare, Lightbulb, Download,
   Cpu, GitMerge, Zap, CheckCircle2, AlertTriangle, Ban, Loader2, Plus, Trash2,
 } from 'lucide-react'
-import { BadgePill, DiscoveryBadgePill, formatCount, formatDate } from './black-market-card'
-import type { BlackMarketEntry } from '@/lib/lab/black-market'
+import { BadgePill, DiscoveryBadgePill, formatCount, formatDate } from './foundry-card'
+import type { BlackMarketEntry } from '@/lib/lab/foundry'
 
 // ── Detail side panel ──────────────────────────────────────────────
 // Opens when a model card is clicked. Editorial detail + future-action
 // affordances (all disabled today — informational page only).
 
-export function BlackMarketPanel({
+export function FoundryModelPanel({
   entry,
   onClose,
   onAddToIdeas,
@@ -142,12 +142,12 @@ export function BlackMarketPanel({
               </Section>
 
               {/* Future benchmark placeholder */}
-              <Section title="Enry Benchmark">
+              <Section title="Golem Benchmark">
                 <div className="rounded border border-dashed border-border p-4 text-center">
                   <BarChart3 className="mx-auto mb-1.5 h-5 w-5 text-muted-foreground/40" />
                   <p className="text-[11px] text-muted-foreground">Not yet benchmarked.</p>
                   <p className="mt-0.5 text-[10px] text-muted-foreground/50">
-                    When Enry&apos;s benchmark engine is live, measured scores and an Enry Verified badge will appear here.
+                    When Golem&apos;s benchmark engine is live, measured scores and an Golem Verified badge will appear here.
                   </p>
                 </div>
               </Section>
@@ -155,7 +155,7 @@ export function BlackMarketPanel({
 
             {/* Action footer */}
             <div className="border-t border-border p-4">
-              {/* Add to Enry — the real action. Adds this community model to the
+              {/* Add to Golem — the real action. Adds this community model to the
                   chat picker, served via HF Inference Providers. Disabled with a
                   reason when no provider can actually run it. */}
               {addedToEnry ? (
@@ -165,7 +165,7 @@ export function BlackMarketPanel({
                   className="flex w-full items-center justify-center gap-1.5 rounded border border-destructive/40 bg-destructive/5 px-3 py-2.5 font-mono text-[11px] text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
                 >
                   {busyEnry ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                  Remove from Enry
+                  Remove from Golem
                 </button>
               ) : entry.servable ? (
                 <button
@@ -174,7 +174,7 @@ export function BlackMarketPanel({
                   className="flex w-full items-center justify-center gap-1.5 rounded border border-primary/50 bg-primary/10 px-3 py-2.5 font-mono text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
                 >
                   {busyEnry ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                  Add to Enry
+                  Add to Golem
                 </button>
               ) : (
                 <div

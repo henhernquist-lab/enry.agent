@@ -120,7 +120,7 @@ export interface OvernightRunRow {
   updated_at: string
 }
 
-// ── LARP Engine ──────────────────────────────────────────────
+// ── larp engine ──────────────────────────────────────────────
 
 export interface LarpFeature {
   name: string

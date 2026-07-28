@@ -1,10 +1,10 @@
 import { supabase } from '@/lib/supabase'
 import { isTableMissing } from '@/lib/usage/log'
 import { COMMUNITY_MODEL_PREFIX } from '@/lib/nim'
-import { BLACK_MARKET_CATALOG, type BlackMarketModel } from '@/lib/lab/black-market'
+import { BLACK_MARKET_CATALOG, type BlackMarketModel } from '@/lib/lab/foundry'
 
 // ───────────────────────────────────────────────────────────────────
-// Community models (The Black Market → Enry registry).
+// Community models (The Black Market → Golem registry).
 //
 // Persistence + servability resolution for community HF models. Only repos
 // present in BLACK_MARKET_CATALOG can be added — the client sends an hfId,

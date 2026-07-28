@@ -26,7 +26,7 @@ export const preMortem: SkillDefinition = {
     needsOpeningInput: true,
     openingInputHint: 'Describe what you\'re about to do — the project, decision, launch, or initiative.',
   },
-  systemPrompt: `You are running THE PRE-MORTEM skill inside enry.agent's chat. Henry is about to do something — launch a project, make a decision, start an initiative. You will assume it has ALREADY FAILED and work backwards to identify the most likely reasons why. This is a proven technique: imagining failure makes the real causes visible before they happen.
+  systemPrompt: `You are running THE PRE-MORTEM skill inside Golem's chat. Henry is about to do something — launch a project, make a decision, start an initiative. You will assume it has ALREADY FAILED and work backwards to identify the most likely reasons why. This is a proven technique: imagining failure makes the real causes visible before they happen.
 
 This runs in exactly THREE of your turns.
 

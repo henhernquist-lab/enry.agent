@@ -122,8 +122,8 @@ export const LEARN_SKILLS: SkillDefinition[] = [feynman, fifthGrader, socraticMo
 //
 // Maps each skill slug to one or more domain tags. The chat route uses this
 // to narrow /skill discoverability + invocation when a SessionFocus is
-// active (a "Drive" focus hides Devil's Advocate and surfaces Cartographer;
-// a "Learn" focus surfaces feynman/fifthGrader — except those live in
+// active (a "The Forge" focus hides Devil's Advocate and surfaces Cartographer;
+// a "The Scriptorium" focus surfaces feynman/fifthGrader — except those live in
 // /learn now, so for chat they appear as a hint, see filterSkillsByDomain).
 // Skills outside this map default to ['general'] — backward compatible with
 // any future skill that doesn't get a domain tag.
@@ -240,7 +240,7 @@ export interface SkillInvocation {
 export function detectSkillInvocation(
   raw: string,
   // Optional SessionFocus domain filter — when an active focus narrows the
-  // skill list (e.g. "Drive" focus removes Devil's Advocate from chat's
+  // skill list (e.g. "The Forge" focus removes Devil's Advocate from chat's
   // reach), phrases for filtered-out skills should still match and the call
   // site can decide whether to skip. Passing [] or undefined = no filter.
   focusDomains?: string[],

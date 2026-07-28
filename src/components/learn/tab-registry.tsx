@@ -82,9 +82,9 @@ export const LEARN_TABS: LearnTabDef[] = [
   // creating/managing article notes and running study sessions; Sources
   // browses them by where they came from and lets you pin custody.
   { id: 'articles', label: 'Articles', icon: Newspaper, render: () => <ArticlesTab /> },
-  // Quick Notes: zero-friction text capture into the `note` resource table.
+  // The Grimoire: zero-friction text capture into the `note` resource table.
   // Kept general-purpose — saves into the same `note` resource any panel
-  // (Drive, enry lite, command palette's "new note") can read from later.
+  // (Drive, Shard, command palette's "new note") can read from later.
   { id: 'notes', label: 'Notes', icon: StickyNote, render: () => <QuickNotesTab /> },
 ]
 
