@@ -1,4 +1,4 @@
-import { TypeValidationError } from 'ai'
+import { APICallError, TypeValidationError } from 'ai'
 
 // ───────────────────────────────────────────────────────────────────
 // Never let a raw provider payload reach the chat UI as an "error". A naive
@@ -9,8 +9,15 @@ import { TypeValidationError } from 'ai'
 // missing `index` produced a raw "Type validation failed: Value: {...}"
 // dump in the chat window instead of a clean error.
 //
-// This always logs the full error server-side (for debugging) and returns
-// a short, generic, user-safe string for the stream.
+// But one flat fallback string was its own problem: an out-of-credit
+// provider, a rate limit, a bad key and a provider outage all rendered as
+// the identical "Something went wrong processing that response.", which is
+// undebuggable from the UI. Observed: OpenRouter's 402 message is 201
+// characters — one over the raw-dump length threshold — so a plain
+// out-of-credit error was indistinguishable from a corrupt payload.
+//
+// So: map the provider's HTTP status to a distinct, actionable, non-leaking
+// message. The full error is always logged server-side regardless.
 // ───────────────────────────────────────────────────────────────────
 
 const MAX_USER_MESSAGE_LENGTH = 200
@@ -26,16 +33,54 @@ function looksLikeRawDump(message: string): boolean {
 }
 
 /**
+ * Distinct user-facing message per provider failure class. Deliberately
+ * written from the status code alone — never interpolating the provider's own
+ * text, which can carry account ids, internal URLs, or quota details.
+ */
+function messageForStatus(status: number | undefined): string | null {
+  if (status === undefined) return null
+  if (status === 401 || status === 403) {
+    return 'This model rejected Enry\'s API key — it\'s a configuration problem, not a temporary one. Check the provider key, or pick another model.'
+  }
+  if (status === 402) {
+    return 'This model\'s provider account is out of credit. Top it up, or switch to another model.'
+  }
+  if (status === 404) {
+    return 'The provider doesn\'t recognise this model — its model ID is probably wrong or has been retired.'
+  }
+  if (status === 408 || status === 504) {
+    return 'The provider timed out. Try again, or switch to a faster model.'
+  }
+  if (status === 429) {
+    return 'Rate limited by the provider. Wait a few moments and try again, or switch models.'
+  }
+  if (status >= 500) {
+    return 'This model is temporarily unavailable at the provider. Try again shortly, or switch models.'
+  }
+  if (status >= 400) {
+    return 'The provider rejected this request. Try rephrasing, or switch models.'
+  }
+  return null
+}
+
+/**
  * Use as the `onError` callback for `streamText(...).toUIMessageStreamResponse()`.
  * Logs the real error (with `context` for grepping) and returns a short,
- * generic message safe to show in the UI.
+ * differentiated message that is safe to show in the UI.
  */
 export function safeStreamErrorMessage(error: unknown, context: string): string {
-  console.error(`[${context}]`, error)
+  // Always log the whole thing server-side — the sanitizer hides detail from
+  // the UI, never from the operator. Status is pulled out explicitly so it's
+  // greppable in Vercel logs without expanding the object.
+  const status = APICallError.isInstance(error) ? error.statusCode : undefined
+  console.error(`[${context}]${status ? ` status=${status}` : ''}`, error)
 
   if (TypeValidationError.isInstance(error)) {
     return 'The model returned a response in a format Enry couldn\'t process. Try again — if it keeps happening, this model may need a fix.'
   }
+
+  const byStatus = messageForStatus(status)
+  if (byStatus) return byStatus
 
   if (error instanceof Error) {
     if (looksLikeRawDump(error.message)) {
