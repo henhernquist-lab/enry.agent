@@ -56,7 +56,7 @@ const TOOL_ROUTES: NavItem[] = [
   { label: 'Grade Calculator', path: '/resources/grade-calculator', icon: Calculator, keywords: 'gpa grades' },
   { label: 'Repo Scanner', path: '/resources/repo-scanner', icon: GitBranch, keywords: 'github code review scan' },
   { label: 'Race Pace Calculator', path: '/resources/race-pace', icon: Timer, keywords: 'race running splits' },
-  { label: 'The Grimoire', path: '/resources/notes', icon: StickyNote, keywords: 'note memo' },
+  { label: 'The Grimoire', path: '/grimoire', icon: StickyNote, keywords: 'note memo' },
   { label: 'Bell Schedule', path: '/resources/schedule', icon: Bell, keywords: 'periods class schedule' },
   { label: 'Chief of Staff', path: '/resources/briefing', icon: Briefcase, keywords: 'briefing daily observations actions' },
   { label: 'The Oculus', path: '/resources/aperture', icon: Aperture, keywords: 'question daily reflection thinking' },
@@ -78,7 +78,7 @@ interface ActionItem {
 }
 
 const ACTIONS: ActionItem[] = [
-  { label: 'New note', icon: StickyNote, run: (router) => router.push('/resources/notes') },
+  { label: 'New note', icon: StickyNote, run: (router) => router.push('/grimoire') },
   { label: 'New chat', icon: MessageSquarePlus, run: (router) => router.push('/') },
   { label: 'Log a race result', icon: Timer, run: (router) => router.push('/resources/race-pace?tab=log') },
   { label: 'Scan a repo', icon: GitBranch, run: (router) => router.push('/resources/repo-scanner') },

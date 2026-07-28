@@ -5,14 +5,14 @@ import {
   X, ExternalLink, BarChart3, GitCompare, Lightbulb, Download,
   Cpu, GitMerge, Zap, CheckCircle2, AlertTriangle, Ban, Loader2, Plus, Trash2,
 } from 'lucide-react'
-import { BadgePill, DiscoveryBadgePill, formatCount, formatDate } from './black-market-card'
-import type { BlackMarketEntry } from '@/lib/lab/black-market'
+import { BadgePill, DiscoveryBadgePill, formatCount, formatDate } from './foundry-card'
+import type { BlackMarketEntry } from '@/lib/lab/foundry'
 
 // ── Detail side panel ──────────────────────────────────────────────
 // Opens when a model card is clicked. Editorial detail + future-action
 // affordances (all disabled today — informational page only).
 
-export function BlackMarketPanel({
+export function FoundryModelPanel({
   entry,
   onClose,
   onAddToIdeas,

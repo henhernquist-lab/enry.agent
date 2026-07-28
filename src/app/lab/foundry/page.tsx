@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Skull, Search, Loader2, AlertTriangle, Sparkles } from 'lucide-react'
-import type { BlackMarketEntry } from '@/lib/lab/black-market'
-import { BlackMarketCard } from '@/components/lab/black-market-card'
-import { BlackMarketPanel } from '@/components/lab/black-market-panel'
+import type { BlackMarketEntry } from '@/lib/lab/foundry'
+import { FoundryModelCard } from '@/components/lab/foundry-card'
+import { FoundryModelPanel } from '@/components/lab/foundry-panel'
 
 // Filter chips combine sort modes and category/capability filters. Picking
 // any one (or typing a search) switches from the 5-section browse view to a
@@ -259,7 +259,7 @@ export default function BlackMarketPage() {
         </div>
       )}
 
-      <BlackMarketPanel
+      <FoundryModelPanel
         entry={selected}
         onClose={() => setSelected(null)}
         onAddToIdeas={handleAddToIdeas}
@@ -304,7 +304,7 @@ function DailyDiscoverySection({
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <AnimatePresence mode="popLayout">
-            {entries.map((e) => <BlackMarketCard key={e.hfId} entry={e} onOpen={onOpen} />)}
+            {entries.map((e) => <FoundryModelCard key={e.hfId} entry={e} onOpen={onOpen} />)}
           </AnimatePresence>
         </div>
       )}
@@ -331,7 +331,7 @@ function CoreModelsSection({
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <AnimatePresence mode="popLayout">
-            {entries.map((e) => <BlackMarketCard key={e.hfId} entry={e} onOpen={onOpen} />)}
+            {entries.map((e) => <FoundryModelCard key={e.hfId} entry={e} onOpen={onOpen} />)}
           </AnimatePresence>
         </div>
       )}
@@ -350,7 +350,7 @@ function FlatGrid({ entries, onOpen }: { entries: BlackMarketEntry[]; onOpen: (e
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <AnimatePresence mode="popLayout">
-        {entries.map((e) => <BlackMarketCard key={e.hfId} entry={e} onOpen={onOpen} />)}
+        {entries.map((e) => <FoundryModelCard key={e.hfId} entry={e} onOpen={onOpen} />)}
       </AnimatePresence>
     </div>
   )

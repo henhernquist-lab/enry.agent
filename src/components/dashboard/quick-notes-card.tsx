@@ -57,7 +57,7 @@ export function QuickNotesCard() {
         {saving && <span className="ml-auto text-[10px] text-muted-foreground">saving…</span>}
         {loaded && !saving && <span className="ml-auto text-[10px] text-muted-foreground/50">auto-saved</span>}
         <Link
-          href="/resources/notes"
+          href="/grimoire"
           className="ml-1 flex items-center gap-1 rounded border border-border/40 px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary"
         >
           <ExternalLink className="h-3 w-3" />

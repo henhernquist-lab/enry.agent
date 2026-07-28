@@ -94,7 +94,7 @@ export function QuickNotesWidget({ onSave }: QuickNotesWidgetProps) {
           </h3>
         </div>
         <Link
-          href="/resources/notes"
+          href="/grimoire"
           className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground hover:text-primary transition-colors"
         >
           Open

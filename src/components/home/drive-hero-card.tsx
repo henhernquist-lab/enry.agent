@@ -7,7 +7,7 @@ export function DriveHeroCard() {
   return (
     <div className="mx-auto max-w-4xl px-8 pt-3">
       <Link
-        href="/agent"
+        href="/forge"
         className="group flex items-center gap-2 font-mono text-[11px] text-muted-foreground/60 transition-colors hover:text-primary"
       >
         <Swords className="h-3 w-3" />

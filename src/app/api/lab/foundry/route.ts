@@ -9,7 +9,7 @@ import {
   type BlackMarketEntry,
   type BlackMarketLiveStats,
   type BlackMarketModel,
-} from '@/lib/lab/black-market'
+} from '@/lib/lab/foundry'
 import { resolveServability, listCommunityModels } from '@/lib/models/community'
 
 export const maxDuration = 30

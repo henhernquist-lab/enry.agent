@@ -180,7 +180,7 @@ export default function MobileToolsPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            href="/agent"
+            href="/forge"
             className="flex items-center justify-between rounded-xl border border-border bg-surface-secondary p-4 transition-colors hover:border-primary/20"
             style={{ minHeight: 44 }}
           >

@@ -12,7 +12,7 @@ export function ModelTabNav() {
   return (
     <div className="mb-8 flex items-center gap-1 border-b border-border">
       <Link
-        href="/models/benchmark"
+        href="/trials"
         className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-mono text-xs font-medium transition-colors ${
           isBenchmark
             ? 'border-primary text-primary'
@@ -23,7 +23,7 @@ export function ModelTabNav() {
         Benchmark
       </Link>
       <Link
-        href="/models/health"
+        href="/trials/health"
         className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-mono text-xs font-medium transition-colors ${
           isHealth
             ? 'border-primary text-primary'

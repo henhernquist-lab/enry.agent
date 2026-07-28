@@ -13,7 +13,7 @@ export default function HealthPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/models/health')
+      const res = await fetch('/api/trials/health')
       if (res.ok) {
         const data = await res.json()
         setHealths(data.health ?? [])
