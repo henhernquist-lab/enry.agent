@@ -36,11 +36,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # These crons ran red for a week because an unset secret expands to an
+      # empty string rather than erroring — the failure surfaced only as
+      # "curl: (3) URL rejected: No host part in the URL". Fail with the actual
+      # cause instead.
+      - name: Check CRON_SECRET is configured
+        run: |
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "::error::CRON_SECRET repo secret is not set (Settings > Secrets and variables > Actions). It must match the app's CRON_SECRET env var, or the endpoint returns 401."
+            exit 1
+          fi
+          echo "CRON_SECRET is set."
+
       - name: Ping Ambient probe endpoint
         run: |
           code=$(curl -sS -o /tmp/probe.json -w "%{http_code}" -X GET \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.DEPLOY_URL }}/api/cron/ambient-probe")
+            "${{ vars.DEPLOY_URL || 'https://golemhq.vercel.app' }}/api/cron/ambient-probe")
           echo "HTTP $code"
           cat /tmp/probe.json 2>/dev/null || true
           echo
