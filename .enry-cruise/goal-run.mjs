@@ -16,7 +16,8 @@
 // exactly where the last dispatch left off.
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync, mkdirSync } from 'node:fs'
-import { dirname, normalize, isAbsolute } from 'node:path'
+import { dirname, normalize, isAbsolute, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
 import { blockingFindings, CATEGORY_FIXERS } from './lib/analyzers.mjs'
 
@@ -288,6 +289,65 @@ function formatErrors(findings) {
   return lines.join('\n')
 }
 
+// ── Build gate helpers ───────────────────────────────────────────────────────
+// A build against a warm node_modules is NOT a valid gate for dependency
+// changes: removing a dep from package.json still typechecks and still builds,
+// because the package is already sitting in node_modules. It only fails on a
+// fresh install. That is exactly how "Unused dependencies — removed 2" passed
+// every local check and then died in CI after 4 seconds. So any delta touching
+// a manifest forces a clean reinstall before the build.
+const PKG_MANIFESTS = new Set([
+  'package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'npm-shrinkwrap.json',
+])
+
+function deltaTouchesManifest(delta) {
+  return delta.some((d) => !d.path.includes('node_modules/') && PKG_MANIFESTS.has(d.path.split('/').pop()))
+}
+
+function pkgManager() {
+  if (existsSync('pnpm-lock.yaml')) return 'pnpm'
+  if (existsSync('yarn.lock')) return 'yarn'
+  return 'npm'
+}
+
+function tailOf(e) {
+  const out = ((e && e.stdout) || '') + '\n' + ((e && e.stderr) || '')
+  return out.split('\n').map((l) => l.trimEnd()).filter(Boolean).slice(-25).join('\n').slice(-1800)
+    || String((e && e.message) || e)
+}
+
+// Wipe node_modules and reinstall from the CURRENT manifest so the build that
+// follows exercises real module resolution. Deliberately not --frozen-lockfile:
+// a legitimate dependency edit changes the lockfile, and we want that updated
+// lockfile committed alongside package.json (a manifest pushed without its
+// matching lockfile is itself a CI failure on the next fresh install).
+function runFreshInstall() {
+  const pm = pkgManager()
+  try { rmSync('node_modules', { recursive: true, force: true }) } catch { /* best effort */ }
+  const cmd = pm === 'pnpm' ? 'pnpm install --no-frozen-lockfile'
+    : pm === 'yarn' ? 'yarn install'
+    : 'npm install'
+  try {
+    execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 600000, maxBuffer: 64 * 1024 * 1024 })
+    return { ok: true, error: null }
+  } catch (e) {
+    if (e && (e.killed || e.signal === 'SIGTERM')) return { ok: false, error: 'Install timed out after 10 minutes.' }
+    return { ok: false, error: tailOf(e) }
+  }
+}
+
+// THE GATE. Runs on a category's working-tree changes BEFORE anything is
+// committed or pushed, so a category that breaks the build gets reverted
+// instead of landing on the branch with a failure label attached after the fact.
+function buildGate(delta) {
+  const fresh = deltaTouchesManifest(delta)
+  if (fresh) {
+    const inst = runFreshInstall()
+    if (!inst.ok) return { ran: true, ok: false, error: `Fresh install failed:\n${inst.error}`, fresh }
+  }
+  return { ...runBuild(), fresh }
+}
+
 // ── Scan-and-fix mode ────────────────────────────────────────────────────────
 // Canonical category order + labels. Must match SCANFIX_CATEGORIES in
 // src/lib/cruise/types.ts and the step-seeding order in the create route, so
@@ -347,6 +407,10 @@ async function runScanfix(ctx) {
   // none new (the same gate the goal loop uses). Advances after each accept.
   let baselineFp = new Set((await blockingFindings(REPO)).map((f) => f.fingerprint))
   let capped = false
+  // Result of the most recent passing build gate. Every category that got
+  // pushed passed one, and the last of them built the final cumulative tree —
+  // so the finalize step reuses it instead of burning another 5-minute build.
+  let lastBuild = null
   const remaining = []
 
   for (let seq = 0; seq < cats.length; seq++) {
@@ -370,9 +434,29 @@ async function runScanfix(ctx) {
       continue
     }
 
+    // BUILD GATE — nothing is committed or pushed until the repo's own build
+    // passes on this category's changes. Previously the build ran after the
+    // whole loop had already pushed, so a failure only relabelled the PR
+    // 'build_failed' instead of preventing it.
+    const gate = buildGate(delta)
+    if (gate.ran !== false && !gate.ok) {
+      gitClean()
+      // A failed fresh-install/build left node_modules matching the reverted
+      // manifest; reinstall so later categories validate against a sane tree.
+      if (gate.fresh) runFreshInstall()
+      await postStep(seq, 'failed', `Reverted — build failed:\n${gate.error}`)
+      continue
+    }
+    lastBuild = gate
+
+    // Re-read the delta after the gate: a fresh install legitimately updates
+    // the lockfile, and that update must ship in the same commit as the
+    // package.json change it belongs to.
+    const finalDelta = gate.fresh ? gitDelta() : delta
+
     // Build the commit payload from the delta; deletions carry deleted:true.
     const touched = []
-    for (const d of delta) {
+    for (const d of finalDelta) {
       if (d.deleted) { touched.push({ path: d.path, content: '', is_new: false, deleted: true }); continue }
       let content
       try { content = readFileSync(d.path, 'utf8') } catch { continue }
@@ -406,8 +490,14 @@ async function runScanfix(ctx) {
     await postStep(seq, 'done', `${note} — ${touched.length} file(s)`)
   }
 
+  // Nothing reaches here unpushed-but-broken: each category was gated above.
+  // Reuse the last gate's result (it built the final tree); only fall back to a
+  // build if this run pushed nothing itself (e.g. a fully-resumed run).
   let buildOk = true, buildError = null
-  if (filesChanged > 0) { const b = runBuild(); buildOk = b.ok; buildError = b.error }
+  if (filesChanged > 0) {
+    if (lastBuild) { buildOk = lastBuild.ok; buildError = lastBuild.error }
+    else { const b = runBuild(); buildOk = b.ok; buildError = b.error }
+  }
   const status = filesChanged === 0 ? 'no_changes' : capped ? 'capped' : 'completed'
   await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, {
     phase: 'finalize',
@@ -651,8 +741,17 @@ Keep each step small enough that ONE model call can generate its content quickly
   console.log(`[enry-cruise-goal] done: status=${status} files_changed=${filesChanged} build_ok=${buildOk}`)
 }
 
-main().catch(async (e) => {
-  console.error('[enry-cruise-goal] fatal:', e)
-  await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'finalize', status: 'failed', error: String(e && e.message || e) }).catch(() => {})
-  process.exit(1)
-})
+// Only auto-run when executed as a script (`node .enry-cruise/goal-run.mjs`,
+// which is how the workflow invokes it). Guarding this lets the build-gate
+// helpers below be imported and tested directly, instead of a test having to
+// re-implement — and therefore not actually test — the real gate.
+const isDirectRun = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (isDirectRun) {
+  main().catch(async (e) => {
+    console.error('[enry-cruise-goal] fatal:', e)
+    await api('POST', `/api/cruise/goal-runs/${GOAL_RUN_ID}/ingest`, { phase: 'finalize', status: 'failed', error: String(e && e.message || e) }).catch(() => {})
+    process.exit(1)
+  })
+}
+
+export { buildGate, deltaTouchesManifest, runFreshInstall, runBuild, gitDelta, gitClean }
