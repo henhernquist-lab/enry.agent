@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Space_Grotesk, Inter, IBM_Plex_Mono } from 'next/font/google'
+import { Lora, Inter, IBM_Plex_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { SessionProvider } from 'next-auth/react'
 import { auth } from '@/lib/auth'
@@ -8,9 +8,9 @@ import { CommandPalette, CommandPaletteHint } from '@/components/command-palette
 import { TerminalOverlay } from '@/components/terminal/terminal-overlay'
 import './globals.css'
 
-const spaceGrotesk = Space_Grotesk({
+const lora = Lora({
   subsets: ['latin'],
-  variable: '--font-space-grotesk',
+  variable: '--font-lora',
   display: 'swap',
 })
 
@@ -43,7 +43,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#0b1221',
+  themeColor: '#1a1614',
   width: 'device-width',
   initialScale: 1,
 }
@@ -56,7 +56,7 @@ export default async function RootLayout({
   const session = await auth()
 
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${ibmPlexMono.variable} bg-background`}>
+    <html lang="en" className={`${lora.variable} ${inter.variable} ${ibmPlexMono.variable} bg-background`}>
       <head>
         <script
           dangerouslySetInnerHTML={{
