@@ -86,7 +86,12 @@ function strengthScore(m: ModelMeta): number {
  * arbitrary tiebreak — decides who wins a tie.
  */
 export function autoSelectForComplexity(complexity: TaskComplexity): AutoSelection {
-  const driveModels = listModels('drive')
+  // Auto mode picks without the user in the loop, so it must not land on a
+  // model that's known to be timing out at its provider. Degraded models stay
+  // fully available for manual selection — this only governs autonomous picks.
+  // Falls back to the unfiltered list if that would leave nothing to choose.
+  const healthy = listModels('drive').filter((m) => !m.degraded)
+  const driveModels = healthy.length > 0 ? healthy : listModels('drive')
   const scores = driveModels.map(strengthScore)
 
   let target: ModelMeta

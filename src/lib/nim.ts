@@ -32,6 +32,13 @@ export interface ModelMeta {
   supportsVision?: boolean
   /** Whether the model emits reasoning-style trace content the UI can split out. */
   supportsReasoning?: boolean
+  /**
+   * Set when a model is known-unreliable at its provider right now. It stays
+   * fully selectable — this only drives an honest badge in the pickers and
+   * keeps autonomous selection off it. Same principle as the error sanitizer:
+   * surface the real state, don't hide it and don't silently block it.
+   */
+  degraded?: string
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
@@ -72,6 +79,22 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
     supportsReasoning: true,
+  },
+  {
+    // The full-size DeepSeek, kept selectable alongside Flash rather than
+    // replaced by it. NVIDIA's deployment is currently not responding —
+    // measured 0/2, a real streaming request held 150s without returning
+    // headers — so it carries a degraded badge instead of being hidden or
+    // silently dropped. Capacity issues resolve; when it starts answering
+    // again, clear `degraded` and it needs no other change.
+    id: 'deepseek-ai/deepseek-v4-pro',
+    label: 'DeepSeek V4 Pro',
+    company: 'DeepSeek (NVIDIA NIM)',
+    description: 'Full-size DeepSeek. Strongest on complex tasks when NVIDIA capacity is available.',
+    scopes: ['chat', 'drive'],
+    defaultEffort: 'high',
+    supportsReasoning: true,
+    degraded: 'Currently degraded — NVIDIA capacity issue. Requests may time out.',
   },
   {
     id: 'gemini-3.5-flash',
@@ -223,6 +246,11 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   // NVIDIA_API_KEY is the fallback. No OpenRouter route remains in this
   // registry — see the MODEL_LIST entry for why it was removed outright.
   'deepseek-ai/deepseek-v4-flash': {
+    baseURL: NIM_BASE,
+    getApiKey: () => process.env.DEEPSEEK_API_KEY ?? process.env.NVIDIA_API_KEY ?? '',
+  },
+  // DeepSeek V4 Pro — same NIM endpoint and key path as Flash.
+  'deepseek-ai/deepseek-v4-pro': {
     baseURL: NIM_BASE,
     getApiKey: () => process.env.DEEPSEEK_API_KEY ?? process.env.NVIDIA_API_KEY ?? '',
   },

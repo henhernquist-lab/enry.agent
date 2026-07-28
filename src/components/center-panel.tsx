@@ -117,12 +117,13 @@ const MODELS = listModels('chat').map((m) => ({
   company: m.company,
   desc: m.description,
   community: false,
+  degraded: m.degraded,
 }))
 
 // Community ids are dynamic (community:<hfId>:<provider>), so the model id is
 // a plain string, not a fixed union.
 type ModelId = string
-type PickerModel = { id: string; label: string; company: string; desc: string; community: boolean }
+type PickerModel = { id: string; label: string; company: string; desc: string; community: boolean; degraded?: string }
 
 // ─── Chatbot effort (3 levels, separate from coding agent's 5) ───
 
@@ -1189,10 +1190,21 @@ export function CenterPanel({
                               Community
                             </span>
                           )}
+                          {m.degraded && (
+                            <span className="rounded border border-destructive/30 bg-destructive/10 px-1 py-0 font-mono text-[8px] uppercase tracking-wider text-destructive">
+                              Degraded
+                            </span>
+                          )}
                         </span>
                         <span className="font-normal text-[10px] text-muted-foreground leading-tight mt-0.5">
                           {m.desc}
                         </span>
+                        {/* Still selectable — the badge states the risk rather than hiding the model. */}
+                        {m.degraded && (
+                          <span className="font-normal text-[10px] text-destructive/80 leading-tight mt-0.5">
+                            {m.degraded}
+                          </span>
+                        )}
                       </span>
                     </button>
                   ))}

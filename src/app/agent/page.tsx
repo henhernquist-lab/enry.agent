@@ -83,6 +83,7 @@ const MODELS = listModels('drive').map((m) => ({
   id: m.id,
   label: m.label,
   desc: m.description,
+  degraded: m.degraded,
 }))
 
 // Drive skills (coding-focused) — pulled from the shared registry.
@@ -1631,8 +1632,18 @@ USER REQUEST: ${userText}`
                         {MODELS.map((m) => (
                           <button key={m.id} onClick={() => { setModel(m.id); setEffort(MODEL_DEFAULTS[m.id] ?? 'medium'); setModelMenuOpen(false); inputRef.current?.focus() }}
                             className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-secondary ${model === m.id ? 'text-primary' : 'text-foreground'}`}>
-                            <span className="font-mono text-[10px] font-semibold">{m.label}</span>
+                            <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold">
+                              {m.label}
+                              {m.degraded && (
+                                <span className="rounded border border-destructive/30 bg-destructive/10 px-1 font-mono text-[8px] uppercase tracking-wider text-destructive">
+                                  Degraded
+                                </span>
+                              )}
+                            </span>
                             <span className="font-sans text-[9px] text-muted-foreground">{m.desc}</span>
+                            {m.degraded && (
+                              <span className="font-sans text-[9px] text-destructive/80">{m.degraded}</span>
+                            )}
                           </button>
                         ))}
                       </motion.div>
