@@ -42,7 +42,7 @@ export default function ApertureArchivePage() {
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-8">
         <div className="mb-8">
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">The Aperture</h1>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">The Oculus</h1>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
             one question a day · an archive of your own thinking
           </p>

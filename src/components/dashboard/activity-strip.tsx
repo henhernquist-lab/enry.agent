@@ -6,9 +6,9 @@ import type { RecentActivity } from '@/lib/usage/activity'
 
 const MODE_LABELS: Record<string, string> = {
   chat: 'Chat',
-  drive: 'Drive',
-  cruise: 'Cruise',
-  learn: 'Learn',
+  drive: 'The Forge',
+  cruise: 'The Rounds',
+  learn: 'The Scriptorium',
   lab: 'Lab',
 }
 

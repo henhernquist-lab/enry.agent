@@ -173,15 +173,15 @@ export default function BlackMarketPage() {
     <div className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-8 flex items-center gap-3">
         <Link href="/lab" className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground">
-          <ArrowLeft className="h-3 w-3" /> Enry Lab
+          <ArrowLeft className="h-3 w-3" /> Golem Lab
         </Link>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">The Black Market</span>
+        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">The Foundry</span>
       </header>
 
       <div className="mb-8">
         <h1 className="mb-2 flex items-center gap-2 text-2xl font-semibold tracking-tight">
           <Skull className="h-6 w-6 text-primary" />
-          The Black Market
+          The Foundry
         </h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
           Explore cutting-edge community fine-tunes, model merges, and experimental checkpoints.
@@ -189,7 +189,7 @@ export default function BlackMarketPage() {
         <div className="mt-3 flex items-start gap-2 rounded border border-warning/20 bg-warning/5 px-3 py-2">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-warning" />
           <p className="font-mono text-[10px] leading-relaxed text-warning/90">
-            Experimental &amp; unofficial. These are community creations, separate from Enry&apos;s official model registry —
+            Experimental &amp; unofficial. These are community creations, separate from Golem&apos;s official model registry —
             informational only. Nothing here is installed, routed, or run.
           </p>
         </div>

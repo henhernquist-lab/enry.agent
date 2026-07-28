@@ -116,7 +116,7 @@ export interface ProbePushPayload {
 
 export function buildProbePushPayload(claimId: string, claimContent: string): ProbePushPayload {
   return {
-    title: 'enry — quick check',
+    title: 'Golem — quick check',
     body: claimContent,
     data: { url: '/learn?probe=1', claim_id: claimId },
   }

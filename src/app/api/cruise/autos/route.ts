@@ -6,7 +6,7 @@ import type { AutoRunConfig, CruiseGoalRun, CruiseRepo } from '@/lib/cruise/type
 
 export const maxDuration = 30
 
-// Thin read-only aggregator for enry lite's Cruise Auto-run status card
+// Thin read-only aggregator for Shard's Cruise Auto-run status card
 // (src/app/m/status/page.tsx). Reads cruise_repos (the auto_run_* columns
 // desktop's AutoRunPanel already writes via /api/cruise/repos/autorun) plus
 // each repo's latest cruise_goal_runs row, and shapes both into one job per

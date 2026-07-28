@@ -75,7 +75,7 @@ export default function BenchmarkPage() {
   const currentSort = SORT_OPTIONS.find((s) => s.id === sortKey)
 
   // Poll a run's live status until it completes or fails. Same shape family
-  // as the Cruise scan live-steps polling.
+  // as the The Rounds scan live-steps polling.
   const pollRun = useCallback(async (runId: string, modelId: string) => {
     while (true) {
       await new Promise((r) => setTimeout(r, 2000))

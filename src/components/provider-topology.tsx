@@ -16,12 +16,12 @@ export function ProviderTopology() {
     <div className="rounded-xl border border-border/60 bg-surface-secondary p-5">
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-foreground">Provider Topology</h2>
-        <p className="text-[11px] text-muted-foreground">Connected services routing through Enry.</p>
+        <p className="text-[11px] text-muted-foreground">Connected services routing through Golem.</p>
       </div>
       <div className="relative flex h-[180px] w-full items-center justify-center">
         {/* Center node */}
         <div className="z-10 flex h-14 w-14 flex-col items-center justify-center rounded-full border border-primary/40 bg-surface-elevated shadow-lg">
-          <span className="text-[10px] font-semibold text-primary">Enry</span>
+          <span className="text-[10px] font-semibold text-primary">Golem</span>
         </div>
 
         {/* Orbiting nodes */}

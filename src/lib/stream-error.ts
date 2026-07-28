@@ -76,7 +76,7 @@ export function safeStreamErrorMessage(error: unknown, context: string): string 
   console.error(`[${context}]${status ? ` status=${status}` : ''}`, error)
 
   if (TypeValidationError.isInstance(error)) {
-    return 'The model returned a response in a format Enry couldn\'t process. Try again — if it keeps happening, this model may need a fix.'
+    return 'The model returned a response in a format Golem couldn\'t process. Try again — if it keeps happening, this model may need a fix.'
   }
 
   const byStatus = messageForStatus(status)

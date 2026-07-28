@@ -100,7 +100,7 @@ export async function getNotifications(userId: string): Promise<NotificationItem
     }
   }
 
-  // ── Cruise scans ──────────────────────────────────────────────────
+  // ── The Rounds scans ──────────────────────────────────────────────────
   const { data: scans } = await supabase
     .from('cruise_scans')
     .select('id, repo_id, trigger, status, error, finished_at, dispatched_at, summary_text, full_name:cruise_repos!inner(full_name)')

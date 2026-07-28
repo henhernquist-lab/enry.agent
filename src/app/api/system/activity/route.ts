@@ -21,7 +21,7 @@ const TOOL_LABELS: Partial<Record<ResourceType, string>> = {
   repo_review: 'Repo Reviewer',
   countdown: 'Countdown',
   checkin: 'Daily Check-in',
-  note: 'Quick Notes',
+  note: 'The Grimoire',
   bell_schedule: 'Bell Schedule',
   uploaded_file: 'File Upload',
 }

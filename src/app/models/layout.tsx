@@ -3,7 +3,7 @@ import { ArrowLeft, Cpu } from 'lucide-react'
 import { ModelTabNav } from '@/components/models/tab-nav'
 
 export const metadata = {
-  title: 'Model Intelligence — ENRY.AGENT',
+  title: 'The Trials — Golem',
   description: 'Benchmark scores and real-time health for all AI models',
 }
 
@@ -25,7 +25,7 @@ export default function ModelsLayout({ children }: { children: React.ReactNode }
           className="mb-8 inline-flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          back to enry
+          back to golem
         </Link>
 
         {/* Page header */}
@@ -34,8 +34,8 @@ export default function ModelsLayout({ children }: { children: React.ReactNode }
             <Cpu className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="font-display text-2xl font-bold leading-tight text-foreground">Model Intelligence</h1>
-            <p className="font-mono text-xs text-muted-foreground">Benchmark scores & real-time health for every model in Enry Engine</p>
+            <h1 className="font-display text-2xl font-bold leading-tight text-foreground">The Trials</h1>
+            <p className="font-mono text-xs text-muted-foreground">Benchmark scores & real-time health for every model in Golem Engine</p>
           </div>
         </div>
 

@@ -136,10 +136,10 @@ export interface NotePayload {
   title?: string
 }
 
-// Memory entries are plain-text facts/notes Enry has stored about Henry.
+// Memory entries are plain-text facts/notes Golem has stored about Henry.
 // `imported: true` marks entries pasted in from another AI (ChatGPT custom
 // instructions, Claude memory export, …) via the "Import Memory" flow so the
-// UI can badge them separately from memories Enry itself captured.
+// UI can badge them separately from memories Golem itself captured.
 export interface MemoryPayload {
   content: string
   imported?: boolean

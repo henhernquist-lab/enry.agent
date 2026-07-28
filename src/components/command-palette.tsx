@@ -41,11 +41,11 @@ const MAIN_ROUTES: NavItem[] = [
   { label: 'Saved Items', path: '/resources/saved', icon: Archive },
   { label: 'Prompt Library', path: '/prompts', icon: BookMarked, keywords: 'prompts' },
   { label: 'Memory', path: '/resources/memory', icon: Brain, keywords: 'memory memories preferences context' },
-  { label: 'Enry Lab', path: '/lab', icon: FlaskConical, keywords: 'lab experiments skills revisions' },
+  { label: 'Golem Lab', path: '/lab', icon: FlaskConical, keywords: 'lab experiments skills revisions' },
   { label: 'Settings', path: '/settings', icon: Settings },
 ]
 
-// Flashcard Generator + Article Notes migrated into Enry Learn (flashcards →
+// Flashcard Generator + Article Notes migrated into Golem Learn (flashcards →
 // `learn`; Article Notes → Learn's Sources tab). Their routes stay in the repo
 // but are unlinked here.
 //
@@ -56,10 +56,10 @@ const TOOL_ROUTES: NavItem[] = [
   { label: 'Grade Calculator', path: '/resources/grade-calculator', icon: Calculator, keywords: 'gpa grades' },
   { label: 'Repo Scanner', path: '/resources/repo-scanner', icon: GitBranch, keywords: 'github code review scan' },
   { label: 'Race Pace Calculator', path: '/resources/race-pace', icon: Timer, keywords: 'race running splits' },
-  { label: 'Quick Notes', path: '/resources/notes', icon: StickyNote, keywords: 'note memo' },
+  { label: 'The Grimoire', path: '/resources/notes', icon: StickyNote, keywords: 'note memo' },
   { label: 'Bell Schedule', path: '/resources/schedule', icon: Bell, keywords: 'periods class schedule' },
   { label: 'Chief of Staff', path: '/resources/briefing', icon: Briefcase, keywords: 'briefing daily observations actions' },
-  { label: 'The Aperture', path: '/resources/aperture', icon: Aperture, keywords: 'question daily reflection thinking' },
+  { label: 'The Oculus', path: '/resources/aperture', icon: Aperture, keywords: 'question daily reflection thinking' },
   { label: 'The Root Cause', path: '/resources/root-cause', icon: Waypoints, keywords: 'failure investigation 5 whys' },
   { label: 'Coding Agent', path: '/agent', icon: TerminalSquare, keywords: 'coding agent terminal shell command repo git edit diff pr' },
   { label: 'Ghost Mode', path: '/resources/ghost', icon: Ghost, keywords: 'past henry time window persona ghost' },

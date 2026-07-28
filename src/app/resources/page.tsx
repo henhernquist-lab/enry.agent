@@ -39,7 +39,7 @@ interface ToolDef {
   href?: string
 }
 
-// NOTE: 'flashcards' and 'articles' were migrated into Enry Learn (tool
+// NOTE: 'flashcards' and 'articles' were migrated into Golem Learn (tool
 // migration). Flashcards now live in the `learn` verb (paste notes → claims);
 // Article Notes + Reading List are folded into Learn's Sources tab. Their route
 // pages remain in the repo but are intentionally unlinked from this grid.
@@ -51,10 +51,10 @@ const TOOLS: ToolDef[] = [
   { slug: 'repo-scanner',     type: 'repo_scan',     name: 'Repo Scanner',        desc: 'Chat, evaluate fit, or run a code review for any GitHub repo', icon: GitBranch },
   { slug: 'prompts',          type: 'prompt',        name: 'Prompt Library',      desc: 'Browse and save reusable AI prompts',               icon: BookMarked },
   { slug: 'race-pace',        type: 'race_pace',       name: 'Race Pace Calculator', desc: 'Split targets and PR tracking',                     icon: Timer },
-  { slug: 'notes',            type: 'note',            name: 'Quick Notes',         desc: 'Fast capture, no fuss',                             icon: StickyNote },
+  { slug: 'notes',            type: 'note',            name: 'The Grimoire',         desc: 'Fast capture, no fuss',                             icon: StickyNote },
   { slug: 'schedule',         type: 'bell_schedule',   name: 'Bell Schedule',       desc: 'Current period and countdown to the next',          icon: Bell },
   { slug: 'briefing',         type: 'briefing',        name: 'Chief of Staff',      desc: 'Daily cross-tool briefing and suggested actions',   icon: Briefcase },
-  { slug: 'aperture',         type: 'aperture',        name: 'The Aperture',        desc: 'One question a day — an archive of your thinking',   icon: Aperture },
+  { slug: 'aperture',         type: 'aperture',        name: 'The Oculus',        desc: 'One question a day — an archive of your thinking',   icon: Aperture },
   { slug: 'root-cause',       type: 'root_cause',      name: 'The Root Cause',      desc: '5-whys investigations grounded in your data',       icon: Waypoints },
   { slug: 'terminal',         type: 'terminal_session', name: 'Coding Agent',        desc: 'Describe a change; watch it plan, diff, and open a PR', icon: TerminalSquare, href: '/agent' },
   { slug: 'ghost',            type: 'ghost_conversation', name: 'Ghost Mode',       desc: 'Talk to who you were — a past window of yourself',   icon: Ghost },

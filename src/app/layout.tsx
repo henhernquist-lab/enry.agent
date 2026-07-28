@@ -28,7 +28,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'ENRY.AGENT | Autonomous AI Operating System',
+  title: 'Golem | Autonomous AI Operating System',
   description: 'Advanced AI superagent platform for autonomous task execution and intelligent automation',
   generator: 'v0.app',
   icons: {

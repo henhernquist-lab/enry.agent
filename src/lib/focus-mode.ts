@@ -21,12 +21,12 @@ export function normalizeFocusMode(raw: unknown): FocusMode {
 
 // ─── Session Focus (stance/posture) ──────────────────────────────────
 //
-// A SessionFocus is *how Enry responds right now* — a behavioral posture
+// A SessionFocus is *how Golem responds right now* — a behavioral posture
 // adopted for every reply, regardless of topic. While active:
 //   - the system prompt includes the mode directive so the model adopts it
 //   - mid-session switching is live: next POST carries the new posture
 //
-// Stance modes change Enry's default behavior across ANY topic:
+// Stance modes change Golem's default behavior across ANY topic:
 //   Brainstorm — divergent, generative, quantity over quality
 //   Ship — convergent, decisive, picks one path
 //   Teacher — explains the why, not just the what

@@ -29,7 +29,7 @@ export interface ActivityManagerHandle {
   tick: (delta: number) => void
   /** Start polling /api/activity/recent and reflecting real state. */
   startAmbientSync: () => void
-  /** Stop ambient polling — used when a "See Enry" entry (?from=) takes over. */
+  /** Stop ambient polling — used when a "See Golem" entry (?from=) takes over. */
   stopAmbientSync: () => void
 }
 
@@ -167,7 +167,7 @@ export function useActivityManager(
 
   // Auto-start ambient sync on mount — direct /room visits with no ?from=
   // entry context reflect real recent activity (or a genuine idle state)
-  // instead of a scripted "day of Enry working."
+  // instead of a scripted "day of Golem working."
   useEffect(() => {
     startAmbientSync()
     return () => stopAmbientSync()

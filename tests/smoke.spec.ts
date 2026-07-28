@@ -2,7 +2,7 @@ import { test, expect } from 'playwright/test'
 
 test('homepage loads', async ({ page }) => {
   await page.goto('/')
-  await expect(page).toHaveTitle(/ENRY|enry/i)
+  await expect(page).toHaveTitle(/Golem/i)
   await expect(page.getByText(/personal AI superagent/i)).toBeVisible()
 })
 

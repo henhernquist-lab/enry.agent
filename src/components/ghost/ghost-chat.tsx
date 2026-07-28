@@ -6,7 +6,7 @@ import { ArrowLeft, Save, Loader2, Hourglass } from 'lucide-react'
 import { saveResource, type GhostConversationPayload, type GhostMessage } from '@/lib/resources'
 import type { GhostWindowSelection } from './window-picker'
 
-// The conversation view. Deliberately NOT the normal enry chat: amber
+// The conversation view. Deliberately NOT the normal Golem chat: amber
 // "temporal" accents instead of the green primary, a persistent banner naming
 // the window, serif-adjacent quiet framing. Talking to a reconstruction should
 // feel different from talking to the agent.

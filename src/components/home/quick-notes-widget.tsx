@@ -90,7 +90,7 @@ export function QuickNotesWidget({ onSave }: QuickNotesWidgetProps) {
         <div className="flex items-center gap-2">
           <StickyNote className="h-3.5 w-3.5 text-primary" />
           <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Quick Notes
+            The Grimoire
           </h3>
         </div>
         <Link

@@ -217,7 +217,7 @@ function NotesPageContent() {
                   >
                     No notes yet.
                     <br />
-                    Use Quick Notes on the homepage
+                    Use The Grimoire on the homepage
                     <br />
                     or click New above.
                   </motion.p>

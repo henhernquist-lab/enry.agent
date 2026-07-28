@@ -87,7 +87,7 @@ export interface BlackMarketLiveStats {
 export type BlackMarketEntry = BlackMarketModel & {
   stats: BlackMarketLiveStats
   /** Whether a live HF inference provider can actually serve this model —
-   *  gates the "Add to Enry" action. Resolved live by the API route. */
+   *  gates the "Add to Golem" action. Resolved live by the API route. */
   servable: boolean
   /** Why it can't be added, when servable is false (shown in the UI). */
   unservableReason: string | null
@@ -100,7 +100,7 @@ export const CATEGORY_META: Record<BlackMarketCategory, { emoji: string; label: 
   reasoning:    { emoji: '🧠', label: 'Reasoning',     blurb: 'Models optimized for planning, logic, and deep thinking.' },
   coding:       { emoji: '💻', label: 'Coding',        blurb: 'Models specialized for software engineering.' },
   experimental: { emoji: '🧪', label: 'Experimental',  blurb: 'Wild community experiments, merges, and research models.' },
-  verified:     { emoji: '⭐', label: 'Enry Verified', blurb: 'Models Enry has benchmarked and recommends.' },
+  verified:     { emoji: '⭐', label: 'Golem Verified', blurb: 'Models Golem has benchmarked and recommends.' },
 }
 
 // ── Future-proofed defaults for capabilities not yet wired ──
@@ -203,7 +203,7 @@ export const CORE_COMMUNITY_MODELS: BlackMarketModel[] = [
     trainingNotes: "Trained with Google DeepMind's Gemma 3 training recipe and safety filters.",
     strengths: ["Long context", "Multimodal", "Polished general chat"],
     weaknesses: ["Gemma license restrictions", "Can be cautious/refuse-heavy"],
-    limitations: "Subject to the Gemma Terms of Use; multimodal capabilities not exposed through Enry today.",
+    limitations: "Subject to the Gemma Terms of Use; multimodal capabilities not exposed through Golem today.",
     useCases: ["General chat", "Long-document analysis", "Multimodal experiments"],
     capabilities: { ...CAPS_ALL_OFF, install: true, benchmark: true, gguf: true },
   },

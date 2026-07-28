@@ -38,7 +38,7 @@ export function RoomOverlay({ room, focusedTarget, onReset, onFocus, activityLab
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-secondary/80 px-3 py-1.5 font-mono text-xs text-muted-foreground backdrop-blur transition-colors hover:text-primary"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            back to enry
+            back to golem
           </Link>
         </div>
         <div className="pointer-events-auto flex items-center gap-3 rounded-lg border border-border bg-surface-secondary/80 px-4 py-2 backdrop-blur">

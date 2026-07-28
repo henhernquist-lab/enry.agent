@@ -103,7 +103,7 @@ export async function createConnectionLink(
 // Executes one Composio tool action for a connected account. Returns the raw
 // data the tool produces (Gmail message list, calendar event list, etc.).
 // Used by the chat/route.ts buildComposioTools wrappers to surface real Gmail
-// + Calendar actions to Enry Engine as AI-SDK tools. Never surfaces Google's
+// + Calendar actions to Golem Engine as AI-SDK tools. Never surfaces Google's
 // raw data to logs — returns it directly to the LLM tool result.
 //
 // Composio's SDK signature (verified against @composio/core@0.13.1's actual

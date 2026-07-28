@@ -1,6 +1,6 @@
 import type { SkillDefinition } from '../types'
 
-// Two-Model Consensus — runs through two different Enry Engine models
+// Two-Model Consensus — runs through two different Golem Engine models
 // independently, then compares outputs. If they agree, flags high confidence.
 // If they disagree, shows both side-by-side. Defense against confident wrongness.
 //
@@ -13,7 +13,7 @@ import type { SkillDefinition } from '../types'
 export const twoModelConsensus: SkillDefinition = {
   slug: 'two-model-consensus',
   name: 'Two-Model Consensus',
-  description: 'Runs through two Enry Engine models independently, compares outputs. Defense against confident wrongness.',
+  description: 'Runs through two Golem Engine models independently, compares outputs. Defense against confident wrongness.',
   triggerPhrases: [
     'two model consensus',
     'two-model consensus',
@@ -34,7 +34,7 @@ export const twoModelConsensus: SkillDefinition = {
     turnLabels: ['consensus'],
     needsOpeningInput: false,
   },
-  systemPrompt: `You are operating in TWO-MODEL CONSENSUS mode. Your output will be compared against another Enry Engine model's output for the same request. Both models receive the same input independently.
+  systemPrompt: `You are operating in TWO-MODEL CONSENSUS mode. Your output will be compared against another Golem Engine model's output for the same request. Both models receive the same input independently.
 
 RULES:
 1. Produce your BEST answer. Don't hedge or be vague — the comparison needs clear, concrete code to evaluate.

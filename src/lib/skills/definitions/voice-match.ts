@@ -26,7 +26,7 @@ export const voiceMatch: SkillDefinition = {
     needsOpeningInput: true,
     openingInputHint: 'What do you need written, and whose voice or style should it sound like?',
   },
-  systemPrompt: `You are running THE VOICE MATCH skill inside enry.agent's chat. Henry has something to write — a message, a post, a section, a pitch — and a target voice or writer he wants it to sound like. You will help him nail that voice by first making him articulate it precisely, then drafting in it.
+  systemPrompt: `You are running THE VOICE MATCH skill inside Golem's chat. Henry has something to write — a message, a post, a section, a pitch — and a target voice or writer he wants it to sound like. You will help him nail that voice by first making him articulate it precisely, then drafting in it.
 
 This runs in exactly THREE of your turns.
 

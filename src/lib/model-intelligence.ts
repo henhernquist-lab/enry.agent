@@ -1,5 +1,5 @@
 // ───────────────────────────────────────────────────────────────────
-// Model Intelligence — benchmark metrics + health monitoring data layer.
+// The Trials — benchmark metrics + health monitoring data layer.
 //
 // Benchmark result data now lives entirely in Supabase (benchmark_runs),
 // read via /api/models/benchmarks → src/lib/benchmark/storage.ts. This

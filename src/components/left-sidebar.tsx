@@ -21,7 +21,7 @@ import {
   Wand2,
   type LucideIcon,
 } from 'lucide-react'
-import { EnryLogo } from './enry-logo'
+import { GolemLogo } from './golem-logo'
 import { StatusIndicator } from './status-indicator'
 import type { Conversation } from '@/lib/chat-history'
 
@@ -46,17 +46,17 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     title: 'Platform',
     items: [
       { href: '/', icon: Home, label: 'Home', desc: 'Dashboard overview' },
-      { href: '/chat', icon: MessageSquare, label: 'Chat', desc: 'Ask Enry anything' },
-      { href: '/models', icon: Cpu, label: 'Model Intelligence', desc: 'Benchmark model performance' },
+      { href: '/chat', icon: MessageSquare, label: 'Chat', desc: 'Ask Golem anything' },
+      { href: '/models', icon: Cpu, label: 'The Trials', desc: 'Benchmark model performance' },
       { href: '/usage', icon: BarChart3, label: 'Usage', desc: 'Track tokens, cost, and alerts' },
     ],
   },
   {
     title: 'Workspace',
     items: [
-      { href: '/agent', icon: Swords, label: 'Drive', desc: 'Autonomous coding agent' },
-      { href: '/learn', icon: GraduationCap, label: 'Learn', desc: 'Tutorials and skills' },
-      { href: '/architect', icon: Wand2, label: 'Architect', desc: 'Prompt engineering lab' },
+      { href: '/agent', icon: Swords, label: 'The Forge', desc: 'Autonomous coding agent' },
+      { href: '/learn', icon: GraduationCap, label: 'The Scriptorium', desc: 'Tutorials and skills' },
+      { href: '/architect', icon: Wand2, label: 'The Scribe', desc: 'Prompt engineering lab' },
       { href: '/lab', icon: FlaskConical, label: 'Lab', desc: 'Experiments and overnight runs' },
     ],
   },
@@ -66,7 +66,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
       { href: '/resources', icon: Wrench, label: 'Tools', desc: 'Built-in tools and resources' },
       { href: '/prompts', icon: BookMarked, label: 'Prompts', desc: 'Saved prompts and recipes' },
       { href: '/resources/memory', icon: Brain, label: 'Memory', desc: 'Saved facts and context' },
-      { href: '/room', icon: Box, label: 'The Room', desc: '3D headquarters view' },
+      { href: '/room', icon: Box, label: 'The Atelier', desc: '3D headquarters view' },
     ],
   },
   {
@@ -100,7 +100,7 @@ export function LeftSidebar({
     <aside className="flex h-full w-[260px] flex-col border-r border-border bg-surface-secondary">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border p-4">
-        <EnryLogo size="sm" />
+        <GolemLogo size="sm" />
         <StatusIndicator status={agentStatus} />
       </div>
 

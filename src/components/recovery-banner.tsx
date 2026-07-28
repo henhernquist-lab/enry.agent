@@ -12,7 +12,7 @@ import { RecoveryState, RECOVERY_BANNER_LABELS } from '@/lib/recovery/types'
 //   Recovered  — checkmark + "Recovered" (auto-hides after 3s)
 //   Failed     — warning + "Recovery unsuccessful." + Retry button
 //
-// No modal dialogs. No bright colors. Matches Enry's dark aesthetic.
+// No modal dialogs. No bright colors. Matches Golem's dark aesthetic.
 // ───────────────────────────────────────────────────────────────────
 
 interface RecoveryBannerProps {

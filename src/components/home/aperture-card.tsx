@@ -10,7 +10,7 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-// The Aperture homepage card: shows today's single question. Answering saves
+// The Oculus homepage card: shows today's single question. Answering saves
 // and collapses the card to a checkmark row. If unanswered, it persists.
 export function ApertureCard() {
   const [resource, setResource] = useState<Resource<AperturePayload> | null>(null)
@@ -57,7 +57,7 @@ export function ApertureCard() {
       <div className="flex h-full min-h-[180px] flex-col justify-center rounded-lg border border-border bg-surface-secondary p-5">
         <div className="mb-2 flex items-center gap-2">
           <Aperture className="h-3.5 w-3.5 text-primary" />
-          <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">The Aperture</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">The Oculus</span>
         </div>
         <p className="text-sm text-muted-foreground">Today&apos;s question hasn&apos;t been generated yet. Check back in the morning.</p>
       </div>
@@ -74,7 +74,7 @@ export function ApertureCard() {
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Aperture className="h-3.5 w-3.5 text-primary" />
-          <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-primary">The Aperture</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-primary">The Oculus</span>
         </div>
         <Link
           href="/resources/aperture"

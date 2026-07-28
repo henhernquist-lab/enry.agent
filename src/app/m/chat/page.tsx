@@ -103,7 +103,7 @@ export default function MobileChatPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">
-              enry lite
+              Shard
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -136,7 +136,7 @@ export default function MobileChatPage() {
               className="text-center"
             >
               <MessageCircle className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
-              <p className="font-mono text-sm text-muted-foreground">enry lite</p>
+              <p className="font-mono text-sm text-muted-foreground">Shard</p>
               <p className="mt-1 text-xs text-muted-foreground/60">
                 Tap the mic or type to start
               </p>
@@ -220,7 +220,7 @@ export default function MobileChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message enry…"
+            placeholder="Message Golem…"
             rows={1}
             disabled={isStreaming}
             className="flex-1 resize-none rounded-2xl border border-border bg-surface-elevated px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground/50 focus:border-primary/30 focus:outline-none disabled:opacity-40"

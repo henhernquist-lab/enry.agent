@@ -215,7 +215,7 @@ export default function MobileToolsPage() {
             { label: 'Race Pace Calculator', note: 'Open on desktop' },
             { label: 'Bell Schedule', note: 'Open on desktop' },
             { label: 'Chief of Staff', note: 'Open on desktop' },
-            { label: 'The Aperture', note: 'Open on desktop' },
+            { label: 'The Oculus', note: 'Open on desktop' },
             { label: 'The Root Cause', note: 'Open on desktop' },
             { label: 'Ghost Mode', note: 'Open on desktop' },
             { label: 'Repos & Coding', note: 'Open on desktop' },

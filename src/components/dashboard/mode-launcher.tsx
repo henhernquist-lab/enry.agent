@@ -3,12 +3,12 @@ import { MessageSquare, Swords, Ship, GraduationCap, Smartphone, Wand2 } from 'l
 import { Card } from '@/components/card'
 
 const MODES = [
-  { href: '/chat', label: 'Chat', desc: 'Ask Enry anything', icon: MessageSquare, color: 'text-primary' },
-  { href: '/agent', label: 'Drive', desc: 'Autonomous coding agent', icon: Swords, color: 'text-primary' },
-  { href: '/agent', label: 'Cruise', desc: 'Scan-and-fix pipeline', icon: Ship, color: 'text-primary' },
-  { href: '/learn', label: 'Learn', desc: 'Tutorials and skills', icon: GraduationCap, color: 'text-primary' },
-  { href: '/architect', label: 'Architect', desc: 'Prompt engineering lab', icon: Wand2, color: 'text-primary' },
-  { href: '/m/chat', label: 'enry lite', desc: 'Mobile chat', icon: Smartphone, color: 'text-primary' },
+  { href: '/chat', label: 'Chat', desc: 'Ask Golem anything', icon: MessageSquare, color: 'text-primary' },
+  { href: '/agent', label: 'The Forge', desc: 'Autonomous coding agent', icon: Swords, color: 'text-primary' },
+  { href: '/agent', label: 'The Rounds', desc: 'Scan-and-fix pipeline', icon: Ship, color: 'text-primary' },
+  { href: '/learn', label: 'The Scriptorium', desc: 'Tutorials and skills', icon: GraduationCap, color: 'text-primary' },
+  { href: '/architect', label: 'The Scribe', desc: 'Prompt engineering lab', icon: Wand2, color: 'text-primary' },
+  { href: '/m/chat', label: 'Shard', desc: 'Mobile chat', icon: Smartphone, color: 'text-primary' },
 ]
 
 export function ModeLauncher() {

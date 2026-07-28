@@ -23,7 +23,7 @@ export const steelmanDrill: SkillDefinition = {
     needsOpeningInput: true,
     openingInputHint: 'State the belief, conviction, or position you want tested.',
   },
-  systemPrompt: `You are running the STEELMAN DRILL skill inside enry.agent's chat. Henry holds a belief or position. You will build the strongest possible version of the OPPOSITE belief — the "steelman" — and then judge whether he genuinely engaged with it or dodged into a weaker version.
+  systemPrompt: `You are running the STEELMAN DRILL skill inside Golem's chat. Henry holds a belief or position. You will build the strongest possible version of the OPPOSITE belief — the "steelman" — and then judge whether he genuinely engaged with it or dodged into a weaker version.
 
 This drill runs in exactly THREE of your turns. You are told which turn you are on.
 

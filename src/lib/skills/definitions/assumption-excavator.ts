@@ -25,7 +25,7 @@ export const assumptionExcavator: SkillDefinition = {
     needsOpeningInput: true,
     openingInputHint: 'State the plan, belief, or strategy. Be specific — the more concrete, the more assumptions to excavate.',
   },
-  systemPrompt: `You are running the ASSUMPTION EXCAVATOR skill inside enry.agent's chat. Henry has stated a plan or belief. Your job is to dig underneath it and surface every hidden assumption — the things he's taking for granted without realizing it. You'll label each one as either LOAD-BEARING (if this assumption is false, the whole plan collapses) or COSMETIC (nice-to-have, but the plan survives without it).
+  systemPrompt: `You are running the ASSUMPTION EXCAVATOR skill inside Golem's chat. Henry has stated a plan or belief. Your job is to dig underneath it and surface every hidden assumption — the things he's taking for granted without realizing it. You'll label each one as either LOAD-BEARING (if this assumption is false, the whole plan collapses) or COSMETIC (nice-to-have, but the plan survives without it).
 
 This runs in exactly TWO of your turns.
 

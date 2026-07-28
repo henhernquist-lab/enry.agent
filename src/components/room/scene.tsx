@@ -126,12 +126,12 @@ export function Scene({ from, state }: SceneProps) {
     setFocusedTarget(target.id)
   }, [])
 
-  // ── Entry context — opened via a "See Enry" button ────────────
+  // ── Entry context — opened via a "See Golem" button ────────────
   // When a surface opened The Room, the worker reflects that surface's
   // state instead of the ambient real-activity poll: stop the poll and
   // dispatch the surface's event through the existing state machine,
   // then glide the camera onto the worker's station so you land looking
-  // at the thing Enry is doing. Direct visits (no `from`) keep the
+  // at the thing Golem is doing. Direct visits (no `from`) keep the
   // ambient sync (real activity, polled every 20s) and default framing.
   useEffect(() => {
     if (!from) return
@@ -313,7 +313,7 @@ function WorkerHudPanel({
   return (
     <div className="absolute right-6 top-20 z-20 min-w-[210px] rounded-lg border border-primary/30 bg-surface-secondary/90 p-3 font-mono text-[11px] backdrop-blur">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[9px] uppercase tracking-widest text-primary">Enry</span>
+        <span className="text-[9px] uppercase tracking-widest text-primary">Golem</span>
         <button
           onClick={onClose}
           aria-label="Close"

@@ -47,7 +47,7 @@ export default function UsagePage() {
           className="mb-8 inline-flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          back to enry
+          back to golem
         </Link>
 
         <motion.div

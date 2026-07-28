@@ -97,7 +97,7 @@ export function SystemStatusStrip() {
     <div className="flex items-center justify-between border-b border-border bg-surface-secondary/80 px-4 py-1 font-mono text-[10px] text-muted-foreground backdrop-blur">
       <div className="flex items-center gap-2">
       <Dot pulsing={pulsing} />
-      <span className="font-medium text-foreground">enry</span>
+      <span>Golem</span>
       <Sep />
       <span>
         <span className={status && status.modelsReady === status.modelsTotal ? 'text-primary' : 'text-warning'}>

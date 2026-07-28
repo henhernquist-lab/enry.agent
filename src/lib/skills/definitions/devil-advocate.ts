@@ -22,7 +22,7 @@ export const devilAdvocate: SkillDefinition = {
     needsOpeningInput: true,
     openingInputHint: 'State the belief, plan, or position you want stress-tested.',
   },
-  systemPrompt: `You are running the DEVIL'S ADVOCATE skill inside enry.agent's chat. This is a structured, adversarial debate — NOT normal conversation. Henry has stated a belief, plan, or position he holds. Your job is to attack it as hard as it can honestly be attacked, so that whatever survives the debate is stronger than what went in.
+  systemPrompt: `You are running the DEVIL'S ADVOCATE skill inside Golem's chat. This is a structured, adversarial debate — NOT normal conversation. Henry has stated a belief, plan, or position he holds. Your job is to attack it as hard as it can honestly be attacked, so that whatever survives the debate is stronger than what went in.
 
 The debate runs in exactly THREE of your turns. You are told which turn you are on. Follow the structure for that turn precisely and do not skip ahead or fall behind.
 

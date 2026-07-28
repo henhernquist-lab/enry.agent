@@ -6,7 +6,7 @@ import { CruiseAutoCard } from '@/components/mobile/CruiseAutoCard'
 import { CruiseScheduleSheet } from '@/components/mobile/CruiseScheduleSheet'
 import type { CruiseAutoJob } from '@/app/api/cruise/autos/route'
 
-// Cruise Auto-run management for enry lite. Reads/writes the SAME
+// Cruise Auto-run management for Shard. Reads/writes the SAME
 // cruise_repos / cruise_goal_runs state desktop's AutoRunPanel does — no
 // mobile-only scheduler path, no separate schema. See LEARN.md-adjacent
 // contract: /api/cruise/autos (read), /api/cruise/repos/autorun (schedule
@@ -130,7 +130,7 @@ export default function MobileStatusPage() {
         {!loading && !error && jobs && jobs.length === 0 && (
           <div className="py-12 text-center">
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground/50">No Cruise repos enabled</p>
-            <p className="mt-2 font-sans text-[12px] text-muted-foreground/40">Enable Cruise for a repo on desktop to manage its auto-run schedule here.</p>
+            <p className="mt-2 font-sans text-[12px] text-muted-foreground/40">Enable Golem Rounds for a repo on desktop to manage its auto-run schedule here.</p>
           </div>
         )}
 

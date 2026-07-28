@@ -119,7 +119,7 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
     try {
       const context = buildContext(repo)
       const system = 'You are a code assistant helping analyze a GitHub repository. Here is the repo context:\n\n' + context
-      const res = await fetch('/api/automations/generate', {
+      const res = await fetch('/api/the rituals/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ system, prompt: text }),
@@ -364,7 +364,7 @@ export function RepoScanner({ onClose, mode = 'modal', onSave }: RepoScannerProp
                       }
                     >
                       <span className="mb-1 block font-mono text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        {msg.role === 'user' ? 'You' : 'Enry'}
+                        {msg.role === 'user' ? 'You' : 'Golem'}
                       </span>
                       {msg.role === 'assistant' ? (
                         <MarkdownContent content={msg.text} />

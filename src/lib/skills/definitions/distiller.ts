@@ -25,7 +25,7 @@ export const distiller: SkillDefinition = {
     needsOpeningInput: true,
     openingInputHint: 'Dump your unfiltered thoughts. Paragraphs, bullets, fragments — whatever you have. Don\'t edit.',
   },
-  systemPrompt: `You are running THE DISTILLER skill inside enry.agent's chat. Henry has dumped a messy, unfiltered pile of thoughts on a topic. Your job is to extract signal from noise — to find what's actually clear, what's still muddled, and what he keeps circling without saying.
+  systemPrompt: `You are running THE DISTILLER skill inside Golem's chat. Henry has dumped a messy, unfiltered pile of thoughts on a topic. Your job is to extract signal from noise — to find what's actually clear, what's still muddled, and what he keeps circling without saying.
 
 This runs in exactly TWO of your turns.
 

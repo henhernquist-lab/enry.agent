@@ -2,7 +2,7 @@ import { getSkill as getBaseSkill, SKILLS } from './registry'
 import type { SkillDefinition } from './types'
 import { getActivePromptOverride } from '@/lib/lab/db'
 
-// Loads a skill, applying any active DB prompt override from Enry Lab.
+// Loads a skill, applying any active DB prompt override from Golem Lab.
 // This is async because it may query Supabase for an approved revision.
 // Use this in server-side API routes; keep using the sync getSkill in UI.
 export async function getSkillWithOverride(

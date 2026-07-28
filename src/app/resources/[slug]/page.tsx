@@ -70,7 +70,7 @@ const SLUG_LABELS: Record<string, { name: string; icon: typeof BookOpen; desc: s
   'prompts':          { name: 'Prompt Library',      icon: BookMarked, desc: 'Browse and save reusable AI prompts' },
   'articles':         { name: 'Article Notes',       icon: Newspaper, desc: 'Save articles with AI summaries and flashcards' },
   'race-pace':        { name: 'Race Pace Calculator', icon: Timer, desc: 'Split targets and PR tracking' },
-  'notes':            { name: 'Quick Notes',         icon: StickyNote, desc: 'Fast capture, no fuss' },
+  'notes':            { name: 'The Grimoire',         icon: StickyNote, desc: 'Fast capture, no fuss' },
   'schedule':         { name: 'Bell Schedule',       icon: Bell, desc: 'Current period and countdown to the next' },
 }
 

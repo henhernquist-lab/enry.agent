@@ -3,7 +3,7 @@
 // half_life, anchored at its last probe (or creation, if never probed).
 // Isolated in its own module with this one clean signature so a smarter
 // version (streak-aware, event-history-weighted, forgetting-curve-fitted...)
-// can replace the body without anything else in Learn changing — every
+// can replace the body without anything else in The Scriptorium changing — every
 // caller only ever imports `computeStrength`, never reaches into its
 // internals.
 //

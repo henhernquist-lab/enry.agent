@@ -2,12 +2,12 @@
 
 import { motion } from 'framer-motion'
 
-interface EnryLogoProps {
+interface GolemLogoProps {
   size?: 'sm' | 'md' | 'lg'
   animated?: boolean
 }
 
-export function EnryLogo({ size = 'md', animated = true }: EnryLogoProps) {
+export function GolemLogo({ size = 'md', animated = true }: GolemLogoProps) {
   const sizeClasses = {
     sm: 'text-lg',
     md: 'text-2xl',
@@ -73,7 +73,7 @@ export function EnryLogo({ size = 'md', animated = true }: EnryLogoProps) {
           ease: 'easeInOut',
         }}
       >
-        <span className="text-foreground">ENRY</span>
+        <span className="text-foreground">Golem</span>
         <span className="text-primary">.</span>
         <span className="text-foreground">AGENT</span>
       </motion.div>

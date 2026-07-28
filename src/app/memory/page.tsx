@@ -128,7 +128,7 @@ function ImportMemoryModal({
         </div>
 
         <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
-          Paste memory, custom instructions, or context exported from another AI. Enry will store it and use it going forward.
+          Paste memory, custom instructions, or context exported from another AI. Golem will store it and use it going forward.
         </p>
 
         <div className="space-y-3">
@@ -352,12 +352,12 @@ export default function MemoryPage() {
       </header>
 
       <div className="mx-auto max-w-3xl px-4 py-6">
-        {/* Section 1: Everything Enry Knows */}
+        {/* Section 1: Everything Golem Knows */}
         <section className="mb-8">
           <div className="mb-3 flex items-center justify-between">
             <h1 className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Brain className="h-4 w-4 text-primary" />
-              Everything Enry Knows
+              Everything Golem Knows
             </h1>
             <button
               onClick={() => setShowImport(true)}
@@ -404,7 +404,7 @@ export default function MemoryPage() {
               <Brain className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
               <p className="text-sm font-medium text-foreground">No memories yet</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Enry will remember things about you here. Import context from another AI to get started.
+                Golem will remember things about you here. Import context from another AI to get started.
               </p>
               <button
                 onClick={() => setShowImport(true)}
@@ -451,7 +451,7 @@ export default function MemoryPage() {
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-foreground">Import Memory from Other AIs</h2>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Bring context you&apos;ve built in ChatGPT, Claude, Gemini, or elsewhere. Enry treats it as
+                  Bring context you&apos;ve built in ChatGPT, Claude, Gemini, or elsewhere. Golem treats it as
                   first-class memory going forward.
                 </p>
                 <button

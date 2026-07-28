@@ -27,7 +27,7 @@ import {
   Globe,
   Folder,
 } from 'lucide-react'
-import { EnryLogo } from './enry-logo'
+import { GolemLogo } from './golem-logo'
 import { StatusIndicator } from './status-indicator'
 import { TypingText } from './typing-text'
 import { FileAttachmentChip, type PendingUpload } from './file-attachment-chip'
@@ -214,7 +214,7 @@ export function CenterPanel({
   const [model, setModel] = useState<ModelId>(DEFAULT_MODEL_ID)
   const [chatEffort, setChatEffort] = useState<ChatEffortId>(() => CHAT_MODEL_DEFAULTS[DEFAULT_MODEL_ID] ?? 'medium')
 
-  // Community models added from The Black Market. Fetched at mount and merged
+  // Community models added from The Foundry. Fetched at mount and merged
   // into the picker below the first-party models, visibly badged.
   const [communityModels, setCommunityModels] = useState<PickerModel[]>([])
   useEffect(() => {
@@ -261,7 +261,7 @@ export function CenterPanel({
   // Session focus (domain scope) — what work I'm doing right now. Hybrid:
   // built-in seeds (Drive / Learn / School) + user-named custom focuses that
   // persist to localStorage and surface as additional chips. Orthogonal to
-  // `focusMode` above — same session can be "Drive" (domain) + "repo_only"
+  // `focusMode` above — same session can be "The Forge" (domain) + "repo_only"
   // (source). Mid-session swap is live: change the pill, the next chat POST
   // carries the new value; prior messages keep their old context.
   const SESSION_FOCUS_STORAGE_KEY = 'enry.sessionFocus.v1'
@@ -744,7 +744,7 @@ export function CenterPanel({
           <div className="flex items-center justify-between">
             {/* Left: Logo + Status */}
             <div className="flex items-center gap-3">
-              <EnryLogo size="sm" />
+              <GolemLogo size="sm" />
               <div className="h-4 w-px bg-border" />
               <StatusIndicator status={agentStatus} />
             </div>
@@ -854,7 +854,7 @@ export function CenterPanel({
                 transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 28 }}
                 className="mb-6"
               >
-                <EnryLogo size="lg" />
+                <GolemLogo size="lg" />
               </motion.div>
 
               <motion.h2
@@ -1113,7 +1113,7 @@ export function CenterPanel({
                   if (filtersAll.length === 1 && filtersAll[0] === 'coding') {
                     return (
                       <div className="px-3 py-2 font-mono text-[11px] text-muted-foreground leading-relaxed">
-                        No general/multi-domain skills in Drive focus. Switch to “None” for reasoning modes.
+                        No general/multi-domain skills in The Forge focus. Switch to “None” for reasoning modes.
                       </div>
                     )
                   }

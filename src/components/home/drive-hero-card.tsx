@@ -11,7 +11,7 @@ export function DriveHeroCard() {
         className="group flex items-center gap-2 font-mono text-[11px] text-muted-foreground/60 transition-colors hover:text-primary"
       >
         <Swords className="h-3 w-3" />
-        <span className="font-semibold uppercase tracking-wider">Enry Drive</span>
+        <span className="font-semibold uppercase tracking-wider">Golem Drive</span>
       </Link>
     </div>
   )

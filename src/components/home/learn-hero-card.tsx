@@ -13,7 +13,7 @@ export function LearnHeroCard() {
         className="group flex items-center gap-2 font-mono text-[11px] text-muted-foreground/60 transition-colors hover:text-primary"
       >
         <GraduationCap className="h-3 w-3" />
-        <span className="font-semibold uppercase tracking-wider">Enry Learn</span>
+        <span className="font-semibold uppercase tracking-wider">Golem Learn</span>
       </Link>
     </div>
   )

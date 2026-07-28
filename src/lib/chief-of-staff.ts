@@ -7,7 +7,7 @@ import { executeTool } from './composio'
 import type { AperturePayload, BriefingPayload, BriefingFlag } from './resources'
 
 // Chief of Staff: a morning briefing that cross-references every tool and
-// surfaces what Henry wouldn't notice himself. Runs after the Aperture so it
+// surfaces what Henry wouldn't notice himself. Runs after the Oculus so it
 // can reference the day's question.
 
 const BRIEFING_SYSTEM_PROMPT = `You are the chief of staff producing Henry's morning briefing. Henry is a

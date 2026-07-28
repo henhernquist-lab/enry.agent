@@ -48,7 +48,7 @@ export function FlashcardGenerator({ onClose, mode = 'modal', onSave }: Flashcar
     setCurrent(0)
     setFlipped(false)
     try {
-      const res = await fetch('/api/automations/generate', {
+      const res = await fetch('/api/the rituals/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

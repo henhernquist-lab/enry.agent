@@ -101,7 +101,7 @@ export function Lighting({ room }: LightingProps) {
         shadow-normalBias={0.02}
       />
 
-      {/* Accent point light — Enry green, near the desk, subtle pulse */}
+      {/* Accent point light — Golem green, near the desk, subtle pulse */}
       <pointLight
         ref={accentRef}
         position={[0, 2.8, 0.6]}

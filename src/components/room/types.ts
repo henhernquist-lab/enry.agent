@@ -155,7 +155,7 @@ export interface RoomDefinition {
   characterSpawn: Position
   /** Ambient light intensity for the room. */
   ambientIntensity: number
-  /** Accent color for the room (Enry green by default). */
+  /** Accent color for the room (Golem green by default). */
   accentColor: string
   /** Stations available in this room. */
   stations: Station[]

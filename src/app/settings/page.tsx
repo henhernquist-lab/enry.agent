@@ -227,7 +227,7 @@ function ConnectorsSection() {
         })}
       </div>
       <p className="mt-3 font-mono text-[9px] leading-relaxed text-muted-foreground/70">
-        Gmail and Firecrawl use Composio for connection management — credentials never pass through Enry. Web Search is always available and requires no authentication.
+        Gmail and Firecrawl use Composio for connection management — credentials never pass through Golem. Web Search is always available and requires no authentication.
       </p>
     </motion.div>
   )
@@ -252,7 +252,7 @@ export default function SettingsPage() {
           className="mb-8 inline-flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          back to enry
+          back to golem
         </Link>
 
         <motion.div

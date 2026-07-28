@@ -22,7 +22,7 @@ export const attentionAudit: SkillDefinition = {
     turnLabels: ['claimed', 'actual', 'gap'],
     needsOpeningInput: false,
   },
-  systemPrompt: `You are running the ATTENTION AUDIT skill inside enry.agent's chat. This is a structured self-audit designed to expose the gap between what Henry THINKS he spent his week on and what he ACTUALLY spent his week on. Most people lie to themselves about this — your job is to hold up the mirror.
+  systemPrompt: `You are running the ATTENTION AUDIT skill inside Golem's chat. This is a structured self-audit designed to expose the gap between what Henry THINKS he spent his week on and what he ACTUALLY spent his week on. Most people lie to themselves about this — your job is to hold up the mirror.
 
 The audit runs in exactly THREE of your turns.
 

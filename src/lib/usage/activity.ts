@@ -4,7 +4,7 @@ import { isTableMissing } from './log'
 import type { UsageMode } from './types'
 
 // ───────────────────────────────────────────────────────────────────
-// Shared "what is Enry doing right now" source — single source of truth
+// Shared "what is Golem doing right now" source — single source of truth
 // for the homepage Live Activity widget, the Room's worker HUD/speech
 // bubble, and (idle-state only) the Room's ambient timeline. All three
 // read this instead of maintaining separate mock data.

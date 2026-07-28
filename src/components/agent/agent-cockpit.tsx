@@ -201,7 +201,7 @@ export function AgentCockpit() {
           <div className="flex h-6 w-6 items-center justify-center rounded bg-primary/15">
             <Sparkles className="h-3.5 w-3.5 text-primary" />
           </div>
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground">enry</span>
+          <span>Golem</span>
           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">coding agent</span>
         </div>
 
@@ -466,7 +466,7 @@ function ProposalCard({ m, running, onAction }: { m: Extract<Message, { kind: 'p
             className="flex items-center gap-1 rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary disabled:opacity-50">
             <GitCommit className="h-3 w-3" /> Commit
           </button>
-          <button onClick={() => onAction('pr "Agent changes" "Proposed by enry coding agent"')} disabled={running}
+          <button onClick={() => onAction('pr "Agent changes" "Proposed by Golem coding agent"')} disabled={running}
             className="flex items-center gap-1 rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary disabled:opacity-50">
             <GitPullRequest className="h-3 w-3" /> Open PR
           </button>

@@ -86,12 +86,12 @@ export default function MemoryPage() {
             Memory
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Things you tell Enry here become part of its long-term memory —
+            Things you tell Golem here become part of its long-term memory —
             recalled automatically when relevant to a conversation.
           </p>
         </div>
 
-        {/* Section 1: Things Enry should know */}
+        {/* Section 1: Things Golem should know */}
         <motion.section
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -103,7 +103,7 @@ export default function MemoryPage() {
               <Brain className="h-4 w-4 text-primary" />
             </div>
             <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">
-              Things Enry should know about me
+              Things Golem should know about me
             </h2>
           </div>
 
@@ -118,7 +118,7 @@ export default function MemoryPage() {
             />
             <div className="mt-3 flex items-center justify-between">
               <p className="font-mono text-[10px] text-muted-foreground">
-                Write anything — facts, preferences, context. Enry will recall it when relevant.
+                Write anything — facts, preferences, context. Golem will recall it when relevant.
               </p>
               <button
                 onClick={() => saveEntry('memory', memoryInput)}
@@ -150,7 +150,7 @@ export default function MemoryPage() {
               <MessageSquare className="h-4 w-4 text-primary" />
             </div>
             <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">
-              How should Enry talk to you?
+              How should Golem talk to you?
             </h2>
           </div>
 
@@ -198,15 +198,15 @@ export default function MemoryPage() {
           <ul className="mt-2 space-y-1.5">
             <li className="flex items-start gap-2 text-xs text-muted-foreground">
               <span className="mt-0.5 font-mono text-[10px] text-primary">1</span>
-              <span>Everything you save here is embedded and stored in Enry&apos;s vector memory.</span>
+              <span>Everything you save here is embedded and stored in Golem&apos;s vector memory.</span>
             </li>
             <li className="flex items-start gap-2 text-xs text-muted-foreground">
               <span className="mt-0.5 font-mono text-[10px] text-primary">2</span>
-              <span>When you ask a question, Enry automatically searches for relevant memories.</span>
+              <span>When you ask a question, Golem automatically searches for relevant memories.</span>
             </li>
             <li className="flex items-start gap-2 text-xs text-muted-foreground">
               <span className="mt-0.5 font-mono text-[10px] text-primary">3</span>
-              <span>Communication preferences are injected into every conversation — Enry adapts its style to match.</span>
+              <span>Communication preferences are injected into every conversation — Golem adapts its style to match.</span>
             </li>
           </ul>
         </motion.footer>

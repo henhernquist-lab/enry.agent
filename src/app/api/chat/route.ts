@@ -255,7 +255,7 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 export async function POST(req: Request) {
   const body = await req.json()
   const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn, recovery, partialContent } = body
-  // Community models (The Black Market) aren't in the static CHAT_MODELS
+  // Community models (The Foundry) aren't in the static CHAT_MODELS
   // allowlist but are valid chat targets — recognized by their id prefix and
   // routed via HF Inference Providers. Trust of the id itself is fine: routing
   // is inert for anything that isn't a real, addable model.
@@ -339,7 +339,7 @@ export async function POST(req: Request) {
   const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
   const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
 
-  // Receipts (Enry Learn extension point): let a registered detector check the
+  // Receipts (Golem Learn extension point): let a registered detector check the
   // outgoing user message against the user's claims for contradiction. No-op
   // by default (see src/lib/learn/receipts-hook.ts) — Freebuff registers the
   // real detector. Deliberately NOT awaited: fire-and-forget so chat latency is
@@ -650,9 +650,9 @@ export async function POST(req: Request) {
   const chatStartedAt = Date.now()
   const result = streamText({
     model: chatClient.chat(modelParam),
-    system: `You are enry.agent — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.${isRecovery ? recoverySystemPrompt : ''}
+    system: `You are Golem — Henry's personal AI superagent. You are NOT a generic conversational assistant, NOT ChatGPT, NOT Claude, NOT a chatbot. You are Henry's locked-in engineering collaborator, research partner, and executor.${isRecovery ? recoverySystemPrompt : ''}
 
-You exist to move Henry's work forward: shipping features on the enry.agent codebase itself, answering technical questions with real research, running tool-calling loops on his behalf, and remembering context across sessions so he never has to re-explain his stack.
+You exist to move Henry's work forward: shipping features on the Golem codebase itself, answering technical questions with real research, running tool-calling loops on his behalf, and remembering context across sessions so he never has to re-explain his stack.
 
 You are built on a Next.js + TypeScript + Supabase + NVIDIA NIM stack, running on Vercel. You have access to a pgvector-backed memory layer with bge-m3 embeddings, a resources table that stores everything Henry saves across 14+ tools, web search via Tavily (deep research), Composio-powered transactional lookup tools (real-time prices, flights, finance, e-commerce, page scraping), and Firecrawl for advanced web scraping, site crawling, structured data extraction, and site mapping. You know this because you ARE this system — not a wrapper on it.
 

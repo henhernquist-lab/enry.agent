@@ -17,7 +17,7 @@ import { SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG, isGoalRunAct
 import { nextRun } from '@/lib/cruise/schedule'
 import { LiveWorkspace } from '@/components/live-workspace'
 
-// Enry Cruise — the autonomous-scan main pane. Per-repo allowlist, on-demand
+// Golem Cruise — the autonomous-scan main pane. Per-repo allowlist, on-demand
 // static scans, scan-and-fix categories, ranked findings with dismiss/not-a-bug.
 // Category auto-fix is the only write path (dispatches a scanfix run through
 // /api/cruise/goal-runs — no open-ended natural-language goal input). Shares
@@ -146,8 +146,8 @@ export function CruisePanel({ repo }: { repo: string }) {
       if (res.status === 403 && data.error === 'missing_scope') { setNeedsReauth(true); setError(data.message); return }
       if (!res.ok) { setError(data.message ?? data.error ?? 'Enable failed'); return }
       setEnableNote(data.workflow_present
-        ? { ok: true, text: `Enry Relay v${data.workflow_version} confirmed on ${data.default_branch}.` }
-        : { ok: false, text: 'Enabled, but the Cruise scan workflow is NOT on the default branch. Try disable + enable again.' })
+        ? { ok: true, text: `Golem Relay v${data.workflow_version} confirmed on ${data.default_branch}.` }
+        : { ok: false, text: 'Enable Golem Rounds scan workflow is NOT on the default branch. Try disable + enable again.' })
       await loadConfig()
     } finally { setBusy(false) }
   }
@@ -272,7 +272,7 @@ export function CruisePanel({ repo }: { repo: string }) {
               <Radar className="h-4 w-4 text-primary" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-mono text-[13px] font-semibold text-foreground">Enry Cruise</h1>
+              <h1 className="font-mono text-[13px] font-semibold text-foreground">Golem Cruise</h1>
               <p className="font-mono text-[10px] text-muted-foreground">scan &amp; fix · <span className="text-foreground">{repo}</span></p>
             </div>
             {enabled && (
@@ -425,7 +425,7 @@ function EnableCard({ busy, needsReauth, error, onEnable, onReauth, repo }: {
         <button onClick={onEnable} disabled={busy}
           className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-          Enable Cruise for this repo
+          Enable Golem Rounds for this repo
         </button>
       )}
     </div>
