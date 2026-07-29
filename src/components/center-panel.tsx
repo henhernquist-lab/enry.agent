@@ -26,6 +26,7 @@ import {
   Brain,
   Globe,
   Folder,
+  Eraser,
 } from 'lucide-react'
 import { GolemLogo } from './golem-logo'
 import { StatusIndicator } from './status-indicator'
@@ -351,6 +352,13 @@ export function CenterPanel({
   // Keep ref in sync — useChat callbacks see stale closures
   useEffect(() => { recoveryStateRef.current = recoveryState }, [recoveryState])
 
+  // ─── Scratch mode (ephemeral chat) ─────────────────────────────
+  // When on, messages live only in React state — never persisted to
+  // Supabase. Refreshing the page or toggling off clears everything.
+  const [scratchMode, setScratchMode] = useState(false)
+  const scratchModeRef = useRef(false)
+  useEffect(() => { scratchModeRef.current = scratchMode }, [scratchMode])
+
   // Auto-hide "Recovered" banner after 3s
   useEffect(() => {
     if (recoveryState === RecoveryState.Recovered) {
@@ -364,7 +372,7 @@ export function CenterPanel({
     transport,
     messages: initialMessages,
     onFinish: ({ messages: finalMessages }) => {
-      onSaveMessages(finalMessages, model)
+      if (!scratchModeRef.current) onSaveMessages(finalMessages, model)
       onActivity({ type: 'assistant-complete', content: '', at: Date.now() })
       // Clear recovery state on successful completion
       if (recoveryStateRef.current === RecoveryState.Recovering) {
@@ -373,7 +381,7 @@ export function CenterPanel({
     },
     onError: (err) => {
       console.error('[chat] streamText error:', err)
-      if (messagesRef.current.length > 0) onSaveMessages(messagesRef.current, model)
+      if (messagesRef.current.length > 0 && !scratchModeRef.current) onSaveMessages(messagesRef.current, model)
       /* eslint-disable-next-line react-hooks/purity */
       onActivity({ type: 'error', content: (err as Error).message, at: Date.now() })
 
@@ -799,6 +807,38 @@ export function CenterPanel({
         </div>
       </div>
 
+      {/* Scratch mode banner */}
+      <AnimatePresence>
+        {scratchMode && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-b border-accent/30 bg-accent/10"
+          >
+            <div className="mx-auto max-w-3xl px-8 py-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eraser className="h-3.5 w-3.5 text-accent" />
+                  <span className="font-mono text-[11px] text-accent font-semibold uppercase tracking-wider">
+                    Scratch
+                  </span>
+                  <span className="font-sans text-[11px] text-muted-foreground">
+                    ephemeral — nothing is saved, messages lost on refresh
+                  </span>
+                </div>
+                <button
+                  onClick={() => setScratchMode(false)}
+                  className="font-mono text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  exit scratch
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Skill mode banner */}
       <AnimatePresence>
         {activeSkill && (
@@ -1212,6 +1252,19 @@ export function CenterPanel({
               )}
             </div>
           </div>
+
+          {/* Scratch toggle */}
+          <button
+            type="button"
+            onClick={() => setScratchMode((p) => !p)}
+            className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-accent/30 hover:text-foreground ${
+              scratchMode ? 'border-accent/30 bg-accent/5 text-accent' : 'border-border bg-surface-elevated text-muted-foreground'
+            }`}
+            title={scratchMode ? 'Scratch mode on — click to exit' : 'Start an ephemeral scratch session'}
+          >
+            <Eraser className="h-3 w-3" />
+            Scratch
+          </button>
 
           {/* Flex spacer */}
           <div className="flex-1" />
