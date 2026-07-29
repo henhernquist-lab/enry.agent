@@ -24,7 +24,7 @@ export default function BenchmarkPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/trialss')
+      const res = await fetch('/api/models/benchmarks')
       if (res.ok) {
         const data = await res.json()
         setBenchmarks(data.benchmarks ?? [])
@@ -81,7 +81,7 @@ export default function BenchmarkPage() {
       await new Promise((r) => setTimeout(r, 2000))
       let data: { status?: string; progress?: { completed: number; total: number } | null; error?: string }
       try {
-        const res = await fetch(`/api/trialss/status?runId=${encodeURIComponent(runId)}`)
+        const res = await fetch(`/api/models/benchmarks/status?runId=${encodeURIComponent(runId)}`)
         if (!res.ok) throw new Error('status fetch failed')
         data = await res.json()
       } catch {
@@ -114,7 +114,7 @@ export default function BenchmarkPage() {
     setRunState('starting')
     setRunMessage(null)
     try {
-      const res = await fetch('/api/trialss', {
+      const res = await fetch('/api/models/benchmarks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId: runModelId }),

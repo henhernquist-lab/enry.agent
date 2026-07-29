@@ -8,7 +8,7 @@
 // Data honesty: the descriptive fields below (creator, base model,
 // params, license, tags, description) are curated editorial content.
 // Live stats (downloads, likes, lastModified) are NOT stored here — the
-// /api/lab/black-market route fetches them from the real Hugging Face
+// /api/lab/foundry route fetches them from the real Hugging Face
 // API at request time and the UI shows "—" when unavailable. No
 // popularity numbers are ever fabricated.
 //

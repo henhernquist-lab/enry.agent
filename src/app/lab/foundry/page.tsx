@@ -51,7 +51,7 @@ export default function BlackMarketPage() {
   const [enryError, setEnryError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/lab/black-market')
+    fetch('/api/lab/foundry')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: BlackMarketResponse) => {
         const coreList: BlackMarketEntry[] = d.core ?? []
