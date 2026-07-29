@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth'
 import { AmbientBackground } from '@/components/ambient-background'
 import { CommandPalette, CommandPaletteHint } from '@/components/command-palette'
 import { TerminalOverlay } from '@/components/terminal/terminal-overlay'
+import { GrimoireFloatingPanel } from '@/components/grimoire-floating-panel'
 import './globals.css'
 
 const lora = Lora({
@@ -76,6 +77,7 @@ export default async function RootLayout({
           <CommandPalette />
           <CommandPaletteHint />
           <TerminalOverlay />
+          <GrimoireFloatingPanel />
         </SessionProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
