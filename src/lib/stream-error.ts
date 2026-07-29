@@ -51,6 +51,13 @@ function messageForStatus(status: number | undefined): string | null {
   if (status === 408 || status === 504) {
     return 'The provider timed out. Try again, or switch to a faster model.'
   }
+  if (status === 413) {
+    // Groq returns 413 when prompt + reserved output exceeds the model's
+    // tokens-per-minute allowance. "Try rephrasing" (the generic 4xx advice)
+    // is actively wrong here — a one-word message triggers it just as easily,
+    // because the size is dominated by the system prompt and tool schemas.
+    return 'This request is too large for that model\'s per-minute limit. Try a shorter conversation, or switch to a model with more headroom.'
+  }
   if (status === 429) {
     return 'Rate limited by the provider. Wait a few moments and try again, or switch models.'
   }
@@ -68,11 +75,35 @@ function messageForStatus(status: number | undefined): string | null {
  * Logs the real error (with `context` for grepping) and returns a short,
  * differentiated message that is safe to show in the UI.
  */
+/**
+ * Pull the provider status out of an error, including wrapped ones. The SDK
+ * doesn't always hand back a bare APICallError: a retried call surfaces as
+ * AI_RetryError carrying the real failures in `errors`/`lastError`, and other
+ * layers wrap in `cause`. Without unwrapping, those all lose their status and
+ * fall through to the flat "Something went wrong." — observed in practice.
+ */
+function extractStatus(error: unknown, depth = 0): number | undefined {
+  if (!error || typeof error !== 'object' || depth > 3) return undefined
+  if (APICallError.isInstance(error)) return error.statusCode
+
+  const e = error as { cause?: unknown; lastError?: unknown; errors?: unknown }
+  const nested: unknown[] = [
+    e.lastError,
+    ...(Array.isArray(e.errors) ? [e.errors[e.errors.length - 1]] : []),
+    e.cause,
+  ]
+  for (const n of nested) {
+    const s = extractStatus(n, depth + 1)
+    if (s !== undefined) return s
+  }
+  return undefined
+}
+
 export function safeStreamErrorMessage(error: unknown, context: string): string {
   // Always log the whole thing server-side — the sanitizer hides detail from
   // the UI, never from the operator. Status is pulled out explicitly so it's
   // greppable in Vercel logs without expanding the object.
-  const status = APICallError.isInstance(error) ? error.statusCode : undefined
+  const status = extractStatus(error)
   console.error(`[${context}]${status ? ` status=${status}` : ''}`, error)
 
   if (TypeValidationError.isInstance(error)) {

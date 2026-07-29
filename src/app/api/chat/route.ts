@@ -26,7 +26,7 @@ import { RecoveryManager } from '@/lib/recovery/recovery-manager'
 import '@/lib/learn/receipts-detector'
 import type { GitHubActionPayload } from '@/lib/resources'
 
-import { listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
+import { listModels, getModelMeta, DEFAULT_MODEL_ID } from '@/lib/nim'
 
 // Chat-scoped model allowlist — subset of MODEL_LIST that has 'chat' scope.
 const CHAT_MODELS = listModels('chat').map((m) => m.id)
@@ -262,6 +262,12 @@ export async function POST(req: Request) {
   const selectedModel: string =
     CHAT_MODELS.includes(model) || isCommunityModelId(model) ? model : DEFAULT_MODEL
 
+  // Output-token budget for this model. Groq counts `prompt + max_tokens`
+  // against a rolling per-minute allowance even when the reply is short, so a
+  // flat 4096 on a 6000 TPM model 413s on a one-word message. Registry value
+  // wins; 4096 stays the default for everything else.
+  const modelMaxOutputTokens = getModelMeta(selectedModel)?.maxOutputTokens ?? 4096
+
   // HF Inference Providers cold-start less-popular models; warm it here (with
   // retries) so the first message doesn't error mid-stream. No-op otherwise.
   if (isCommunityModelId(selectedModel)) {
@@ -434,7 +440,7 @@ export async function POST(req: Request) {
       // fails outright before generating anything. 4096 is comfortably
       // within a normal chat reply and well under the account's affordable
       // ceiling (~11.5k tokens at last check).
-      maxOutputTokens: 4096,
+      maxOutputTokens: modelMaxOutputTokens,
       onError: ({ error }) => { console.error('streamText multi-skill error:', error) },
       onFinish: async ({ text, usage }) => {
         if (invocationId) {
@@ -783,7 +789,7 @@ ${userProfile ? `\n${userProfile}` : ''}`,
     // See the multi-skill call above — an uncapped max_tokens request
     // exceeds what the free-tier OpenRouter account (DeepSeek's provider)
     // can afford per call and fails before generating anything.
-    maxOutputTokens: 4096,
+    maxOutputTokens: modelMaxOutputTokens,
     onError: ({ error }) => {
       console.error('streamText error:', error)
     },

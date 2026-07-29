@@ -39,6 +39,17 @@ export interface ModelMeta {
    * surface the real state, don't hide it and don't silently block it.
    */
   degraded?: string
+  /**
+   * Per-model cap on requested output tokens. Groq bills `prompt + max_tokens`
+   * against a rolling per-minute budget *whether or not the output is used*, so
+   * a blanket 4096 reservation on a 6000 TPM model burns two-thirds of the
+   * minute on a reply that may be three words — and a single request with a
+   * system prompt plus the tool schemas then exceeds the limit outright and
+   * comes back 413. Measured TPM: llama-3.1-8b-instant 6000,
+   * openai/gpt-oss-120b 8000, llama-3.3-70b-versatile 12000.
+   * Omitted = use the route's default.
+   */
+  maxOutputTokens?: number
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
@@ -94,7 +105,11 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
     defaultEffort: 'high',
     supportsReasoning: true,
-    degraded: 'Currently degraded — NVIDIA capacity issue. Requests may time out.',
+    // Re-measured after the initial 0/2 timeouts: it now answers 6/6, but at
+    // ~50s per reply versus ~3s for Flash, and it returned nothing at all
+    // earlier the same day. Shared NVIDIA free-tier capacity, so the honest
+    // label is "slow and unpredictable", not "broken" and not "fine".
+    degraded: 'Very slow on shared NVIDIA capacity (~50s replies) and can time out entirely.',
   },
   {
     id: 'gemini-3.5-flash',
@@ -111,6 +126,8 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Fast, capable generalist on Groq.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
+    // 12000 TPM — the default output budget fits comfortably.
+    maxOutputTokens: 4096,
   },
   {
     id: 'llama-3.1-8b-instant',
@@ -119,6 +136,12 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Ultra-fast lightweight model on Groq.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'low',
+    // Lowest TPM of the lineup (6000/min). At the route's default 4096 a single
+    // "hello" — system prompt + tool schemas + the reservation — exceeded the
+    // limit and Groq returned 413, which read to the user as the request being
+    // rejected for its content. 1024 is ample for this model's short-reply role
+    // and leaves ~5000/min for prompt and follow-up turns.
+    maxOutputTokens: 1024,
   },
   {
     id: 'openai/gpt-oss-120b',
@@ -128,6 +151,9 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
     defaultEffort: 'high',
     supportsReasoning: true,
+    // 8000 TPM — headroom for a longer reply than the 8B, but not the full
+    // 4096 default once prompt and tools are counted.
+    maxOutputTokens: 2048,
   },
 ]
 
