@@ -1,0 +1,80 @@
+name: Vercel Deploy Monitor
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    # Let Vercel start the deploy before polling — the auto-deploy
+    # hook fires async, so the deployment may not exist for ~5-15s.
+    steps:
+      - name: Wait for Vercel deploy to appear
+        run: sleep 15
+
+      - name: Poll Vercel deployment status
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHORT: ${{ github.sha }}
+        run: |
+          # Fail fast if secrets are missing
+          if [ -z "$VERCEL_PROJECT_ID" ] || [ -z "$VERCEL_TOKEN" ]; then
+            echo "::warning::VERCEL_PROJECT_ID or VERCEL_TOKEN not set — skipping deploy monitor"
+            exit 0
+          fi
+
+          COMMIT_SHORT="${COMMIT_SHA:0:7}"
+          API="https://api.vercel.com/v13/deployments"
+          MAX_ATTEMPTS=30         # 30 × 10s = 5 min budget
+          ATTEMPT=0
+
+          echo "::group::Polling Vercel for deploy matching commit ${COMMIT_SHORT}…"
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep 10
+
+            RESP=$(curl -sS -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "$API?projectId=$VERCEL_PROJECT_ID&meta=githubCommitSha=$COMMIT_SHA&limit=1&state=ERROR,READY,CANCELED")
+
+            STATE=$(echo "$RESP" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+            DEPLOY_URL=$(echo "$RESP" | grep -o '"url":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+            if [ -z "$STATE" ]; then
+              echo "  [$ATTEMPT/$MAX_ATTEMPTS] no deploy found yet…"
+              continue
+            fi
+
+            echo "  [$ATTEMPT/$MAX_ATTEMPTS] state=${STATE}"
+
+            case "$STATE" in
+              READY)
+                echo "::notice::Deploy ${DEPLOY_URL:-unknown} succeeded"
+                break
+                ;;
+              ERROR)
+                echo "::error::Deploy ${DEPLOY_URL:-unknown} FAILED"
+                if [ -n "$NTFY_TOPIC" ]; then
+                  curl -sS -d "Build failed: ${COMMIT_SHORT}" "https://ntfy.sh/${NTFY_TOPIC}" || true
+                fi
+                exit 1
+                ;;
+              CANCELED)
+                echo "::notice::Deploy ${DEPLOY_URL:-unknown} was cancelled"
+                break
+                ;;
+              *)
+                # Still building / queued / initializing — keep polling
+                ;;
+            esac
+          done
+
+          if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+            echo "::warning::Timed out after ${MAX_ATTEMPTS} attempts — deploy may still be running"
+          fi
+
+          echo "::endgroup::"
