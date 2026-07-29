@@ -1,6 +1,6 @@
 // Enry Lab — Overnight Experiment Runner
 //
-// Committed into a scratch repo in the enry-lab-experiments org as
+// Committed into a disposable scratch repo by the dispatch route as
 // `.enry-overnight/exp.mjs`. Dispatched via workflow_dispatch with a per-run
 // token. Runs autonomously: explores the idea, tests small prototypes, and
 // reports back to enry.agent's /api/lab/overnight/ingest.

@@ -118,7 +118,6 @@ export default function BlackMarketPage() {
         body: JSON.stringify({
           title: `Evaluate ${entry.name}`,
           description: `Black Market community model (${entry.hfId}). ${entry.description}`,
-          scratch_repo_owner: 'enry-lab-experiments',
           scratch_repo_name: `eval-${repoSlug}`,
         }),
       })

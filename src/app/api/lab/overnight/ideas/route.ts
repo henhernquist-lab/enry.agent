@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
+import { authenticatedLogin } from '@/lib/lab/overnight-provision'
 import { insertOvernightIdea, getOvernightIdeas, updateOvernightIdea, deleteOvernightIdea } from '@/lib/lab/db'
 
 export const maxDuration = 10
@@ -28,12 +29,21 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const title = String(body.title ?? '').trim()
   const description = String(body.description ?? '').trim()
-  const scratchRepoOwner = String(body.scratch_repo_owner ?? '').trim()
   const scratchRepoName = String(body.scratch_repo_name ?? '').trim()
 
   if (!title) return Response.json({ error: 'Title is required' }, { status: 400 })
-  if (!scratchRepoOwner) return Response.json({ error: 'scratch_repo_owner is required' }, { status: 400 })
   if (!scratchRepoName) return Response.json({ error: 'scratch_repo_name is required' }, { status: 400 })
+
+  // Owner is optional and advisory. Callers used to hardcode an org that had
+  // never been created, so every idea recorded an unreachable location; the
+  // connected GitHub account is the honest default. Dispatch re-resolves this
+  // anyway and records where the repo actually landed.
+  const githubToken = (session as { githubToken?: string } | null)?.githubToken
+  const requestedOwner = String(body.scratch_repo_owner ?? '').trim()
+  const scratchRepoOwner = requestedOwner || (githubToken ? (await authenticatedLogin(githubToken)) ?? '' : '')
+  if (!scratchRepoOwner) {
+    return Response.json({ error: 'Could not determine a repo owner. Connect GitHub, or pass scratch_repo_owner.' }, { status: 400 })
+  }
 
   const idea = await insertOvernightIdea(uid, {
     title,

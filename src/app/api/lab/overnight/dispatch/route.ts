@@ -2,15 +2,24 @@ import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { getOvernightIdeas, insertOvernightRun, updateOvernightIdea, updateOvernightRun, reclaimStaleOvernightRuns } from '@/lib/lab/db'
 import { createHash, randomUUID } from 'node:crypto'
+import { checkWriteScope } from '@/lib/github'
+import { ensureScratchRepo } from '@/lib/lab/overnight-provision'
+import { OVERNIGHT_WORKFLOW_FILE } from '@/lib/lab/overnight-assets'
 
-export const maxDuration = 20
+// Provisioning can create a repo and push a commit before the dispatch itself,
+// so this needs more headroom than the old dispatch-only 20s.
+export const maxDuration = 60
 
 const BASE = 'https://api.github.com'
-const SCRATCH_ORG = process.env.ENRY_LAB_SCRATCH_ORG || 'enry-lab-experiments'
+// A scratch repo's owner is incidental to the experiment, so there is no
+// default org here: unset means "the connected GitHub account". The previous
+// default pointed at an org that had never been created, which is what every
+// dispatch 404'd on.
+const SCRATCH_OWNER_OVERRIDE = process.env.ENRY_LAB_SCRATCH_ORG?.trim() || ''
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 async function ghDispatch(token: string, owner: string, repo: string, ref: string, inputs: Record<string, string>) {
-  const res = await fetch(`${BASE}/repos/${owner}/${repo}/actions/workflows/enry-overnight.yml/dispatches`, {
+  const res = await fetch(`${BASE}/repos/${owner}/${repo}/actions/workflows/${OVERNIGHT_WORKFLOW_FILE}/dispatches`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -53,12 +62,42 @@ export async function POST(req: Request) {
     idea = ideas[0]
   }
 
+  // Committing .github/workflows/* needs the 'workflow' scope. Check before
+  // creating anything, so a token that can't finish the job doesn't leave a
+  // half-provisioned repo and a failed run record behind.
+  const { scopes, error: scopeError } = await checkWriteScope(githubToken)
+  if (scopeError) return Response.json({ error: `Could not verify GitHub permissions: ${scopeError}` }, { status: 502 })
+  if (!scopes.includes('repo') || !scopes.includes('workflow')) {
+    return Response.json(
+      { error: 'missing_scope', message: "Overnight R&D needs the GitHub 'repo' and 'workflow' permissions to create a scratch repo and install its runner. Sign out and back in with GitHub to re-authorize." },
+      { status: 403 },
+    )
+  }
+
+  // Create the scratch repo and install the runner if they aren't there yet.
+  // This is the step that never existed: the idea record only stores a repo
+  // name, so without it the dispatch below targets a repo that was never made.
+  const provisioned = await ensureScratchRepo(
+    githubToken,
+    SCRATCH_OWNER_OVERRIDE || idea.scratch_repo_owner,
+    idea.scratch_repo_name,
+    `Golem overnight experiment: ${idea.title}`,
+  )
+  if (!provisioned.ok || !provisioned.owner || !provisioned.defaultBranch) {
+    return Response.json(
+      { error: provisioned.error ?? 'Could not provision the scratch repo', kind: provisioned.errorKind },
+      { status: 502 },
+    )
+  }
+
   // Generate a per-run dispatch token so the runner can call back
   const dispatchToken = `enry_overnight_${randomUUID()}`
   const tokenHash = createHash('sha256').update(dispatchToken).digest('hex')
 
-  // Create the run record
-  const repoFull = `${SCRATCH_ORG}/${idea.scratch_repo_name}`
+  // Record where the repo actually landed, which may not be where the idea
+  // asked for it — provisioning falls back to the connected account when the
+  // requested owner isn't one this token can create under.
+  const repoFull = `${provisioned.owner}/${idea.scratch_repo_name}`
   const run = await insertOvernightRun(uid, {
     idea_id: idea.id,
     scratch_repo_full: repoFull,
@@ -67,8 +106,9 @@ export async function POST(req: Request) {
 
   if (!run) return Response.json({ error: 'Failed to create run' }, { status: 500 })
 
-  // Dispatch to GitHub Actions
-  const { ok, status } = await ghDispatch(githubToken, SCRATCH_ORG, idea.scratch_repo_name, 'main', {
+  // Dispatch on the repo's real default branch — 'main' was hardcoded, which
+  // is a second 404 for any repo whose default branch is named otherwise.
+  const { ok, status } = await ghDispatch(githubToken, provisioned.owner, idea.scratch_repo_name, provisioned.defaultBranch, {
     run_id: run.id,
     idea_id: idea.id,
     idea_title: idea.title,
@@ -80,7 +120,7 @@ export async function POST(req: Request) {
   if (!ok) {
     await updateOvernightRun(run.id, {
       status: 'failed',
-      error: `GitHub dispatch failed (HTTP ${status}). Verify the repo ${repoFull} has the enry-overnight.yml workflow on its main branch.`,
+      error: `GitHub dispatch failed (HTTP ${status}) for ${repoFull} on ${provisioned.defaultBranch}. The repo and runner were provisioned, so this is the dispatch call itself.`,
       finished_at: new Date().toISOString(),
     })
     return Response.json({ error: `GitHub dispatch failed with status ${status}` }, { status: 502 })
@@ -91,5 +131,6 @@ export async function POST(req: Request) {
 
   return Response.json({
     run: { id: run.id, idea_id: idea.id, status: 'dispatched', scratch_repo_full: repoFull },
+    provisioned: { repo_created: provisioned.repoCreated, runner_committed: provisioned.filesCommitted, branch: provisioned.defaultBranch },
   })
 }

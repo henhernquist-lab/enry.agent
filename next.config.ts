@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   // as modules, so Vercel's tracer won't bundle them unless we force-include.
   outputFileTracingIncludes: {
     '/api/cruise/repos/enable': ['./cruise-runner/**'],
+    // Same arrangement for Overnight R&D — the dispatch route provisions the
+    // scratch repo by committing these into it.
+    '/api/lab/overnight/dispatch': ['./overnight-runner/**'],
   },
   // Route renames (Golem rebrand): redirect old paths to new ones
   // so existing bookmarks/shared links don't 404.

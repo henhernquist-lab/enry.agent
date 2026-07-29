@@ -445,8 +445,8 @@ export default function LabPage() {
         </h2>
         <div className="rounded border border-border bg-surface-secondary p-4">
           <p className="mb-3 font-mono text-[11px] text-muted-foreground">
-            Park ideas here. Dispatch them to disposable scratch repos in the{' '}
-            <code className="rounded bg-surface-elevated px-1 py-0.5 text-[10px]">enry-lab-experiments</code> org.
+            Park ideas here. Dispatch creates a private, disposable scratch repo
+            under your connected GitHub account and installs the runner into it.
             The runner explores, tests, and reports back. <strong>Never touches real repos.</strong>
           </p>
 
@@ -992,7 +992,6 @@ function OvernightIdeaForm({ onCreated }: { onCreated: () => void }) {
         body: JSON.stringify({
           title: title.trim(),
           description: (description.trim() || title.trim()),
-          scratch_repo_owner: 'enry-lab-experiments',
           scratch_repo_name: repoName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50),
         }),
       })
@@ -1040,7 +1039,6 @@ function OvernightIdeaForm({ onCreated }: { onCreated: () => void }) {
             className="w-full rounded border border-border bg-[#080808] px-2 py-1.5 font-mono text-[11px] text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none disabled:opacity-40"
           />
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[9px] text-muted-foreground/50 flex-shrink-0">enry-lab-experiments/</span>
             <input
               type="text"
               value={repoName}
