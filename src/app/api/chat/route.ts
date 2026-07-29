@@ -14,6 +14,7 @@ import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { nimClientFor, isCommunityModelId, communityRouteParam, warmCommunityModel } from '@/lib/nim'
 import { safeStreamErrorMessage } from '@/lib/stream-error'
+import { budgetSearchResults } from '@/lib/tool-budget'
 import { logUsage } from '@/lib/usage/log'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { monidDiscover, monidRun } from '@/lib/monid'
@@ -42,209 +43,6 @@ const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY ?? '' })
 // ─── Focus Mode — controls which tools are available ────────────────────
 type FocusMode = 'all' | 'memory_only' | 'web_only' | 'repo_only'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: string | undefined, uid: string | null): Record<string, any> {
-  const enableMemory = mode === 'all' || mode === 'memory_only'
-  const enableWeb = mode === 'all' || mode === 'web_only'
-  const enableRepo = mode === 'all' || mode === 'repo_only'
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tools: Record<string, any> = {}
-
-  if (enableWeb) {
-    tools.web_search = tool({
-      description: 'Search the web for current, real-time information. Use this for news, prices, recent events, people, or anything that may have changed.',
-      inputSchema: z.object({
-        query: z.string().describe('The search query'),
-        max_results: z.number().optional().default(5).describe('Number of results to return'),
-      }),
-      execute: async ({ query, max_results }) => {
-        const response = await tavilyClient.search(query, { maxResults: max_results, includeAnswer: true })
-        return { answer: response.answer, results: response.results.map(r => ({ title: r.title, url: r.url, content: r.content })) }
-      },
-    })
-  }
-
-  if (enableMemory) {
-    tools.save_memory = tool({
-      description: 'Save an important fact about the user to long-term memory.',
-      inputSchema: z.object({ content: z.string().describe('The fact or information to remember') }),
-      execute: async ({ content }) => {
-        if (!googleId) return { success: false, error: 'Not authenticated.' }
-        const result = await saveMemory(googleId, content)
-        if (result.error) return { success: false, error: result.error }
-        return { success: true, id: result.id, content }
-      },
-    })
-
-    tools.recall_memory = tool({
-      description: "Search the user's long-term memory for relevant past information.",
-      inputSchema: z.object({
-        query: z.string().describe('What to search for in memory'),
-        limit: z.number().optional().default(5).describe('Maximum number of results'),
-      }),
-      execute: async ({ query, limit }) => {
-        if (!googleId) return { results: [], error: 'Not authenticated.' }
-        const result = await searchMemories(googleId, query, limit)
-        if (result.error) return { results: [], error: result.error }
-        return { results: result.results }
-      },
-    })
-  }
-
-  if (enableRepo && githubToken) {
-    tools.github_list_repos = tool({
-      description: "List Henry's GitHub repositories.",
-      inputSchema: z.object({}),
-      execute: async () => {
-        const { repos, error } = await listRepos(githubToken)
-        if (error) return { repos: [], error }
-        return { repos: repos.map(r => ({ name: r.full_name, private: r.private, description: r.description, language: r.language, stars: r.stargazers_count, updated_at: r.updated_at, url: r.html_url })) }
-      },
-    })
-
-    tools.github_read_file = tool({
-      description: 'Read a file from a GitHub repo, or list directory contents.',
-      inputSchema: z.object({
-        owner: z.string().describe('Repository owner'),
-        repo: z.string().describe('Repository name'),
-        path: z.string().describe('File or directory path'),
-      }),
-      execute: async ({ owner, repo, path }) => {
-        const { content, error } = await getFileContent(githubToken, owner, repo, path)
-        if (error) return { content: null, error }
-        const truncated = content && content.length > 20000 ? content.slice(0, 20000) + `\n\n[… truncated at 20 000 chars — ${content.length} total]` : content
-        return { content: truncated }
-      },
-    })
-
-    tools.github_create_issue = tool({
-      description: 'Create a new GitHub issue.',
-      inputSchema: z.object({ owner: z.string(), repo: z.string(), title: z.string(), body: z.string() }),
-      execute: async ({ owner, repo, title, body }) => {
-        const { issue, error } = await createIssue(githubToken, owner, repo, title, body)
-        if (error) return { issue: null, error }
-        return { issue: { number: issue!.number, title: issue!.title, url: issue!.html_url } }
-      },
-    })
-
-    tools.github_list_issues = tool({
-      description: 'List open issues on a GitHub repository.',
-      inputSchema: z.object({ owner: z.string(), repo: z.string() }),
-      execute: async ({ owner, repo }) => {
-        const { issues, error } = await listIssues(githubToken, owner, repo)
-        if (error) return { issues: [], error }
-        return { issues: issues.map(i => ({ number: i.number, title: i.title, labels: i.labels.map(l => l.name), created_at: i.created_at, url: i.html_url })) }
-      },
-    })
-
-    tools.github_create_branch = tool({
-      description: 'Create a new branch off the default branch.',
-      inputSchema: z.object({
-        owner: z.string(), repo: z.string(), branch_name: z.string(),
-        confirm: z.boolean().describe('Set false first to preview, true only after user confirms.'),
-      }),
-      execute: async ({ owner, repo, branch_name, confirm }) => {
-        if (!confirm) return { status: 'preview', action: 'create_branch', repo: `${owner}/${repo}`, branch: branch_name, summary: `Create branch "${branch_name}" in ${owner}/${repo}.` }
-        const result = await createBranch(githubToken, owner, repo, branch_name)
-        if (!result.ok) return { status: 'error', error: result.error }
-        if (uid) {
-          const payload: GitHubActionPayload = { action: 'create_branch', repo: `${owner}/${repo}`, branch: branch_name, summary: `Created branch "${branch_name}"`, timestamp: new Date().toISOString() }
-          ;(async () => { const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `Branch: ${branch_name}`, payload }); if (auditError) console.error('[chat] audit insert failed:', auditError) })()
-        }
-        return { status: 'ok', repo: `${owner}/${repo}`, branch: branch_name }
-      },
-    })
-
-    tools.github_create_file = tool({
-      description: 'Create a new file on a branch.',
-      inputSchema: z.object({
-        owner: z.string(), repo: z.string(), path: z.string(), content: z.string(), message: z.string(), branch: z.string(),
-        confirm: z.boolean().describe('Set false first to preview, true only after user confirms.'),
-      }),
-      execute: async ({ owner, repo, path, content, message, branch, confirm }) => {
-        if (!confirm) return { status: 'preview', action: 'create_file', repo: `${owner}/${repo}`, branch, file_path: path, content_summary: content.slice(0, 500) + (content.length > 500 ? '…' : ''), message, summary: `Create "${path}" on "${branch}" in ${owner}/${repo}.` }
-        const result = await createFile(githubToken, owner, repo, path, content, message, branch)
-        if (!result.ok) return { status: 'error', error: result.error }
-        if (uid) {
-          const payload: GitHubActionPayload = { action: 'create_file', repo: `${owner}/${repo}`, branch, file_path: path, summary: `Created "${path}"`, timestamp: new Date().toISOString() }
-          ;(async () => { const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `Create: ${path}`, payload }); if (auditError) console.error('[chat] audit insert failed:', auditError) })()
-        }
-        return { status: 'ok', repo: `${owner}/${repo}`, branch, file_path: path, url: result.url }
-      },
-    })
-
-    tools.github_update_file = tool({
-      description: 'Edit an existing file on a branch.',
-      inputSchema: z.object({
-        owner: z.string(), repo: z.string(), path: z.string(), content: z.string(), message: z.string(), branch: z.string(),
-        confirm: z.boolean().describe('Set false first to preview, true only after user confirms.'),
-      }),
-      execute: async ({ owner, repo, path, content, message, branch, confirm }) => {
-        if (!confirm) return { status: 'preview', action: 'update_file', repo: `${owner}/${repo}`, branch, file_path: path, content_summary: content.slice(0, 500) + (content.length > 500 ? '…' : ''), message, summary: `Update "${path}" on "${branch}" in ${owner}/${repo}.` }
-        const result = await updateFile(githubToken, owner, repo, path, content, message, branch)
-        if (!result.ok) return { status: 'error', error: result.error }
-        if (uid) {
-          const payload: GitHubActionPayload = { action: 'update_file', repo: `${owner}/${repo}`, branch, file_path: path, summary: `Updated "${path}"`, timestamp: new Date().toISOString() }
-          ;(async () => { const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `Update: ${path}`, payload }); if (auditError) console.error('[chat] audit insert failed:', auditError) })()
-        }
-        return { status: 'ok', repo: `${owner}/${repo}`, branch, file_path: path, url: result.url }
-      },
-    })
-
-    tools.github_create_pull_request = tool({
-      description: 'Open a PR from a working branch into base.',
-      inputSchema: z.object({
-        owner: z.string(), repo: z.string(), title: z.string(), body: z.string(), head_branch: z.string(), base_branch: z.string().default('main'),
-        confirm: z.boolean().describe('Set false first to preview, true only after user confirms.'),
-      }),
-      execute: async ({ owner, repo, title, body, head_branch, base_branch, confirm }) => {
-        if (!confirm) return { status: 'preview', action: 'create_pr', repo: `${owner}/${repo}`, title, body, head: head_branch, base: base_branch, summary: `Open PR: "${title}" from "${head_branch}" → "${base_branch}"` }
-        const result = await createPR(githubToken, owner, repo, title, body, head_branch, base_branch)
-        if (!result.ok) return { status: 'error', error: result.error }
-        if (uid) {
-          const payload: GitHubActionPayload = { action: 'create_pr', repo: `${owner}/${repo}`, branch: head_branch, pr_url: result.url, summary: `Opened PR #${result.number}: "${title}"`, timestamp: new Date().toISOString() }
-          ;(async () => { const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `PR #${result.number}: ${title}`, payload }); if (auditError) console.error('[chat] audit insert failed:', auditError) })()
-        }
-        return { status: 'ok', repo: `${owner}/${repo}`, pr_url: result.url, number: result.number, head: head_branch, base: base_branch }
-      },
-    })
-
-    tools.github_create_repo = tool({
-      description: "Create a brand new GitHub repository.",
-      inputSchema: z.object({
-        name: z.string(), description: z.string(), private: z.boolean().default(true),
-        confirm: z.boolean().describe('Set false first to preview, true only after user confirms.'),
-      }),
-      execute: async ({ name, description, private: isPrivate, confirm }) => {
-        if (!confirm) return { status: 'preview', action: 'create_repo', name, description, private: isPrivate, summary: `Create ${isPrivate ? 'private' : 'public'} repo "${name}"` }
-        const result = await createRepo(githubToken, name, description, isPrivate)
-        if (!result.ok) return { status: 'error', error: result.error }
-        if (uid) {
-          const payload: GitHubActionPayload = { action: 'create_repo', repo: name, summary: `Created ${isPrivate ? 'private' : 'public'} repo "${name}"`, timestamp: new Date().toISOString() }
-          ;(async () => { const { error: auditError } = await supabase.from('resources').insert({ user_id: uid, type: 'github_action', source: 'user', title: `Repo: ${name}`, payload }); if (auditError) console.error('[chat] audit insert failed:', auditError) })()
-        }
-        return { status: 'ok', name, url: result.url, private: isPrivate }
-      },
-    })
-
-    tools.github_read_enryrules = tool({
-      description: 'Read .enryrules from a repo — project-specific conventions, naming patterns, "always/never" rules. Call before editing any repo file. Returns empty if the repo has no .enryrules file.',
-      inputSchema: z.object({
-        owner: z.string().describe('Repository owner'),
-        repo: z.string().describe('Repository name'),
-      }),
-      execute: async ({ owner, repo }) => {
-        const { content, error } = await getFileContent(githubToken, owner, repo, '.enryrules')
-        if (error && error.includes('404')) return { content: null, exists: false, note: 'No .enryrules file in this repo. Proceed with standard conventions.' }
-        if (error) return { content: null, error }
-        return { content, exists: true }
-      },
-    })
-  }
-
-  return tools
-}
 
 // ─── Context Compaction ────────────────────────────────────────────────
 // Delegated to src/lib/compaction.ts — extracts key decisions, files
@@ -266,7 +64,16 @@ export async function POST(req: Request) {
   // against a rolling per-minute allowance even when the reply is short, so a
   // flat 4096 on a 6000 TPM model 413s on a one-word message. Registry value
   // wins; 4096 stays the default for everything else.
-  const modelMaxOutputTokens = getModelMeta(selectedModel)?.maxOutputTokens ?? 4096
+  const modelMeta = getModelMeta(selectedModel)
+  const modelMaxOutputTokens = modelMeta?.maxOutputTokens ?? 4096
+  // A tool-calling turn pays the reservation once per step, not once per turn,
+  // so it needs a smaller one than a plain reply does. Falls back to the plain
+  // budget for models with no tool-specific value.
+  const modelToolTurnOutputTokens = modelMeta?.maxOutputTokensWithTools ?? modelMaxOutputTokens
+  // Withheld only where a round-trip provably cannot fit the per-minute budget
+  // (see supportsTools in the registry) — offering a tool that always dies on
+  // the follow-up request is worse than not offering it.
+  const modelSupportsTools = modelMeta?.supportsTools !== false
 
   // HF Inference Providers cold-start less-popular models; warm it here (with
   // retries) so the first message doesn't error mid-stream. No-op otherwise.
@@ -482,8 +289,23 @@ export async function POST(req: Request) {
       inputSchema: z.object({ query: z.string().describe('The search query'), max_results: z.number().optional().default(5).describe('Number of results to return') }),
       execute: async ({ query, max_results }: { query: string; max_results?: number }) => {
         const response = await tavilyClient.search(query, { maxResults: max_results, includeAnswer: true })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return { answer: response.answer, results: response.results.map((r: any) => ({ title: r.title, url: r.url, content: r.content })) }
+        // Clip before returning, not after: whatever this hands back is re-sent
+        // on every remaining step of the turn. A full 5-result Tavily response
+        // is ~1489 tokens, enough on its own to push a Groq follow-up past the
+        // per-minute admission check.
+        const budgeted = budgetSearchResults(
+          response.answer,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          response.results.map((r: any) => ({ title: r.title, url: r.url, content: r.content })),
+          getModelMeta(selectedModel)?.toolResultMaxChars,
+        )
+        return {
+          answer: budgeted.answer,
+          results: budgeted.results,
+          ...(budgeted.truncated
+            ? { note: 'Snippets were shortened to fit this model\'s context budget. Use the URLs if you need the full text.' }
+            : {}),
+        }
       },
     })
   }
@@ -653,6 +475,11 @@ export async function POST(req: Request) {
     },
   })
 
+  // Gate at the call site rather than at each `allTools.x =` above, so the set
+  // stays defined in one place and can't drift as tools are added.
+  const activeTools = modelSupportsTools ? allTools : {}
+  const usingTools = Object.keys(activeTools).length > 0
+
   const chatStartedAt = Date.now()
   const result = streamText({
     model: chatClient.chat(modelParam),
@@ -777,7 +604,7 @@ ${userProfile ? `\n${userProfile}` : ''}`,
     ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
       providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
     } : {}),
-    tools: allTools,
+    tools: activeTools,
     // Inject recovery continuation into the system prompt when recovering
     // Same reasoning as the multi-skill call above: unset here defaults to
     // maxRetries 2, and this path additionally runs up to 7 tool-calling
@@ -789,7 +616,7 @@ ${userProfile ? `\n${userProfile}` : ''}`,
     // See the multi-skill call above — an uncapped max_tokens request
     // exceeds what the free-tier OpenRouter account (DeepSeek's provider)
     // can afford per call and fails before generating anything.
-    maxOutputTokens: modelMaxOutputTokens,
+    maxOutputTokens: usingTools ? modelToolTurnOutputTokens : modelMaxOutputTokens,
     onError: ({ error }) => {
       console.error('streamText error:', error)
     },

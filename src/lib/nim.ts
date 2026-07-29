@@ -50,6 +50,32 @@ export interface ModelMeta {
    * Omitted = use the route's default.
    */
   maxOutputTokens?: number
+  /**
+   * Output reservation to use when tools are attached, overriding
+   * `maxOutputTokens` for that turn.
+   *
+   * A tool-calling turn is not one request — the SDK re-sends the entire
+   * context once per step, and Groq both admits and debits on
+   * `prompt + max_tokens`, not on tokens actually produced. So the reservation
+   * is paid in full again on every step while the prompt only grows, and an
+   * unused output budget is what starves the follow-up request.
+   *
+   * Measured on this route: 2408 tokens of system prompt + 1343 of tool schemas
+   * = 3791 fixed per step, and a 5-result Tavily response adds 1489 more. On the
+   * 70B that made step 2 ask for 5280 + 4096 = 9376 against ~8193 remaining —
+   * the 429 Henry hit ~21s into a web search.
+   */
+  maxOutputTokensWithTools?: number
+  /**
+   * Cap on the characters of a single tool result fed back into context.
+   * Sized from the model's TPM headroom, since every later step re-sends it.
+   */
+  toolResultMaxChars?: number
+  /**
+   * False when a tool round-trip cannot fit the model's per-minute budget at
+   * all, so tools are withheld rather than offered and then failing mid-call.
+   */
+  supportsTools?: boolean
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
@@ -126,14 +152,21 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Fast, capable generalist on Groq.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
-    // 12000 TPM — the default output budget fits comfortably.
+    // 12000 TPM — the default output budget fits comfortably for a plain reply.
     maxOutputTokens: 4096,
+    // But a search round-trip is two requests, and Groq can debit the full
+    // reservation rather than the tokens actually produced — so size to that
+    // worst case: 2×3791 + results + 2×reservation ≤ 12000 leaves 4418 to split.
+    // 1024 + a 2800-char cap (~800 tokens) lands at 10430, clearing with ~1570
+    // to spare. 2048 overruns the budget on the pessimistic accounting.
+    maxOutputTokensWithTools: 1024,
+    toolResultMaxChars: 2800,
   },
   {
     id: 'llama-3.1-8b-instant',
     label: 'Llama 3.1 8B Instant',
     company: 'Groq',
-    description: 'Ultra-fast lightweight model on Groq.',
+    description: 'Ultra-fast lightweight model on Groq. Chat only — no tools or web search.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'low',
     // Lowest TPM of the lineup (6000/min). At the route's default 4096 a single
@@ -142,6 +175,18 @@ export const MODEL_LIST: ModelMeta[] = [
     // rejected for its content. 1024 is ample for this model's short-reply role
     // and leaves ~5000/min for prompt and follow-up turns.
     maxOutputTokens: 1024,
+    // No tools — a tool round-trip cannot fit this model's budget at any
+    // setting. The fixed overhead of a tool-calling turn (2408 tokens of system
+    // prompt + 1343 of tool schemas = ~3791) is already 63% of a 6000 TPM
+    // minute, and Groq debits prompt + reservation, so step 1 alone spends
+    // 4823 and leaves 1177. Step 2 must re-send that same ~3799-token prompt,
+    // so it cannot be admitted even with zero-length results.
+    // Measured on a 150s-rested window: step 1 200, step 2 429 with the search
+    // results emptied entirely. Truncation and reservation tuning both bottom
+    // out above the limit — only a smaller prompt or fewer tools would help.
+    // Offering tools here only produces a call that always dies on the
+    // follow-up, so they're withheld and the model stays a fast chat-only one.
+    supportsTools: false,
   },
   {
     id: 'openai/gpt-oss-120b',
@@ -154,6 +199,12 @@ export const MODEL_LIST: ModelMeta[] = [
     // 8000 TPM — headroom for a longer reply than the 8B, but not the full
     // 4096 default once prompt and tools are counted.
     maxOutputTokens: 2048,
+    // Tightest of the three. 2×3063 + results + 2×reservation ≤ 8000 leaves
+    // only 1874 to split, so the reservation has to drop to 512: a tool turn
+    // here buys a short answer or none at all. Raising this is what makes a
+    // search 429 on this model.
+    maxOutputTokensWithTools: 512,
+    toolResultMaxChars: 1500,
   },
 ]
 
