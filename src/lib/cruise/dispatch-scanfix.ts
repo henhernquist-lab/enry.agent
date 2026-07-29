@@ -1,6 +1,7 @@
 import { randomUUID, randomBytes, createHash } from 'node:crypto'
 import { supabase } from '@/lib/supabase'
 import { getDefaultBranch, dispatchGoalRun } from '@/lib/cruise/github-actions'
+import { notify } from '@/lib/notify'
 import {
   SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG,
   type CruiseRepo, type ScanfixConfig, type CruiseScanfixCategory, type CruiseGoalTrigger,
@@ -129,6 +130,9 @@ export async function createScanfixRun(opts: {
     await supabase.from('cruise_goal_runs').update({ status: 'failed', error: dispatchErr, finished_at: new Date().toISOString() }).eq('id', goalRunId)
     return { ok: false, skipped: false, reason: dispatchErr ?? 'dispatch failed', status: 502 }
   }
+
+  // Fire-and-forget notification: a new automated branch was created
+  void notify(`New branch: ${branchName} (created by Cruise/Rounds)`)
 
   return { ok: true, goalRunId, branch: branchName }
 }
