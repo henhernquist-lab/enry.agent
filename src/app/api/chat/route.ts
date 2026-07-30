@@ -312,7 +312,12 @@ export async function POST(req: Request) {
   }
 
   const focusMode: FocusMode = ['all', 'memory_only', 'web_only', 'repo_only'].includes(body.focusMode) ? body.focusMode : 'all'
-  const reasoningDepth: string = ['off','summary','full'].includes(body.reasoningDepth) ? body.reasoningDepth : 'off'
+  // Chat's Think toggle is on/off only now — 'summary' was a dead third
+  // state (identical upstream request to 'full', just a client-side 300-char
+  // truncation of the trace). Kept as a string rather than boolean since
+  // modelSupportsReasoning() and the extra_body gate below both key off the
+  // 'off' sentinel — smaller diff than threading a boolean through.
+  const reasoningDepth: string = ['off','full'].includes(body.reasoningDepth) ? body.reasoningDepth : 'off'
 
   // Session focus (domain scope — orthogonal to focusMode/source scope).
   // Accepts the compact wire form "drive" | "learn" | "school" | "none"
@@ -364,6 +369,20 @@ export async function POST(req: Request) {
   const focusDirective = focusMode !== 'all'
     ? `\n\nFOCUS MODE: ${focusMode.replace(/_/g, ' ').toUpperCase()} — you are restricted to only the tools available in this mode. Do not attempt to use tools outside this scope.`
     : ''
+
+  // Chat effort (Low/Medium/High) — sent by the client as `effort` from the
+  // model picker's effort dropdown. Previously this field reached the server
+  // and was silently dropped: it never touched the system prompt, token
+  // budget, or any provider option, so the dropdown was cosmetic. This wires
+  // it to response depth/verbosity via a system-prompt directive.
+  const EFFORT_DIRECTIVES = {
+    low: '\n\nEFFORT: LOW — keep every response as short as the question allows. One or two sentences for a factual ask, a short paragraph at most for anything else. Skip the plan/verify/report ceremony below unless Henry explicitly asks for depth.',
+    medium: '\n\nEFFORT: MEDIUM (default) — match response length to the actual complexity of the ask. A simple question gets a short, direct answer. Only go long, structured, or multi-section when the request is genuinely multi-part or explicitly asks for detail.',
+    high: "\n\nEFFORT: HIGH — Henry wants room to think here. When a question is genuinely complex, ambiguous, or multi-part, give it the full treatment: structure, numbered steps, tradeoffs, edge cases. This permits depth, it doesn't force it — a simple question still gets a simple answer.",
+  } as const
+  const effortLevel: keyof typeof EFFORT_DIRECTIVES =
+    body.effort === 'low' || body.effort === 'high' ? body.effort : 'medium'
+  const effortDirective = EFFORT_DIRECTIVES[effortLevel]
 
   // ─── Multi-skill mode ────────────────────────────────────────────────
   const multiSlugs: string[] = Array.isArray(skillSlugs) && skillSlugs.length > 0
@@ -421,7 +440,7 @@ export async function POST(req: Request) {
     const skillStartedAt = Date.now()
     const skillResult = streamText({
       model: chatClient.chat(modelParam),
-      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}${isRecovery ? recoverySystemPrompt : ''}`,
+      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}${effortDirective}${isRecovery ? recoverySystemPrompt : ''}`,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
@@ -670,10 +689,13 @@ Direct, capable, no filler. Never open with "Great question," "I can help with t
 Lead with the outcome. First sentence answers "what happened" or "what did you find." Reasoning and detail come after.
 Match Henry's tone: casual, fast, willing to curse a little when it fits, no corporate voice.
 Readability > brevity. Don't compress into fragments — write real sentences. But cut every sentence that doesn't earn its place.
+Response length matches the actual complexity of the ask, not a default posture. A simple factual question, a quick summary, or "what does X mean" gets a few sentences and stops — no forced structure, no unprompted extra angles, no restating the question back. Save full depth (multi-section breakdowns, exhaustive coverage, proactive edge-case analysis) for requests that are genuinely multi-part, ambiguous, or explicitly ask for it ("go deep," "give me everything," "walk me through it"). When in doubt, answer short — Henry will ask for more if he wants it, and a short answer can end with a one-line opening for that ("want the full breakdown?") when there's clearly more to say, skipped otherwise.
 Code references use \`file_path:line_number\` format for clickthrough.
 Formatting minimalism: use bold, headers, and bullets ONLY when the content is genuinely multi-dimensional (comparing options, listing distinct steps). Prose is the default, not the exception.
 Never use bullets to soften a refusal, a failure report, or bad news. State it directly in a sentence.
 Never use em-dash-heavy corporate cadence. That's the AI-slop tell.
+
+Trivial asks — a quick fact, a one-line summary, a yes/no, "what does this mean" — just get answered directly. No loop, no plan, no phase headers.
 
 Every non-trivial task follows this loop. You do not skip phases.
 
@@ -769,7 +791,7 @@ GITHUB WRITE SAFETY RAILS — these are non-negotiable, enforced server-side:
 5. If Henry says no or asks for changes, do not execute. Adjust and re-preview.
 
 Bound strictly to the above. If a task needs a tool not on this list, state that instead of improvising.
-${focusDirective}${sessionFocusDirective}
+${focusDirective}${sessionFocusDirective}${effortDirective}
 ${userProfile ? `\n${userProfile}` : ''}`,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     messages: finalMessages as any,

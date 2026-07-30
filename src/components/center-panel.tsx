@@ -45,7 +45,7 @@ import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
 import { ChatToolSteps } from './chat-tool-steps'
 import { SkillFeedbackBar } from './skill-feedback-bar'
-import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
+import { parseReasoningTrace, parseStreamingReasoning, modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS, filterSkillsByDomain } from '@/lib/skills/registry'
 import { detectRelevantSkills } from '@/lib/skills/auto-trigger'
 import { listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
@@ -131,9 +131,9 @@ type PickerModel = { id: string; label: string; company: string; desc: string; c
 // ─── Chatbot effort (3 levels, separate from coding agent's 5) ───
 
 const CHAT_EFFORTS = [
-  { id: 'low' as const,    label: 'Low',    desc: 'Minimal reasoning, fast' },
-  { id: 'medium' as const,  label: 'Medium', desc: 'Default reasoning depth' },
-  { id: 'high' as const,    label: 'High',   desc: 'Maximum reasoning, slower' },
+  { id: 'low' as const,    label: 'Low',    desc: 'Short, direct answers only' },
+  { id: 'medium' as const,  label: 'Medium', desc: 'Length matches the question (default)' },
+  { id: 'high' as const,    label: 'High',   desc: 'Allows full depth on complex asks' },
 ]
 
 type ChatEffortId = typeof CHAT_EFFORTS[number]['id']
@@ -343,10 +343,17 @@ export function CenterPanel({
   ]
   const currentFocus = FOCUS_MODES.find((f) => f.id === focusMode)!
 
-  // Reasoning trace depth — how much model thinking to surface
-  const [reasoningDepth, setReasoningDepth] = useState<'off' | 'summary' | 'full'>('off')
+  // Reasoning trace visibility — on/off only. Was a 3-state off/summary/full
+  // dropdown, but summary vs full sent an identical upstream request
+  // (enable_thinking:true either way) — "summary" was purely a client-side
+  // 300-char truncation of the same trace, not a real depth control. Collapsed
+  // to the two states that actually differ. Only meaningful for models with
+  // supportsReasoning: true (see modelSupportsReasoning below) — the button is
+  // hidden entirely for the rest so it can't be toggled into a dead param.
+  const [reasoningDepth, setReasoningDepth] = useState<'off' | 'full'>('off')
   const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false)
   const reasoningDropdownRef = useRef<HTMLDivElement>(null)
+  const reasoningSupported = modelSupportsReasoning(model)
 
   // Context compaction state — set from X-Context-Compacted response header
   // Populated by the custom fetch in the transport, synced after useChat below
@@ -355,8 +362,7 @@ export function CenterPanel({
 
   const REASONING_DEPTHS = [
     { id: 'off' as const, label: 'Think: Off', desc: 'Show only the final answer' },
-    { id: 'summary' as const, label: 'Think: Brief', desc: 'Show a condensed reasoning summary' },
-    { id: 'full' as const, label: 'Think: Full', desc: 'Show the complete reasoning trace' },
+    { id: 'full' as const, label: 'Think: On', desc: 'Show the reasoning trace' },
   ]
   const currentReasoning = REASONING_DEPTHS.find((r) => r.id === reasoningDepth)!
 
@@ -748,6 +754,7 @@ export function CenterPanel({
   const handleModelSelect = (id: ModelId) => {
     setModel(id)
     setChatEffort(CHAT_MODEL_DEFAULTS[id] ?? 'medium')
+    if (!modelSupportsReasoning(id)) setReasoningDepth('off')
     onModelChange(id)
     setModelOpen(false)
   }
@@ -1316,37 +1323,41 @@ export function CenterPanel({
 
           {/* Right group: Think · Focus · Effort */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {/* Reasoning Depth */}
-            <div ref={reasoningDropdownRef} className="relative flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => setReasoningMenuOpen((o) => !o)}
-                className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
-                  reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
-                }`}
-                title={currentReasoning.desc}
-              >
-                <Brain className="h-3 w-3" />
-                {reasoningDepth === 'off' ? 'Think' : currentReasoning.label.replace('Think: ', '')}
-              </button>
-              {reasoningMenuOpen && (
-                <div className="absolute top-full right-0 z-50 mt-1 w-48 border border-border bg-surface-secondary shadow-xl">
-                  {REASONING_DEPTHS.map((r) => (
-                    <button
-                      type="button"
-                      key={r.id}
-                      onClick={() => { setReasoningDepth(r.id); setReasoningMenuOpen(false) }}
-                      className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
-                        reasoningDepth === r.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      <span className="font-mono text-[10px] font-semibold">{r.label}</span>
-                      <span className="font-sans text-[9px] text-muted-foreground leading-tight">{r.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Reasoning Depth — only rendered for models that actually honor it
+                (route.ts gates the upstream param on the same check); hidden
+                rather than disabled so there's no dead control to notice. */}
+            {reasoningSupported && (
+              <div ref={reasoningDropdownRef} className="relative flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setReasoningMenuOpen((o) => !o)}
+                  className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                    reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
+                  }`}
+                  title={currentReasoning.desc}
+                >
+                  <Brain className="h-3 w-3" />
+                  {reasoningDepth === 'off' ? 'Think' : currentReasoning.label.replace('Think: ', '')}
+                </button>
+                {reasoningMenuOpen && (
+                  <div className="absolute top-full right-0 z-50 mt-1 w-48 border border-border bg-surface-secondary shadow-xl">
+                    {REASONING_DEPTHS.map((r) => (
+                      <button
+                        type="button"
+                        key={r.id}
+                        onClick={() => { setReasoningDepth(r.id); setReasoningMenuOpen(false) }}
+                        className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                          reasoningDepth === r.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <span className="font-mono text-[10px] font-semibold">{r.label}</span>
+                        <span className="font-sans text-[9px] text-muted-foreground leading-tight">{r.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Focus Mode */}
             <div ref={focusDropdownRef} className="relative flex-shrink-0">
