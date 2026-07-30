@@ -3,10 +3,8 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search, Globe, Zap, X } from 'lucide-react'
+import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search, Globe } from 'lucide-react'
 import Link from 'next/link'
-import { loadAutoTriggers, disableAutoTrigger } from '@/lib/skills/auto-trigger'
-import { getSkill } from '@/lib/skills/registry'
 
 type ComposioToolkit = 'gmail' | 'firecrawl'
 type ConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
@@ -235,100 +233,6 @@ function ConnectorsSection() {
   )
 }
 
-function AutoTriggerSkillsCard({ delay = 0 }: { delay?: number }) {
-  const [slugs, setSlugs] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    loadAutoTriggers().then((s) => { setSlugs(s); setLoading(false) })
-  }, [])
-
-  if (loading) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay }}
-        className="flex items-center gap-3 rounded-lg border border-border bg-surface-secondary p-4"
-      >
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-border bg-background">
-          <Zap className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-mono text-[12px] font-medium text-foreground">Auto-Trigger Skills</p>
-          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">Loading…</p>
-        </div>
-      </motion.div>
-    )
-  }
-
-  if (slugs.length === 0) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay }}
-        className="flex items-center gap-3 rounded-lg border border-border bg-surface-secondary p-4"
-      >
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-border bg-background">
-          <Zap className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-mono text-[12px] font-medium text-foreground">Auto-Trigger Skills</p>
-          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">No skills set to auto-trigger yet. When a skill completes in chat, you can opt it into auto-trigger for future requests.</p>
-        </div>
-      </motion.div>
-    )
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay }}
-      className="rounded-lg border border-border bg-surface-secondary p-4"
-    >
-      <div className="mb-3 flex items-center gap-2">
-        <Zap className="h-4 w-4 text-primary" />
-        <p className="font-mono text-[12px] font-medium text-foreground">Auto-Trigger Skills</p>
-        <span className="font-mono text-[10px] text-muted-foreground">({slugs.length} enabled)</span>
-      </div>
-      <div className="space-y-1.5">
-        {slugs.map((slug) => {
-          const skill = getSkill(slug)
-          return (
-            <div key={slug} className="flex items-center justify-between rounded border border-border bg-background px-3 py-2">
-              <div>
-                <span className="font-mono text-[11px] font-semibold text-foreground">
-                  {skill?.name ?? slug}
-                </span>
-                {skill && (
-                  <span className="ml-2 font-mono text-[10px] text-muted-foreground">
-                    {skill.description}
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={async () => {
-                  const ok = await disableAutoTrigger(slug)
-                  if (ok) setSlugs((prev) => prev.filter((s) => s !== slug))
-                }}
-                className="flex items-center gap-1 rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-destructive/30 hover:text-destructive"
-              >
-                <X className="h-3 w-3" />
-                Remove
-              </button>
-            </div>
-          )
-        })}
-      </div>
-      <p className="mt-3 font-mono text-[9px] leading-relaxed text-muted-foreground/70">
-        Skills set to auto-trigger will activate automatically when their trigger phrases match your message, without asking. Remove any skill to go back to manual invocation.
-      </p>
-    </motion.div>
-  )
-}
-
 export default function SettingsPage() {
   return (
     <div className="relative flex min-h-screen flex-col bg-transparent">
@@ -393,7 +297,6 @@ export default function SettingsPage() {
             description="Composio connectors (Gmail, Firecrawl) and future API integrations."
             delay={0.25}
           />
-          <AutoTriggerSkillsCard delay={0.3} />
         </div>
 
         <Suspense fallback={null}>
