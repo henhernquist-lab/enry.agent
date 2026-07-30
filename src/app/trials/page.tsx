@@ -153,7 +153,7 @@ export default function BenchmarkPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <p className="font-mono text-xs text-muted-foreground">
-            {loading ? 'Loading…' : `${benchmarks.length} models`}
+            {loading ? 'Loading…' : `${benchmarks.length} benchmarked · ${MODEL_LIST.length} models available`}
           </p>
         </div>
 

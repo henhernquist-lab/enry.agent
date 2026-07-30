@@ -12,7 +12,7 @@ export function AgentLauncher() {
       <span className="flex items-center gap-2">
         <Code2 className="h-3.5 w-3.5 text-primary" />
         <span className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Agent
+          The Forge
         </span>
         <span className="hidden font-mono text-[9px] text-muted-foreground/60 lg:inline">
           Propose &middot; apply &middot; commit &middot; PR

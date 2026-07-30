@@ -7,7 +7,7 @@ import { CruiseStatusCard } from '@/components/dashboard/cruise-status-card'
 import { ModeLauncher } from '@/components/dashboard/mode-launcher'
 import { MemoryFeedCard } from '@/components/dashboard/memory-feed-card'
 import { RepoSummariesCard } from '@/components/dashboard/repo-summaries-card'
-import { QuickNotesCard } from '@/components/dashboard/quick-notes-card'
+
 import { HeroSkeleton, CardSkeleton } from '@/components/dashboard/skeletons'
 
 export default function DashboardPage() {
@@ -47,7 +47,6 @@ export default function DashboardPage() {
           <Suspense fallback={<CardSkeleton />}>
             <RepoSummariesCard />
           </Suspense>
-          <QuickNotesCard />
         </section>
       </div>
     </DashboardLayout>

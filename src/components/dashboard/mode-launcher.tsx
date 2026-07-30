@@ -10,7 +10,7 @@ const MODES = [
   { href: '/scribe', label: 'The Scribe', desc: 'Prompt engineering lab', icon: Wand2 },
   { href: '/grimoire', label: 'The Grimoire', desc: 'Notebook', icon: BookOpen },
   { href: '/m/chat', label: 'Shard', desc: 'Mobile chat', icon: Smartphone },
-  { href: '/', label: 'Chat', desc: 'Ask Golem anything', icon: MessageSquare },
+  { href: '/chat', label: 'Chat', desc: 'Ask Golem anything', icon: MessageSquare },
 ]
 
 export function ModeLauncher() {

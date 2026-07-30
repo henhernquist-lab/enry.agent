@@ -49,7 +49,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     title: 'Platform',
     items: [
       { href: '/', icon: Home, label: 'Home', desc: 'Dashboard overview' },
-      { href: '/', icon: MessageSquare, label: 'Chat', desc: 'Ask Golem anything' },
+      { href: '/chat', icon: MessageSquare, label: 'Chat', desc: 'Ask Golem anything' },
       { href: '/trials', icon: Cpu, label: 'The Trials', desc: 'Benchmark model performance' },
       { href: '/usage', icon: BarChart3, label: 'Usage', desc: 'Track tokens, cost, and alerts' },
     ],
