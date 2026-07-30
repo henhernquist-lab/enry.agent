@@ -31,6 +31,7 @@ import {
 import { GolemLogo } from './golem-logo'
 import { StatusIndicator } from './status-indicator'
 import { TypingText } from './typing-text'
+import { MarkdownMessage } from './markdown-message'
 import { FileAttachmentChip, type PendingUpload } from './file-attachment-chip'
 import { FileAttachmentCard } from './file-attachment-card'
 import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploads'
@@ -46,6 +47,7 @@ import { ChatToolSteps } from './chat-tool-steps'
 import { SkillFeedbackBar } from './skill-feedback-bar'
 import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS, filterSkillsByDomain } from '@/lib/skills/registry'
+import { detectAutoTrigger, loadAutoTriggers, enableAutoTrigger, getCachedAutoTriggers } from '@/lib/skills/auto-trigger'
 import { listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
 import type { SkillDefinition } from '@/lib/skills/types'
 import { useMessageQueue } from '@/lib/message-queue'
@@ -352,6 +354,11 @@ export function CenterPanel({
   // Keep ref in sync — useChat callbacks see stale closures
   useEffect(() => { recoveryStateRef.current = recoveryState }, [recoveryState])
 
+  // Auto-trigger skill prompt — shown after skill completion
+  const [autoTriggerPrompt, setAutoTriggerPrompt] = useState<{ skillSlug: string; skillName: string } | null>(null)
+  // Load auto-triggers from API on mount
+  useEffect(() => { loadAutoTriggers() }, [])
+
   // ─── Scratch mode (ephemeral chat) ─────────────────────────────
   // When on, messages live only in React state — never persisted to
   // Supabase. Refreshing the page or toggling off clears everything.
@@ -548,9 +555,17 @@ export function CenterPanel({
     : 0
 
   const exitSkill = useCallback(() => {
+    // When a skill completes normally (all turns done), show the auto-trigger
+    // prompt so Henry can opt it into auto-trigger for future requests.
+    if (activeSkill && skillTurnsCompleted >= activeSkill.structure.assistantTurns) {
+      const cached = getCachedAutoTriggers()
+      if (!cached.includes(activeSkill.slug)) {
+        setAutoTriggerPrompt({ skillSlug: activeSkill.slug, skillName: activeSkill.name })
+      }
+    }
     setActiveSkill(null)
     setSkillStartIndex(0)
-  }, [])
+  }, [activeSkill, skillTurnsCompleted])
 
   // Automatic exit: once the skill has produced all its assistant turns (e.g.
   // Devil's Advocate's verdict) and the stream has settled, drop back to normal
@@ -591,12 +606,27 @@ export function CenterPanel({
       return
     }
 
-    if (!text && !uploadResult) return
+    if (!text && !uploadResult) return      // ── Auto-triggered skill check ──
+      // Before normal detection, check if any auto-triggered skill matches.
+      // Auto-triggered skills fire without the user having to type /skill.
+      if (text && !uploadResult && !activeSkill) {
+        const auto = detectAutoTrigger(text)
+        if (auto) {
+          const startIndex = messages.length
+          setActiveSkill(auto.skill)
+          setSkillStartIndex(startIndex)
+          setInput('')
+          if (auto.topic) {
+            sendSkillTurn(auto.skill, auto.topic, startIndex)
+          }
+          return
+        }
+      }
 
-    // ── Skill invocation from normal chat (command or natural language) ──
-    // Only when there's no attachment in flight — skills are text-only modes.
-    if (text && !uploadResult) {
-      const inv = detectSkillInvocation(text)
+      // ── Skill invocation from normal chat (command or natural language) ──
+      // Only when there's no attachment in flight — skills are text-only modes.
+      if (text && !uploadResult) {
+        const inv = detectSkillInvocation(text)
       if (inv) {
         const startIndex = messages.length
         setActiveSkill(inv.skill)
@@ -996,13 +1026,13 @@ export function CenterPanel({
                           : 'border-primary/20 bg-primary/5 text-left'
                       } ${inSkillRange && message.role === 'assistant' ? 'border-l-2 border-l-warning/60' : ''}`}
                     >
-                      <p className={`whitespace-pre-wrap text-sm leading-relaxed ${message.role === 'assistant' ? 'font-mono text-primary/90' : 'text-foreground'}`}>
-                        {isCurrentStream ? (
-                          <TypingText text={displayAnswer} isStreaming={true} />
-                        ) : (
-                          displayAnswer
-                        )}
-                      </p>
+                      {message.role === 'assistant' ? (
+                        <MarkdownMessage content={displayAnswer} isStreaming={isCurrentStream} />
+                      ) : (
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                          {displayAnswer}
+                        </p>
+                      )}
                     </div>
                     {message.role === 'assistant' && sources.length > 0 && (
                       <div className="mt-2">
@@ -1053,6 +1083,33 @@ export function CenterPanel({
                         invocationId={skillInvocationIds[index]}
                         skillName={activeSkill?.name}
                       />
+                    )}
+                    {/* Auto-trigger prompt — shown after skill completes */}
+                    {message.role === 'assistant' && inSkillRange && autoTriggerPrompt && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-2 flex flex-wrap items-center gap-2 rounded border border-primary/20 bg-primary/5 px-3 py-2"
+                      >
+                        <span className="text-[11px] text-muted-foreground">
+                          Always use <span className="font-semibold text-primary">{autoTriggerPrompt.skillName}</span> automatically for requests like this?
+                        </span>
+                        <button
+                          onClick={async () => {
+                            const ok = await enableAutoTrigger(autoTriggerPrompt.skillSlug)
+                            if (ok) setAutoTriggerPrompt(null)
+                          }}
+                          className="rounded border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          onClick={() => setAutoTriggerPrompt(null)}
+                          className="rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          No
+                        </button>
+                      </motion.div>
                     )}
 
 
