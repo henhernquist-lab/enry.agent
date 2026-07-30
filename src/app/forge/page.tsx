@@ -119,7 +119,6 @@ const MODEL_DEFAULTS: Record<string, EffortId> = {
   'z-ai/glm-5.2': 'medium',
   'gemini-3.5-flash': 'medium',
   'llama-3.3-70b-versatile': 'medium',
-  'llama-3.1-8b-instant': 'low',
   'openai/gpt-oss-120b': 'high',
 }
 

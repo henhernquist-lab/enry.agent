@@ -15,7 +15,6 @@ const MODELS: { id: string; keyEnv: string; skipCatalog?: boolean }[] = [
   { id: 'z-ai/glm-5.2', keyEnv: 'GLM_API_KEY' },
   { id: 'gemini-3.5-flash', keyEnv: 'GEMINI_API_KEY', skipCatalog: true },
   { id: 'llama-3.3-70b-versatile', keyEnv: 'GROQ_API_KEY', skipCatalog: true },
-  { id: 'llama-3.1-8b-instant', keyEnv: 'GROQ_API_KEY', skipCatalog: true },
   { id: 'openai/gpt-oss-120b', keyEnv: 'GROQ_API_KEY', skipCatalog: true },
 ]
 

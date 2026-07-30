@@ -9,12 +9,13 @@ import { createOpenAI } from '@ai-sdk/openai'
 // All UI pickers drive off MODEL_LIST — no more inline arrays.
 //
 // Free-tier final lineup (July 2026 cleanup):
-//   * DeepSeek V4 Pro  → OpenRouter (DEEPSEEK_API_KEY / OPENROUTER_API_KEY)
 //   * GLM 5.2          → NVIDIA NIM (GLM_API_KEY)
-//   * Gemini 3.5 Flash → Google AI Studio (GEMINI_API_KEY)
-//   * Llama 3.3 70B    → Groq (GROQ_API_KEY)
-//   * Llama 3.1 8B Instant → Groq (GROQ_API_KEY)
-//   * GPT-OSS 120B     → Groq (GROQ_API_KEY)
+//   * DeepSeek V4 Flash → NVIDIA NIM (DEEPSEEK_API_KEY / NVIDIA_API_KEY)
+//   * DeepSeek V4 Pro   → NVIDIA NIM (DEEPSEEK_API_KEY / NVIDIA_API_KEY)
+//   * Gemini 3.5 Flash  → Google AI Studio (GEMINI_API_KEY)
+//   * Llama 3.3 70B     → Groq (GROQ_API_KEY)
+//   * GPT-OSS 120B       → Groq (GROQ_API_KEY)
+//   * Claude 3.5 Sonnet  → GitHub Models (GITHUB_MODELS_TOKEN)
 // Models are only shown in pickers if their provider key is configured.
 // ───────────────────────────────────────────────────────────────────
 
@@ -130,18 +131,32 @@ export const MODEL_LIST: ModelMeta[] = [
     maxOutputTokens: 4096,
   },
   {
-    id: 'llama-3.1-8b-instant',
-    label: 'Llama 3.1 8B Instant',
-    company: 'Groq',
-    description: 'Ultra-fast lightweight model on Groq.',
+    // Replaces Llama 3.1 8B Instant (removed). GitHub Models exposes Claude
+    // 3.5 Sonnet through an OpenAI-compatible endpoint at
+    // https://models.inference.ai.azure.com. Needs a GitHub PAT with default
+    // scopes — no special Models scope required. Set as GITHUB_MODELS_TOKEN.
+    //
+    // Rate limits: GitHub Models free tier for Claude 3.5 Sonnet is NOT yet
+    // confirmed live — the endpoint and model ID should be verified against
+    // the current GitHub Models catalog before promoting this beyond a
+    // selectable option. Start with a low defaultEffort to avoid burning
+    // through unknown quota on aggressive prompts.
+    //
+    // Tool calling: GitHub Models' Claude deployment MAY support tool calls,
+    // but this is unconfirmed — Anthropic's native API does, but the
+    // OpenAI-compatible shim may not. Flag: supportsTools implied by the
+    // adapter (all OpenAI-compatible endpoints get tool schemas), but the
+    // model may ignore or error on them.
+    id: 'anthropic/claude-3.5-sonnet',
+    label: 'Claude 3.5 Sonnet',
+    company: 'Anthropic (GitHub Models)',
+    description: 'Claude via GitHub Models — strong reasoning, long context. Rate limits unconfirmed.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'low',
-    // Lowest TPM of the lineup (6000/min). At the route's default 4096 a single
-    // "hello" — system prompt + tool schemas + the reservation — exceeded the
-    // limit and Groq returned 413, which read to the user as the request being
-    // rejected for its content. 1024 is ample for this model's short-reply role
-    // and leaves ~5000/min for prompt and follow-up turns.
-    maxOutputTokens: 1024,
+    // Context window: 200K (native Claude), but GitHub Models may cap lower.
+    // 4096 is conservative for an unknown-quota provider, following the
+    // same pattern as Groq models.
+    maxOutputTokens: 4096,
   },
   {
     id: 'openai/gpt-oss-120b',
@@ -304,13 +319,17 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     baseURL: GROQ_BASE,
     getApiKey: () => process.env.GROQ_API_KEY ?? '',
   },
-  'llama-3.1-8b-instant': {
-    baseURL: GROQ_BASE,
-    getApiKey: () => process.env.GROQ_API_KEY ?? '',
-  },
   'openai/gpt-oss-120b': {
     baseURL: GROQ_BASE,
     getApiKey: () => process.env.GROQ_API_KEY ?? '',
+  },
+  // GitHub Models — OpenAI-compatible endpoint. Claude 3.5 Sonnet is the
+  // first model here. Endpoint: https://models.inference.ai.azure.com.
+  // Auth: GitHub PAT with default scopes (GITHUB_MODELS_TOKEN).
+  // Flags: endpoint + model ID need live verification against current catalog.
+  'anthropic/claude-3.5-sonnet': {
+    baseURL: 'https://models.inference.ai.azure.com',
+    getApiKey: () => process.env.GITHUB_MODELS_TOKEN ?? '',
   },
 }
 
@@ -320,7 +339,7 @@ const PROVIDERS: Record<string, ProviderConfig> = {
 // non-NEXT_PUBLIC env var is undefined — without the window guard this warning
 // fires in every visitor's browser console regardless of the real server config.
 if (typeof window === 'undefined' && typeof process !== 'undefined' && !process.env.GROQ_API_KEY) {
-  console.warn('[nim] GROQ_API_KEY is missing. Groq models (Llama 3.3 70B, Llama 3.1 8B Instant, GPT-OSS 120B) are still listed in pickers but will fail on use until the key is set.')
+  console.warn('[nim] GROQ_API_KEY is missing. Groq models (Llama 3.3 70B, GPT-OSS 120B) are still listed in pickers but will fail on use until the key is set.')
 }
 
 // ─── Lookup helpers (used by pickers + server routes) ──────────────
