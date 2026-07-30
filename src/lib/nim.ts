@@ -76,6 +76,14 @@ export interface ModelMeta {
    * all, so tools are withheld rather than offered and then failing mid-call.
    */
   supportsTools?: boolean
+  /**
+   * Which chat system prompt this model gets. Omitted = 'full'.
+   *
+   * 'lean' is the same agent with the same safety rules, at roughly 40% of the
+   * tokens — for models whose per-minute budget is spent re-sending the prompt
+   * on every step of a tool turn. See src/lib/prompts/system.ts.
+   */
+  systemPrompt?: 'full' | 'lean'
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
@@ -152,23 +160,22 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Fast, capable generalist on Groq.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
+    systemPrompt: 'lean',
     // 12000 TPM — the default output budget fits comfortably for a plain reply.
     maxOutputTokens: 4096,
     // A tool round-trip is two requests and Groq debits prompt + reservation,
     // so the budget is 2×P1 + results + 2×reservation ≤ 12000.
     //
-    // Re-measured against the tool set that actually ships (core 14 + Composio
-    // Search, which needs no auth and is always attached, + Gmail): P1 is 5137,
-    // not the 3791 the first pass assumed from 14 tools alone. That leaves
-    // 1726 to split rather than 4418.
+    // With the lean system prompt P1 is 3617 against the real 22-tool
+    // production set (5123 on the full prompt — the prompt was costing more
+    // than a third of every step). That leaves 4766 to split instead of 1726,
+    // which is what makes 1024 affordable again: 7234 + 800 + 2048 = 10082,
+    // with ~1900 to spare on an empty conversation.
     //
-    // 512 + a 2000-char cap (~570 tokens) lands at ~11868. It fits, but with
-    // roughly 130 tokens to spare on an empty conversation — so any real
-    // history pushes it over, and with Firecrawl also connected (P1 5944) no
-    // reservation fits at all. The reservation is now doing all it can; the
-    // remaining overflow is the fixed per-step overhead, not this number.
-    maxOutputTokensWithTools: 512,
-    toolResultMaxChars: 2000,
+    // History is charged on BOTH steps, so that spare covers roughly 950
+    // tokens of conversation (~3800 chars) before this goes over.
+    maxOutputTokensWithTools: 1024,
+    toolResultMaxChars: 2800,
   },
   {
     id: 'llama-3.1-8b-instant',
@@ -200,32 +207,31 @@ export const MODEL_LIST: ModelMeta[] = [
     id: 'openai/gpt-oss-120b',
     label: 'GPT-OSS 120B',
     company: 'Groq',
-    description: 'Open-source OpenAI model on Groq. Chat only — no tools or web search.',
+    description: 'Open-source OpenAI model hosted on Groq.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'high',
+    systemPrompt: 'lean',
     supportsReasoning: true,
     // 8000 TPM — headroom for a longer reply than the 8B, but not the full
     // 4096 default once prompt and tools are counted.
     maxOutputTokens: 2048,
-    // No tools, for the same reason as the 8B — measured, and the two
-    // constraints here are mutually exclusive:
+    // Tools restored. Two things changed since they were withheld:
     //
-    //   * It needs at least 512 reserved to emit a tool call at all. This is a
-    //     reasoning model, so it spends output tokens thinking before the call;
-    //     at 256 Groq returns 400 "Tool choice is required, but model did not
-    //     call a tool". (Even at 512 it is flaky — 1024 failed the same way on
-    //     a rested window, so emission isn't reliable at any setting.)
-    //   * It cannot afford 512. With the production tool set P1 is 3678, so two
-    //     steps cost 7356 + 2×512 = 8380 against an 8000 TPM ceiling — over
-    //     budget before a single byte of tool result is added. At 27 tools
-    //     (Firecrawl connected) the two prompts alone exceed 8000.
+    //   * The lean system prompt drops P1 from 3661 to 2166 against the real
+    //     22-tool set, so two steps cost 4332 of the 8000 TPM ceiling instead
+    //     of 7322. 1024 reserved + a 1500-char result cap lands at 6810.
+    //   * The "cannot emit a tool call below 512 reserved" finding was an
+    //     artifact of the test forcing tool_choice. This route sends
+    //     tool_choice auto, and under auto this model emits a tool call 3/3 at
+    //     1024 reserved. Forcing it is what produced the 400s.
     //
-    // Verified end to end: old 2048/uncapped → 413, and the best-fitting
-    // combination that remains → 429. Withheld rather than shipped broken.
-    // Reversible the moment the fixed per-step overhead comes down — trimming
-    // the tool list or the system prompt is what would buy this model tools
-    // back, not a different reservation.
-    supportsTools: false,
+    // 768 rather than 1024: history is charged on both steps, and at 1024 a
+    // turn with ~750 tokens of prior conversation measured 8340 against the
+    // 8000 ceiling — a real 429, not window noise. 768 with a 1200-char cap
+    // brings the same turn to ~7740. This model has the least room of the
+    // three and only comfortably supports short conversations.
+    maxOutputTokensWithTools: 768,
+    toolResultMaxChars: 1200,
   },
 ]
 
