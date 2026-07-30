@@ -20,6 +20,14 @@ import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
 import { executeTool, type ComposioToolkit, type ComposioConnectable } from '@/lib/composio'
 import type { FocusMode } from '@/lib/focus-mode'
+import { clipToSerializedBudget } from '@/lib/tool-budget'
+
+// Defaults for bounding a Composio tool result. Sized so a 10-message Gmail
+// fetch lands near ~1.5k tokens rather than being unbounded: enough for the
+// model to summarise an inbox and pick a message to open, without a single
+// long thread crowding out the rest of the turn.
+const DEFAULT_TOOL_STRING_CHARS = 600
+const DEFAULT_TOOL_TOTAL_CHARS = 6000
 
 type ConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
 
@@ -68,6 +76,10 @@ async function wrapTool(args: {
   inputSchema: z.ZodTypeAny
   userId: string
   toolKey: string
+  /** Per-string clip. Raise for tools whose value IS one long document. */
+  maxStringChars?: number
+  /** Ceiling across the whole result. */
+  maxTotalChars?: number
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }): Promise<Record<string, any> | null> {
   return {
@@ -86,7 +98,25 @@ async function wrapTool(args: {
           // AI SDK, and the model can't recover.
           return { success: false, error, toolkit: args.toolkitName, slug: args.slug }
         }
-        return { success: true, toolkit: args.toolkitName, slug: args.slug, data }
+        // Bound before returning. This used to hand back `data` verbatim, which
+        // for GMAIL_GET_MESSAGE is an entire email body and for a crawl is
+        // whole pages — re-sent on every later step of the turn. Clipping is
+        // per-string so the structure the model navigates (ids, subjects,
+        // senders, urls) survives intact.
+        const { value, clipped } = clipToSerializedBudget(
+          data,
+          args.maxStringChars ?? DEFAULT_TOOL_STRING_CHARS,
+          args.maxTotalChars ?? DEFAULT_TOOL_TOTAL_CHARS,
+        )
+        return {
+          success: true,
+          toolkit: args.toolkitName,
+          slug: args.slug,
+          data: value,
+          ...(clipped
+            ? { note: 'Long fields were shortened to fit the context budget. Fetch a specific item by id if you need its full text.' }
+            : {}),
+        }
       },
     }),
   }
@@ -97,9 +127,21 @@ async function wrapTool(args: {
 // user is actually connected (no point handing the model a tool that would
 // just fail-401 on execute). Returns {} for focus modes that disallow composio.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function buildComposioTools(uid: string | null, focusMode: FocusMode): Promise<Record<string, any>> {
+export async function buildComposioTools(
+  uid: string | null,
+  focusMode: FocusMode,
+  /** Per-model total char budget for one tool result (see ModelMeta.toolResultMaxChars). */
+  resultBudgetChars?: number,
+): Promise<Record<string, any>> {
   if (!uid) return {}
   if (!FOCUS_ALLOWS[focusMode]) return {}
+
+  // Same budget the Tavily path uses, applied to every Composio result.
+  const maxTotalChars = resultBudgetChars ?? DEFAULT_TOOL_TOTAL_CHARS
+  const listCaps = { maxTotalChars, maxStringChars: Math.min(DEFAULT_TOOL_STRING_CHARS, Math.floor(maxTotalChars / 4)) }
+  // Tools whose result IS a single document (one email body, one scraped page)
+  // rather than a list — the whole budget can go to that one string.
+  const docCaps = { maxTotalChars, maxStringChars: maxTotalChars }
 
   const connections = await loadConnections(uid)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,6 +166,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'firecrawl_scrape',
+        ...docCaps,
       }),
       wrapTool({
         slug: 'FIRECRAWL_CRAWL_V2',
@@ -135,6 +178,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'firecrawl_crawl',
+        ...listCaps,
       }),
       wrapTool({
         slug: 'FIRECRAWL_EXTRACT',
@@ -146,6 +190,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'firecrawl_extract',
+        ...docCaps,
       }),
       wrapTool({
         slug: 'FIRECRAWL_SEARCH',
@@ -157,6 +202,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'firecrawl_search',
+        ...listCaps,
       }),
       wrapTool({
         slug: 'FIRECRAWL_MAP_MULTIPLE_URLS_BASED_ON_OPTIONS',
@@ -167,6 +213,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'firecrawl_map',
+        ...listCaps,
       }),
     ])
     for (const t of firecrawlTools) if (t) Object.assign(tools, t)
@@ -186,6 +233,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'composio_web_search',
+        ...listCaps,
       }),
       wrapTool({
         slug: 'COMPOSIO_SEARCH_FETCH_URL_CONTENT',
@@ -196,6 +244,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'composio_fetch_url',
+        ...docCaps,
       }),
       wrapTool({
         slug: 'COMPOSIO_SEARCH_FINANCE',
@@ -206,6 +255,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'composio_finance',
+        ...listCaps,
       }),
       wrapTool({
         slug: 'COMPOSIO_SEARCH_FLIGHTS',
@@ -218,6 +268,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'composio_flights',
+        ...listCaps,
       }),
       wrapTool({
         slug: 'COMPOSIO_SEARCH_AMAZON',
@@ -229,6 +280,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'composio_amazon',
+        ...listCaps,
       }),
     ])
     for (const t of searchTools) if (t) Object.assign(tools, t)
@@ -246,6 +298,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'gmail_fetch_emails',
+        ...listCaps,
       }),
       wrapTool({
         slug: 'GMAIL_GET_MESSAGE',
@@ -256,6 +309,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'gmail_get_message',
+        ...docCaps,
       }),
       wrapTool({
         slug: 'GMAIL_SEARCH_EMAILS',
@@ -267,6 +321,7 @@ export async function buildComposioTools(uid: string | null, focusMode: FocusMod
         }),
         userId: uid,
         toolKey: 'gmail_search_emails',
+        ...listCaps,
       }),
     ])
     for (const t of gmailTools) if (t) Object.assign(tools, t)

@@ -249,6 +249,36 @@ export function CenterPanel({
     return () => { cancelled = true }
   }, [])
 
+  // Daily token budget per Groq model. Groq publishes no tokens-per-day
+  // header, so a model can look healthy right up to the moment it goes dark
+  // for hours. Fetched once at mount and shown as a badge — same defensive
+  // shape handling as the community list: a surprise here must never take the
+  // picker down with it.
+  const [tpdByModel, setTpdByModel] = useState<Record<string, { state: string; remaining: number }>>({})
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/models/tpd')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const rows: unknown[] = Array.isArray(data?.tpd) ? data.tpd : []
+        const next: Record<string, { state: string; remaining: number }> = {}
+        for (const r of rows) {
+          if (!r || typeof r !== 'object') continue
+          const row = r as Record<string, unknown>
+          if (typeof row.modelId !== 'string' || typeof row.state !== 'string') continue
+          next[row.modelId] = { state: row.state, remaining: Number(row.remaining) || 0 }
+        }
+        setTpdByModel(next)
+      } catch {
+        /* non-fatal — picker just omits the daily-budget badge */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   const pickerModels: PickerModel[] = [...MODELS, ...communityModels]
   const findModel = (id: string) => pickerModels.find((m) => m.id === id)
   const [effortMenuOpen, setEffortMenuOpen] = useState(false)
@@ -1195,6 +1225,24 @@ export function CenterPanel({
                               Degraded
                             </span>
                           )}
+                          {(() => {
+                            const t = tpdByModel[m.id]
+                            if (!t || t.state === 'ok' || t.state === 'unknown') return null
+                            const exhausted = t.state === 'exhausted'
+                            const critical = exhausted || t.state === 'critical'
+                            return (
+                              <span
+                                title={`Roughly ${t.remaining.toLocaleString()} tokens left of this model's daily allowance at the provider.`}
+                                className={`rounded border px-1 py-0 font-mono text-[8px] uppercase tracking-wider ${
+                                  critical
+                                    ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                                    : 'border-warning/30 bg-warning/10 text-warning'
+                                }`}
+                              >
+                                {exhausted ? 'Daily cap' : `${Math.round(t.remaining / 1000)}k left`}
+                              </span>
+                            )
+                          })()}
                         </span>
                         <span className="font-normal text-[10px] text-muted-foreground leading-tight mt-0.5">
                           {m.desc}

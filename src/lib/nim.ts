@@ -154,13 +154,21 @@ export const MODEL_LIST: ModelMeta[] = [
     defaultEffort: 'medium',
     // 12000 TPM — the default output budget fits comfortably for a plain reply.
     maxOutputTokens: 4096,
-    // But a search round-trip is two requests, and Groq can debit the full
-    // reservation rather than the tokens actually produced — so size to that
-    // worst case: 2×3791 + results + 2×reservation ≤ 12000 leaves 4418 to split.
-    // 1024 + a 2800-char cap (~800 tokens) lands at 10430, clearing with ~1570
-    // to spare. 2048 overruns the budget on the pessimistic accounting.
-    maxOutputTokensWithTools: 1024,
-    toolResultMaxChars: 2800,
+    // A tool round-trip is two requests and Groq debits prompt + reservation,
+    // so the budget is 2×P1 + results + 2×reservation ≤ 12000.
+    //
+    // Re-measured against the tool set that actually ships (core 14 + Composio
+    // Search, which needs no auth and is always attached, + Gmail): P1 is 5137,
+    // not the 3791 the first pass assumed from 14 tools alone. That leaves
+    // 1726 to split rather than 4418.
+    //
+    // 512 + a 2000-char cap (~570 tokens) lands at ~11868. It fits, but with
+    // roughly 130 tokens to spare on an empty conversation — so any real
+    // history pushes it over, and with Firecrawl also connected (P1 5944) no
+    // reservation fits at all. The reservation is now doing all it can; the
+    // remaining overflow is the fixed per-step overhead, not this number.
+    maxOutputTokensWithTools: 512,
+    toolResultMaxChars: 2000,
   },
   {
     id: 'llama-3.1-8b-instant',
@@ -192,19 +200,32 @@ export const MODEL_LIST: ModelMeta[] = [
     id: 'openai/gpt-oss-120b',
     label: 'GPT-OSS 120B',
     company: 'Groq',
-    description: 'Open-source OpenAI model hosted on Groq.',
+    description: 'Open-source OpenAI model on Groq. Chat only — no tools or web search.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'high',
     supportsReasoning: true,
     // 8000 TPM — headroom for a longer reply than the 8B, but not the full
     // 4096 default once prompt and tools are counted.
     maxOutputTokens: 2048,
-    // Tightest of the three. 2×3063 + results + 2×reservation ≤ 8000 leaves
-    // only 1874 to split, so the reservation has to drop to 512: a tool turn
-    // here buys a short answer or none at all. Raising this is what makes a
-    // search 429 on this model.
-    maxOutputTokensWithTools: 512,
-    toolResultMaxChars: 1500,
+    // No tools, for the same reason as the 8B — measured, and the two
+    // constraints here are mutually exclusive:
+    //
+    //   * It needs at least 512 reserved to emit a tool call at all. This is a
+    //     reasoning model, so it spends output tokens thinking before the call;
+    //     at 256 Groq returns 400 "Tool choice is required, but model did not
+    //     call a tool". (Even at 512 it is flaky — 1024 failed the same way on
+    //     a rested window, so emission isn't reliable at any setting.)
+    //   * It cannot afford 512. With the production tool set P1 is 3678, so two
+    //     steps cost 7356 + 2×512 = 8380 against an 8000 TPM ceiling — over
+    //     budget before a single byte of tool result is added. At 27 tools
+    //     (Firecrawl connected) the two prompts alone exceed 8000.
+    //
+    // Verified end to end: old 2048/uncapped → 413, and the best-fitting
+    // combination that remains → 429. Withheld rather than shipped broken.
+    // Reversible the moment the fixed per-step overhead comes down — trimming
+    // the tool list or the system prompt is what would buy this model tools
+    // back, not a different reservation.
+    supportsTools: false,
   },
 ]
 

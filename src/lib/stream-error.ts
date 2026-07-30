@@ -1,4 +1,5 @@
 import { APICallError, TypeValidationError } from 'ai'
+import { parseTpdExhaustion, formatRetryDelay } from '@/lib/usage/tpd'
 
 // ───────────────────────────────────────────────────────────────────
 // Never let a raw provider payload reach the chat UI as an "error". A naive
@@ -37,6 +38,28 @@ function looksLikeRawDump(message: string): boolean {
  * written from the status code alone — never interpolating the provider's own
  * text, which can carry account ids, internal URLs, or quota details.
  */
+/**
+ * Pull the provider's raw response body out of an error, unwrapping the same
+ * way extractStatus does. Used only to tell TPD apart from TPM — the body is
+ * never echoed to the UI.
+ */
+function extractResponseBody(error: unknown, depth = 0): string | undefined {
+  if (!error || typeof error !== 'object' || depth > 3) return undefined
+  if (APICallError.isInstance(error) && error.responseBody) return error.responseBody
+
+  const e = error as { cause?: unknown; lastError?: unknown; errors?: unknown }
+  const nested: unknown[] = [
+    e.lastError,
+    ...(Array.isArray(e.errors) ? [e.errors[e.errors.length - 1]] : []),
+    e.cause,
+  ]
+  for (const n of nested) {
+    const b = extractResponseBody(n, depth + 1)
+    if (b !== undefined) return b
+  }
+  return undefined
+}
+
 function messageForStatus(status: number | undefined): string | null {
   if (status === undefined) return null
   if (status === 401 || status === 403) {
@@ -105,6 +128,18 @@ export function safeStreamErrorMessage(error: unknown, context: string): string 
   // greppable in Vercel logs without expanding the object.
   const status = extractStatus(error)
   console.error(`[${context}]${status ? ` status=${status}` : ''}`, error)
+
+  // TPD and TPM both surface as 429 but mean opposite things to the user: one
+  // clears in seconds, the other has taken the model out for the rest of the
+  // day. Collapsing them into "wait a few moments" sends Henry into a retry
+  // loop against a budget that isn't coming back for hours.
+  if (status === 429) {
+    const tpd = parseTpdExhaustion(extractResponseBody(error))
+    if (tpd) {
+      console.error(`[${context}] TPD exhausted: used=${tpd.used}/${tpd.limit} requested=${tpd.requested}`)
+      return `This model has used up its daily token allowance at the provider. It should free up ${formatRetryDelay(tpd.retryAfterSeconds)} — switch models to keep working.`
+    }
+  }
 
   if (TypeValidationError.isInstance(error)) {
     return 'The model returned a response in a format Golem couldn\'t process. Try again — if it keeps happening, this model may need a fix.'

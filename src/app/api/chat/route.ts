@@ -446,7 +446,7 @@ export async function POST(req: Request) {
   // returns {} when the user is unauthenticated, when focus mode disallows it
   // (web_only, repo_only), or when the user has no connected_account_id for a
   // given toolkit - so the model never sees a tool it can't actually call.
-  const composioTools = await buildComposioTools(uid, focusMode)
+  const composioTools = await buildComposioTools(uid, focusMode, modelMeta?.toolResultMaxChars)
   Object.assign(allTools, composioTools)
 
   // Monid — general-purpose API discovery/execution fallback. Always available
