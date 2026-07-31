@@ -68,6 +68,8 @@ type ChatQueueItem = {
 }
 
 interface CenterPanelProps {
+  /** Unique id for localStorage namespacing (e.g. 'left' | 'right' for split view). */
+  paneId?: string
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
   setAgentStatus: (status: 'online' | 'thinking' | 'streaming' | 'idle') => void
   initialMessages?: UIMessage[]
@@ -199,32 +201,10 @@ const SUGGESTION_CARD_POOL: SuggestionCard[] = [
   { label: 'Plan a project', glyph: '🗺', prompt: 'Help me plan a project to ', description: 'Break down goals into milestones and tasks' },
 ]
 
-// Module-level compaction state — written by the transport's custom fetch,
-// read by the component's useEffect after each response settles.
-let _pendingCompaction: { compacted: boolean; summary: string | null } | null = null
 
-// Module-level skill invocation ID — written by the transport's custom fetch
-// when a skill response includes the header, read by the component's useEffect
-let _pendingSkillInvocationId: string | null = null
-
-const transport = new DefaultChatTransport({
-  api: '/api/chat',
-  fetch: async (url, options) => {
-    const response = await fetch(url, options)
-    const compacted = response.headers.get('X-Context-Compacted')
-    if (compacted === 'true') {
-      const summary = response.headers.get('X-Context-Compacted-Summary')
-      _pendingCompaction = { compacted: true, summary: summary ? decodeURIComponent(summary) : null }
-    }
-    const skillInvocationId = response.headers.get('X-Skill-Invocation-Id')
-    if (skillInvocationId) {
-      _pendingSkillInvocationId = skillInvocationId
-    }
-    return response
-  },
-})
 
 export function CenterPanel({
+  paneId,
   agentStatus,
   setAgentStatus,
   initialMessages,
@@ -288,8 +268,9 @@ export function CenterPanel({
   // `focusMode` above — same session can be "The Forge" (domain) + "repo_only"
   // (source). Mid-session swap is live: change the pill, the next chat POST
   // carries the new value; prior messages keep their old context.
-  const SESSION_FOCUS_STORAGE_KEY = 'enry.sessionFocus.v1'
-  const CUSTOM_FOCUSES_STORAGE_KEY = 'enry.customFocuses.v1'
+  const ns = paneId ? `.${paneId}` : ''
+  const SESSION_FOCUS_STORAGE_KEY = `enry.sessionFocus.v1${ns}`
+  const CUSTOM_FOCUSES_STORAGE_KEY = `enry.customFocuses.v1${ns}`
   const [sessionFocus, setSessionFocus] = useState<SessionFocus>({ kind: 'none' })
   const [sessionFocusMenuOpen, setSessionFocusMenuOpen] = useState(false)
   const sessionFocusDropdownRef = useRef<HTMLDivElement>(null)
@@ -350,6 +331,34 @@ export function CenterPanel({
   // to the two states that actually differ. Only meaningful for models with
   // supportsReasoning: true (see modelSupportsReasoning below) — the button is
   // hidden entirely for the rest so it can't be toggled into a dead param.
+  // ─── Per-instance transport + response-header bridge ───────────
+  // Was module-scoped — two panes sharing the same transport and
+  // header-intercepting variables would clobber each other mid-stream.
+  // Now scoped to the component instance via useMemo + useRef.
+  const pendingCompactionRef = useRef<{ compacted: boolean; summary: string | null } | null>(null)
+  const pendingSkillIdRef = useRef<string | null>(null)
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: '/api/chat',
+        fetch: async (url, options) => {
+          const response = await fetch(url, options)
+          const compacted = response.headers.get('X-Context-Compacted')
+          if (compacted === 'true') {
+            const summary = response.headers.get('X-Context-Compacted-Summary')
+            pendingCompactionRef.current = { compacted: true, summary: summary ? decodeURIComponent(summary) : null }
+          }
+          const skillInvocationId = response.headers.get('X-Skill-Invocation-Id')
+          if (skillInvocationId) {
+            pendingSkillIdRef.current = skillInvocationId
+          }
+          return response
+        },
+      }),
+    [],
+  )
+
   const [reasoningDepth, setReasoningDepth] = useState<'off' | 'full'>('off')
   const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false)
   const reasoningDropdownRef = useRef<HTMLDivElement>(null)
@@ -443,9 +452,9 @@ export function CenterPanel({
 
   // Sync compaction state after each response (written by transport's custom fetch)
   useEffect(() => {
-    if (status === 'ready' && _pendingCompaction) {
-      const pending = _pendingCompaction
-      _pendingCompaction = null
+    if (status === 'ready' && pendingCompactionRef.current) {
+      const pending = pendingCompactionRef.current
+      pendingCompactionRef.current = null
       setTimeout(() => {
         setContextCompacted(pending.compacted)
         setCompactionSummary(pending.summary)
@@ -453,9 +462,9 @@ export function CenterPanel({
     }
     // Sync skill invocation ID for the latest assistant message
     /* eslint-disable react-hooks/purity */
-    if (status === 'ready' && _pendingSkillInvocationId) {
-      const invocationId = _pendingSkillInvocationId
-      _pendingSkillInvocationId = null
+    if (status === 'ready' && pendingSkillIdRef.current) {
+      const invocationId = pendingSkillIdRef.current
+      pendingSkillIdRef.current = null
       setSkillInvocationIds((prev) => ({
         ...prev,
         [messages.length - 1]: invocationId, // Last message is the assistant response
