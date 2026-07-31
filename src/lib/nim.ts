@@ -51,6 +51,14 @@ export interface ModelMeta {
    * Omitted = use the route's default.
    */
   maxOutputTokens?: number
+  /**
+   * System prompt terseness tier. Maps to Claude naming as shorthand:
+   * - 'haiku' = terse, minimal (rate-limited models)
+   * - 'sonnet' = medium detail (balanced models)
+   * - 'full' (or undefined) = unchanged original prompt (default)
+   * GPT-OSS 120B is left untouched — omit the field to keep it on full.
+   */
+  systemPromptTier?: 'haiku' | 'sonnet' | 'full'
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
@@ -69,6 +77,7 @@ export const MODEL_LIST: ModelMeta[] = [
     company: 'NVIDIA NIM',
     description: 'Default. Versatile all-rounder.',
     scopes: ['chat', 'drive'],
+    systemPromptTier: 'full',
   },
   {
     // Was deepseek/deepseek-v4-pro on OpenRouter — removed, not renamed. That
@@ -91,6 +100,7 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
     supportsReasoning: true,
+    systemPromptTier: 'sonnet',
   },
   {
     // The full-size DeepSeek, kept selectable alongside Flash rather than
@@ -106,6 +116,7 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
     defaultEffort: 'high',
     supportsReasoning: true,
+    systemPromptTier: 'full',
     // Re-measured after the initial 0/2 timeouts: it now answers 6/6, but at
     // ~50s per reply versus ~3s for Flash, and it returned nothing at all
     // earlier the same day. Shared NVIDIA free-tier capacity, so the honest
@@ -119,6 +130,7 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Fast multimodal — free-tier quota available.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
+    systemPromptTier: 'sonnet',
   },
   {
     id: 'llama-3.3-70b-versatile',
@@ -129,6 +141,9 @@ export const MODEL_LIST: ModelMeta[] = [
     defaultEffort: 'medium',
     // 12000 TPM — the default output budget fits comfortably.
     maxOutputTokens: 4096,
+    // Groq bills prompt + output tokens against a per-minute budget, so
+    // lean prompt saves meaningful TPM headroom on every message.
+    systemPromptTier: 'haiku',
   },
   {
     // Replaces Llama 3.1 8B Instant (removed). GitHub Models exposes Claude
@@ -157,6 +172,8 @@ export const MODEL_LIST: ModelMeta[] = [
     // 4096 is conservative for an unknown-quota provider, following the
     // same pattern as Groq models.
     maxOutputTokens: 4096,
+    // Rate limits unconfirmed — lean prompt is the safest default.
+    systemPromptTier: 'haiku',
   },
   {
     id: 'openai/gpt-oss-120b',
