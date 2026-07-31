@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { GolemInline } from '@/components/golem/golem-inline'
 
 type AuthTab = 'google' | 'github' | 'email'
 type FormMode = 'signin' | 'signup'
@@ -92,16 +93,14 @@ export default function LoginPage() {
           transition={{ duration: 0.6, ease: [0, 0, 0.2, 1] }}
           className="flex flex-col items-center gap-6"
         >
+          {/* Golem himself is the centerpiece here — dozing until you sign in.
+              The clay plinth keeps the warm Grimoire framing the old mark had. */}
           <motion.div
-            className="flex h-20 w-20 items-center justify-center rounded-xl border border-[#b8935a]/30 bg-[#201b18]"
-            animate={{ boxShadow: ['0 0 8px rgba(184,147,90,0.08)', '0 0 24px rgba(184,147,90,0.18)', '0 0 8px rgba(184,147,90,0.08)'] }}
+            className="flex h-32 w-32 items-center justify-center rounded-2xl border border-[#b8935a]/30 bg-[#201b18]"
+            animate={{ boxShadow: ['0 0 8px rgba(184,147,90,0.08)', '0 0 28px rgba(184,147,90,0.2)', '0 0 8px rgba(184,147,90,0.08)'] }}
             transition={{ duration: 4, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
           >
-            <svg viewBox="0 0 24 24" fill="none" className="h-12 w-12" stroke="currentColor" strokeWidth="1.5">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" className="fill-[#b8935a]/20 stroke-[#b8935a]" />
-              <path d="M2 17L12 22L22 17" className="stroke-[#b8935a]" />
-              <path d="M2 12L12 17L22 12" className="stroke-[#b8935a]/60" />
-            </svg>
+            <GolemInline state="dozing" size={96} slow />
           </motion.div>
 
           <div className="text-center">

@@ -16,6 +16,7 @@ import type {
 import { SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG, isGoalRunActive } from '@/lib/cruise/types'
 import { nextRun } from '@/lib/cruise/schedule'
 import { LiveWorkspace } from '@/components/live-workspace'
+import { pulseGolem } from '@/lib/golem-signals'
 
 // Golem Cruise — the autonomous-scan main pane. Per-repo allowlist, on-demand
 // static scans, scan-and-fix categories, ranked findings with dismiss/not-a-bug.
@@ -34,6 +35,9 @@ const SEV_STYLE: Record<CruiseSeverity, string> = {
 function isActive(s: CruiseScan['status']): boolean {
   return s === 'queued' || s === 'running'
 }
+
+const FAILED_SCAN_STATUSES = new Set<CruiseScan['status']>(['failed', 'cancelled'])
+const FAILED_GOAL_STATUSES = new Set<CruiseGoalRun['status']>(['failed', 'build_failed', 'cancelled'])
 
 export function CruisePanel({ repo }: { repo: string }) {
   const [config, setConfig] = useState<CruiseRepo | null>(null)
@@ -134,6 +138,19 @@ export function CruisePanel({ repo }: { repo: string }) {
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasActive, hasActiveGoal, selectedScan, loadScans, loadFindings, loadGoalRuns])
+
+  // Golem reacts when a run lands. Both lists come back newest-first, so [0]
+  // is whatever just finished; a failure on either side reads as a failure.
+  const wasRunningRef = useRef(false)
+  useEffect(() => {
+    const running = hasActive || hasActiveGoal
+    if (wasRunningRef.current && !running) {
+      const scanFailed = scans[0] ? FAILED_SCAN_STATUSES.has(scans[0].status) : false
+      const goalFailed = goalRuns[0] ? FAILED_GOAL_STATUSES.has(goalRuns[0].status) : false
+      pulseGolem(scanFailed || goalFailed ? 'error' : 'success')
+    }
+    wasRunningRef.current = running
+  }, [hasActive, hasActiveGoal, scans, goalRuns])
 
   const enable = async () => {
     setBusy(true); setError(null); setNeedsReauth(false); setEnableNote(null)

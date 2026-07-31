@@ -16,6 +16,7 @@ import {
   Edit3,
 } from 'lucide-react'
 import { loadResources, saveResource, updateResource, deleteResource, resourceSummary, type Resource, type NotePayload } from '@/lib/resources'
+import { GolemInline } from '@/components/golem/golem-inline'
 
 function noteTitle(content: string): string {
   const firstLine = content.trimStart().split('\n')[0].replace(/\s+/g, ' ')
@@ -318,17 +319,20 @@ function NotesPageContent() {
               {/* Saved notes */}
               <AnimatePresence>
                 {notes.length === 0 ? (
-                  <motion.p
+                  <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="px-3 py-6 text-center font-mono text-[10px] text-muted-foreground"
+                    className="flex flex-col items-center px-3 py-6"
                   >
-                    No saved notes yet.
-                    <br />
-                    Press &ldquo;New Note&rdquo; to save
-                    <br />
-                    your current draft.
-                  </motion.p>
+                    <GolemInline size={64} slow />
+                    <p className="mt-3 text-center font-mono text-[10px] text-muted-foreground">
+                      No saved notes yet.
+                      <br />
+                      Press &ldquo;New Note&rdquo; to save
+                      <br />
+                      your current draft.
+                    </p>
+                  </motion.div>
                 ) : (
                   notes.map((note) => {
                     const np = note.payload as NotePayload

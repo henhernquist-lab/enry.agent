@@ -3,8 +3,9 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search, Globe } from 'lucide-react'
+import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search, Globe, Bot } from 'lucide-react'
 import Link from 'next/link'
+import { loadGolemVisible, saveGolemVisible } from '@/lib/golem-mascot'
 
 type ComposioToolkit = 'gmail' | 'firecrawl'
 type ConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
@@ -54,6 +55,57 @@ function SettingsSectionCard({
       <span className="flex-shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50">
         Soon
       </span>
+    </motion.div>
+  )
+}
+
+// "Show Golem" — the mascot's on/off switch. Persisted to localStorage like
+// the theme; saving broadcasts on the shared event so the globally-mounted
+// mascot unmounts (and stops its rAF loop) the moment this flips.
+function MascotToggleCard({ delay = 0 }: { delay?: number }) {
+  const [enabled, setEnabled] = useState(true)
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setEnabled(loadGolemVisible()) }, [])
+
+  const toggle = () => {
+    const next = !enabled
+    setEnabled(next)
+    saveGolemVisible(next)
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay }}
+      className="flex items-center gap-3 rounded-lg border border-border bg-surface-secondary p-4"
+    >
+      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-border bg-background">
+        <Bot className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[12px] font-medium text-foreground">Show Golem</p>
+        <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+          The mascot drifts around the app. Turn off to hide it everywhere.
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label="Show Golem"
+        onClick={toggle}
+        className={`relative h-5 w-9 flex-shrink-0 rounded-full border transition-colors ${
+          enabled ? 'border-primary/40 bg-primary/25' : 'border-border bg-surface-elevated'
+        }`}
+      >
+        <span
+          className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-all ${
+            enabled ? 'left-[18px] bg-primary' : 'left-[2px] bg-muted-foreground'
+          }`}
+        />
+      </button>
     </motion.div>
   )
 }
@@ -271,8 +323,10 @@ export default function SettingsPage() {
           </div>
         </motion.div>
 
-        {/* Placeholder sections — ready for wiring */}
         <div className="space-y-5">
+          <MascotToggleCard delay={0.05} />
+
+          {/* Placeholder sections — ready for wiring */}
           <SettingsSectionCard
             icon={User}
             title="Account"

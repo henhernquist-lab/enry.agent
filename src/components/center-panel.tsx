@@ -38,6 +38,9 @@ import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploa
 import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/attachment-marker'
 
 import { setAgentBusy } from '@/lib/agent-presence'
+import { GolemInline } from './golem/golem-inline'
+import { onGolemQuickAction, pulseGolem, setGolemModel, setGolemSeekTarget } from '@/lib/golem-signals'
+import { getDailySuggestionCards, type SuggestionCard } from '@/lib/suggestion-cards'
 import { RecoveryBanner } from './recovery-banner'
 import { RecoveryState } from '@/lib/recovery/types'
 import { SkillBanner } from './skill-banner'
@@ -156,50 +159,8 @@ const QUICK_ACTIONS = [
   { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages' },
 ]
 
-interface SuggestionCard {
-  label: string
-  glyph: string
-  prompt: string
-  description: string
-}
-
-const SUGGESTION_CARD_POOL: SuggestionCard[] = [
-  // Set 0 — Mon
-  { label: 'Explain a concept', glyph: '?', prompt: 'Explain ', description: 'Break down complex topics into simple explanations' },
-  { label: 'Research a topic', glyph: '🔍', prompt: 'Research and summarize: ', description: 'Deep-dive into any topic with cited sources' },
-  { label: 'Write code', glyph: '<>', prompt: 'Write code to build a todo app', description: 'Generate, refactor, and debug code in any language' },
-  { label: 'Debug my code', glyph: '🐛', prompt: 'Debug this code: ', description: 'Find and fix bugs with detailed explanations' },
-  // Set 1 — Tue
-  { label: 'Search the web', glyph: '/', prompt: 'Search the web for the latest AI news', description: 'Find real-time information from across the internet' },
-  { label: 'Summarize a URL', glyph: '↗', prompt: 'Summarize the content at this URL: ', description: 'Extract key insights from any webpage' },
-  { label: 'Refactor code', glyph: '♻', prompt: 'Refactor this code to ', description: 'Improve code structure without changing behavior' },
-  { label: 'Plan my week', glyph: '📅', prompt: 'Help me plan my week. I need to: ', description: 'Organize tasks and schedule your week efficiently' },
-  // Set 2 — Wed
-  { label: 'Analyze data', glyph: '📊', prompt: 'Analyze this data: ', description: 'Find patterns and insights in your data' },
-  { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages', description: 'Read and draft email responses' },
-  { label: 'Draft an email', glyph: '✉', prompt: 'Draft an email that ', description: 'Compose professional or personal emails quickly' },
-  { label: 'Create flashcards', glyph: '🃏', prompt: 'Create flashcards for: ', description: 'Generate study flashcards from any material' },
-  // Set 3 — Thu
-  { label: 'Write a blog post', glyph: '📝', prompt: 'Write a blog post about ', description: 'Draft engaging long-form content on any topic' },
-  { label: 'Design a system', glyph: '🏗', prompt: 'Design a system architecture for ', description: 'Plan scalable, maintainable system designs' },
-  { label: 'Compare options', glyph: '⚖', prompt: 'Compare ', description: 'Evaluate trade-offs between different approaches' },
-  { label: 'Review my code', glyph: '👀', prompt: 'Review this code for issues: ', description: 'Get a thorough code review with actionable feedback' },
-  // Set 4 — Fri
-  { label: 'Write tests', glyph: '🧪', prompt: 'Write tests for this code: ', description: 'Generate unit and integration test coverage' },
-  { label: 'Translate code', glyph: '🔄', prompt: 'Translate this code from ', description: 'Port code between languages or frameworks' },
-  { label: 'Optimize performance', glyph: '⚡', prompt: 'Optimize the performance of: ', description: 'Profile and speed up slow code or queries' },
-  { label: 'Brainstorm ideas', glyph: '💡', prompt: 'Brainstorm ideas for ', description: 'Generate creative approaches to any problem' },
-  // Set 5 — Sat
-  { label: 'Summarize a paper', glyph: '📄', prompt: 'Summarize this research paper: ', description: 'Extract key findings from academic papers' },
-  { label: 'Learn a new skill', glyph: '🎯', prompt: 'Teach me the basics of ', description: 'Get a structured crash course on any topic' },
-  { label: 'Create a workout', glyph: '🏋', prompt: 'Create a workout plan for ', description: 'Design a training program tailored to your goals' },
-  { label: 'Write documentation', glyph: '📚', prompt: 'Write documentation for ', description: 'Generate clear, structured docs for any codebase' },
-  // Set 6 — Sun
-  { label: 'Audit my codebase', glyph: '🔬', prompt: 'Audit this codebase for ', description: 'Scan for security, performance, and style issues' },
-  { label: 'Generate a script', glyph: '📜', prompt: 'Write a script that ', description: 'Create automation scripts for any task' },
-  { label: 'Mock an interview', glyph: '🎤', prompt: 'Mock interview me for ', description: 'Practice technical or behavioral interviews' },
-  { label: 'Plan a project', glyph: '🗺', prompt: 'Help me plan a project to ', description: 'Break down goals into milestones and tasks' },
-]
+// SuggestionCard + the 28-card pool now live in @/lib/suggestion-cards so the
+// mascot's click-to-fire draws from the same deck this rotation does.
 
 
 
@@ -525,7 +486,14 @@ export function CenterPanel({
   // goes away mid-stream (e.g. navigating away).
   useEffect(() => () => {
     if (busyRef.current) setAgentBusy(false)
+    setGolemSeekTarget(null)
   }, [])
+
+  // Tell the mascot which model is active so it can tint itself.
+  useEffect(() => { setGolemModel(model) }, [model])
+
+  // A failed request makes Golem flinch.
+  useEffect(() => { if (error) pulseGolem('error') }, [error])
 
   useEffect(() => {
     if (status !== 'streaming') return
@@ -750,15 +718,20 @@ export function CenterPanel({
   const router = useRouter()
 
   // Daily card rotation — pick a different set of 4 each day
-  const dailyCards = useMemo(() => {
-    const dayIndex = Math.floor(Date.now() / 86400000) % 7
-    return SUGGESTION_CARD_POOL.slice(dayIndex * 4, dayIndex * 4 + 4)
-  }, [])
+  const dailyCards = useMemo(() => getDailySuggestionCards(), [])
 
-  const handlePrefillPrompt = (prompt: string) => {
+  const handlePrefillPrompt = useCallback((prompt: string) => {
     setInput(prompt)
     setTimeout(() => textareaRef.current?.focus(), 0)
-  }
+  }, [])
+
+  // Clicking the mascot fires a random card from the same pool.
+  useEffect(() => {
+    return onGolemQuickAction((card: SuggestionCard) => {
+      if (card.label === 'Write code') router.push('/agent')
+      else handlePrefillPrompt(card.prompt)
+    })
+  }, [handlePrefillPrompt, router])
 
   const handleModelSelect = (id: ModelId) => {
     setModel(id)
@@ -766,6 +739,16 @@ export function CenterPanel({
     if (!modelSupportsReasoning(id)) setReasoningDepth('off')
     onModelChange(id)
     setModelOpen(false)
+  }
+
+  // Typing pulls Golem over toward the composer. The target expires on its own
+  // a few seconds after the last keystroke, so there's nothing to clear here.
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    const rect = textareaRef.current?.getBoundingClientRect()
+    // Aim above the composer, not at it — combined with the engine's hover
+    // distance that keeps him near the input without sitting on top of it.
+    if (rect) setGolemSeekTarget({ x: rect.left + rect.width / 2, y: rect.top - 40 })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -954,8 +937,9 @@ export function CenterPanel({
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 28 }}
-                className="mb-6"
+                className="mb-6 flex flex-col items-center gap-4"
               >
+                <GolemInline size={96} slow />
                 <GolemLogo size="lg" />
               </motion.div>
 
@@ -1130,12 +1114,13 @@ export function CenterPanel({
               animate={{ opacity: 1, y: 0 }}
               className="flex gap-4"
             >
-              <div className="rounded border border-primary/30 bg-surface-secondary px-4 py-3 shadow-[0_0_18px_rgba(0,255,102,0.07)]">
+              <div className="flex items-center gap-3 rounded border border-primary/30 bg-surface-secondary px-4 py-2 shadow-[0_0_18px_rgba(0,255,102,0.07)]">
+                <GolemInline state="thinking" size={40} />
                 <div className="flex items-center gap-1.5">
                   {[0, 0.2, 0.4].map((delay) => (
                     <motion.div
                       key={delay}
-                      className="h-2 w-2 rounded-full bg-primary"
+                      className="h-1.5 w-1.5 rounded-full bg-primary"
                       animate={{ scale: [1, 1.2, 1], opacity: [0.6, 1, 0.6] }}
                       transition={{ duration: 0.6, repeat: Infinity, delay }}
                     />
@@ -1553,7 +1538,7 @@ export function CenterPanel({
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={
                 isDraggingFile

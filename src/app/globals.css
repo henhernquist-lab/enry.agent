@@ -129,6 +129,120 @@ html[data-theme='light'] {
   --grid-line: rgba(226, 232, 240, 1);
 }
 
+/* ── Golem the mascot ──────────────────────────────────────────────
+   Every swatch is derived from the palette above and declared once, here.
+   Custom properties resolve their var() references against the element they
+   compute on — and that element is <html>, which is also what carries
+   [data-theme]. So a theme block overriding --primary / --muted-foreground /
+   --surface-elevated re-derives this whole set automatically: a future theme
+   gets a correct Golem without touching this file.
+   The lighting mixes (#000 / #fff) are shading, not palette — they read
+   correctly over the mid-tone body in every theme, dark or light. */
+:root {
+  --golem-clay: color-mix(in srgb, var(--muted-foreground) 55%, var(--surface-elevated));
+  --golem-body: color-mix(in srgb, var(--primary) 16%, var(--golem-clay));
+  --golem-body-shade: color-mix(in srgb, var(--golem-body) 86%, #000);
+  --golem-body-light: color-mix(in srgb, var(--golem-body) 78%, #fff);
+  --golem-outline: color-mix(in srgb, var(--golem-body) 62%, #000);
+  --golem-crack: color-mix(in srgb, var(--golem-body) 52%, #000);
+  --golem-shadow: color-mix(in srgb, #000 26%, transparent);
+}
+
+/* The accent swatches are declared on the figure, not on :root, because a
+   var() in a custom property resolves against the element it computes on —
+   the per-instance --golem-model-tint set inline on this element has to be
+   visible to them. Unset, the tint falls back to --primary and the result is
+   byte-identical to the untinted palette. 22% is the whole budget: enough to
+   register out of the corner of your eye, not a costume change. */
+.golem-figure {
+  --golem-accent: color-mix(in srgb, var(--golem-model-tint, var(--primary)) 22%, var(--primary));
+  --golem-rune: color-mix(in srgb, var(--golem-accent) 72%, transparent);
+  --golem-eye: color-mix(in srgb, var(--golem-accent) 85%, var(--foreground));
+  --golem-glow: color-mix(in srgb, var(--golem-accent) 30%, transparent);
+}
+
+/* ── Mascot state treatments ───────────────────────────────────────
+   State-owned motion lives here rather than in the rAF loop: these are
+   presentational flourishes, and CSS keyframes keep them off the main
+   thread and out of React entirely. */
+.golem-figure .golem-rune-mark {
+  transform-origin: 32px 46px;
+}
+
+.golem-state-thinking .golem-rune-mark {
+  animation: golem-rune-pulse 1.4s ease-in-out infinite;
+}
+@keyframes golem-rune-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.94); }
+  50%      { opacity: 1;    transform: scale(1.06); }
+}
+
+.golem-state-success {
+  animation: golem-celebrate 1.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes golem-celebrate {
+  0%   { transform: translateY(0) rotate(0deg); }
+  25%  { transform: translateY(-16px) rotate(-8deg); }
+  45%  { transform: translateY(0) rotate(0deg); }
+  62%  { transform: translateY(-8px) rotate(6deg); }
+  80%  { transform: translateY(0) rotate(0deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+.golem-state-error {
+  animation: golem-shudder 0.5s ease-in-out 2;
+  filter: saturate(0.45);
+}
+@keyframes golem-shudder {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  20%      { transform: translateX(-3px) rotate(-2.5deg); }
+  60%      { transform: translateX(3px) rotate(2.5deg); }
+}
+.golem-state-error .golem-fracture {
+  animation: golem-fracture-in 0.35s ease-out both;
+}
+@keyframes golem-fracture-in {
+  from { opacity: 0; }
+  to   { opacity: 0.9; }
+}
+
+.golem-state-dozing {
+  filter: saturate(0.8) brightness(0.92);
+}
+
+/* Usage past its warning threshold: heavy, tired, tilted. Pairs with the
+   motion engine's speed scale — this is only the posture half. */
+.golem-droop {
+  transform: rotate(6deg) translateY(3px);
+  filter: saturate(0.6) brightness(0.88);
+}
+.golem-figure {
+  transition: filter 400ms ease, transform 600ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .golem-state-thinking .golem-rune-mark,
+  .golem-state-success,
+  .golem-state-error,
+  .golem-state-error .golem-fracture,
+  .golem-inline-bob {
+    animation: none !important;
+  }
+}
+
+/* Inline placements (empty states, login, 404, the chat thinking indicator)
+   breathe on CSS alone — no rAF, so a page can mount several for free. */
+.golem-inline-bob {
+  animation: golem-inline-bob 3.4s ease-in-out infinite;
+}
+@keyframes golem-inline-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+.golem-inline-bob-slow {
+  animation-duration: 5.5s;
+}
+
 @theme inline {
   --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace;
