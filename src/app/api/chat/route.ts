@@ -18,6 +18,11 @@ import { logUsage } from '@/lib/usage/log'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { monidDiscover, monidRun } from '@/lib/monid'
 import { getReceiptsHook } from '@/lib/learn/receipts-hook'
+import { getAllDueWork, getAllAnnouncements } from '@/lib/classroom'
+import {
+  getAssignments,
+  getAnnouncements as getICAnnouncements,
+} from '@/lib/infinite-campus'
 import { RecoveryManager } from '@/lib/recovery/recovery-manager'
 // Side-effect import: registers enryReceiptsDetector as the active
 // ReceiptsHook at module-load time, before this route's first
@@ -648,6 +653,174 @@ export async function POST(req: Request) {
   // given toolkit - so the model never sees a tool it can't actually call.
   const composioTools = await buildComposioTools(uid, focusMode)
   Object.assign(allTools, composioTools)
+
+  // School tools — Google Classroom + Infinite Campus (read-only). Always
+  // available regardless of focus mode (school data isn't web/repo/memory).
+  allTools.school_whats_due = tool({
+    description:
+      'Pull upcoming and due assignments from Google Classroom and Infinite Campus. Returns assignments sorted by due date (closest first), tagged by source. Use this when Henry asks "what\'s due", "any homework", "upcoming assignments", or similar. Results are merged from both school systems into one sorted list.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const results: Array<{
+        source: string
+        title: string
+        course: string
+        dueDate: string | null
+        status: string | null
+        points: number | null
+        link: string | null
+      }> = []
+      const errors: string[] = []
+
+      // Google Classroom
+      try {
+        const { courses: gcCourses, error: gcError } = await getAllDueWork()
+        if (gcError) {
+          errors.push(`Google Classroom: ${gcError}`)
+        } else {
+          for (const { course, work } of gcCourses) {
+            for (const w of work) {
+              let dueDate: string | null = null
+              if (w.dueDate) {
+                const d = new Date(
+                  w.dueDate.year ?? 0,
+                  (w.dueDate.month ?? 1) - 1,
+                  w.dueDate.day ?? 1,
+                  w.dueTime?.hours ?? 0,
+                  w.dueTime?.minutes ?? 0,
+                )
+                if (!isNaN(d.getTime())) dueDate = d.toISOString()
+              }
+              results.push({
+                source: 'google_classroom',
+                title: w.title,
+                course: course.name,
+                dueDate,
+                status: w.state,
+                points: w.maxPoints ?? null,
+                link: w.alternateLink ?? null,
+              })
+            }
+          }
+        }
+      } catch (e) {
+        errors.push(`Google Classroom: ${String((e as Error)?.message ?? e)}`)
+      }
+
+      // Infinite Campus
+      try {
+        const { assignments: icItems, error: icError } = await getAssignments()
+        if (icError) {
+          errors.push(`Infinite Campus: ${icError}`)
+        } else {
+          for (const a of icItems) {
+            let dueDate: string | null = null
+            if (a.dueDate) {
+              const d = new Date(a.dueDate)
+              if (!isNaN(d.getTime())) dueDate = d.toISOString()
+            }
+            results.push({
+              source: 'infinite_campus',
+              title: a.name,
+              course: a.course,
+              dueDate,
+              status: a.status,
+              points: a.totalPoints ? parseFloat(a.totalPoints) : null,
+              link: null,
+            })
+          }
+        }
+      } catch (e) {
+        errors.push(`Infinite Campus: ${String((e as Error)?.message ?? e)}`)
+      }
+
+      // Sort by due date closest first
+      results.sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return 0
+        if (!a.dueDate) return 1
+        if (!b.dueDate) return -1
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      })
+
+      return {
+        assignments: results,
+        count: results.length,
+        errors: errors.length > 0 ? errors : undefined,
+      }
+    },
+  })
+
+  allTools.school_announcements = tool({
+    description:
+      'Pull recent class announcements from Google Classroom and Infinite Campus. Returns announcements sorted by date (most recent first), tagged by source. Use this when Henry asks "any announcements", "what did my teachers post", "class updates", or similar.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const results: Array<{
+        source: string
+        course: string
+        text: string
+        date: string | null
+        link: string | null
+      }> = []
+      const errors: string[] = []
+
+      // Google Classroom
+      try {
+        const { courses: gcCourses, error: gcError } = await getAllAnnouncements()
+        if (gcError) {
+          errors.push(`Google Classroom: ${gcError}`)
+        } else {
+          for (const { course, announcements } of gcCourses) {
+            for (const a of announcements) {
+              results.push({
+                source: 'google_classroom',
+                course: course.name,
+                text: a.text,
+                date: a.creationTime ?? null,
+                link: a.alternateLink ?? null,
+              })
+            }
+          }
+        }
+      } catch (e) {
+        errors.push(`Google Classroom: ${String((e as Error)?.message ?? e)}`)
+      }
+
+      // Infinite Campus
+      try {
+        const { announcements: icItems, error: icError } = await getICAnnouncements()
+        if (icError) {
+          errors.push(`Infinite Campus: ${icError}`)
+        } else {
+          for (const a of icItems) {
+            results.push({
+              source: 'infinite_campus',
+              course: a.course,
+              text: a.text,
+              date: a.date,
+              link: null,
+            })
+          }
+        }
+      } catch (e) {
+        errors.push(`Infinite Campus: ${String((e as Error)?.message ?? e)}`)
+      }
+
+      // Sort by date most recent first
+      results.sort((a, b) => {
+        if (!a.date && !b.date) return 0
+        if (!a.date) return 1
+        if (!b.date) return -1
+        return new Date(b.date).getTime() - new Date(a.date).getTime()
+      })
+
+      return {
+        announcements: results,
+        count: results.length,
+        errors: errors.length > 0 ? errors : undefined,
+      }
+    },
+  })
 
   // Monid — general-purpose API discovery/execution fallback. Always available
   // regardless of focus mode. The model should reach for this LAST, after
