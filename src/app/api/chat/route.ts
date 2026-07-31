@@ -315,7 +315,12 @@ export async function POST(req: Request) {
   }
 
   const focusMode: FocusMode = ['all', 'memory_only', 'web_only', 'repo_only'].includes(body.focusMode) ? body.focusMode : 'all'
-  const reasoningDepth: string = ['off','summary','full'].includes(body.reasoningDepth) ? body.reasoningDepth : 'off'
+  // Chat's Think toggle is on/off only now — 'summary' was a dead third
+  // state (identical upstream request to 'full', just a client-side 300-char
+  // truncation of the trace). Kept as a string rather than boolean since
+  // modelSupportsReasoning() and the extra_body gate below both key off the
+  // 'off' sentinel — smaller diff than threading a boolean through.
+  const reasoningDepth: string = ['off','full'].includes(body.reasoningDepth) ? body.reasoningDepth : 'off'
 
   // Session focus (domain scope — orthogonal to focusMode/source scope).
   // Accepts the compact wire form "drive" | "learn" | "school" | "none"
@@ -367,6 +372,20 @@ export async function POST(req: Request) {
   const focusDirective = focusMode !== 'all'
     ? `\n\nFOCUS MODE: ${focusMode.replace(/_/g, ' ').toUpperCase()} — you are restricted to only the tools available in this mode. Do not attempt to use tools outside this scope.`
     : ''
+
+  // Chat effort (Low/Medium/High) — sent by the client as `effort` from the
+  // model picker's effort dropdown. Previously this field reached the server
+  // and was silently dropped: it never touched the system prompt, token
+  // budget, or any provider option, so the dropdown was cosmetic. This wires
+  // it to response depth/verbosity via a system-prompt directive.
+  const EFFORT_DIRECTIVES = {
+    low: '\n\nEFFORT: LOW — keep every response as short as the question allows. One or two sentences for a factual ask, a short paragraph at most for anything else. Skip the plan/verify/report ceremony below unless Henry explicitly asks for depth.',
+    medium: '\n\nEFFORT: MEDIUM (default) — match response length to the actual complexity of the ask. A simple question gets a short, direct answer. Only go long, structured, or multi-section when the request is genuinely multi-part or explicitly asks for detail.',
+    high: "\n\nEFFORT: HIGH — Henry wants room to think here. When a question is genuinely complex, ambiguous, or multi-part, give it the full treatment: structure, numbered steps, tradeoffs, edge cases. This permits depth, it doesn't force it — a simple question still gets a simple answer.",
+  } as const
+  const effortLevel: keyof typeof EFFORT_DIRECTIVES =
+    body.effort === 'low' || body.effort === 'high' ? body.effort : 'medium'
+  const effortDirective = EFFORT_DIRECTIVES[effortLevel]
 
   // ─── Multi-skill mode ────────────────────────────────────────────────
   const multiSlugs: string[] = Array.isArray(skillSlugs) && skillSlugs.length > 0
@@ -424,7 +443,7 @@ export async function POST(req: Request) {
     const skillStartedAt = Date.now()
     const skillResult = streamText({
       model: chatClient.chat(modelParam),
-      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}${isRecovery ? recoverySystemPrompt : ''}`,
+      system: `${combinedSystem}\n\nCURRENT TURN: You are on assistant turn ${turn}. Produce this turn's content.${focusDirective}${sessionFocusDirective}${effortDirective}${isRecovery ? recoverySystemPrompt : ''}`,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: finalMessages as any,
       ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
@@ -664,6 +683,7 @@ export async function POST(req: Request) {
       recoverySystemPrompt,
       focusDirective,
       sessionFocusDirective,
+      effortDirective,
       userProfile,
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
