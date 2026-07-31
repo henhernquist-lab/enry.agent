@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search, Globe, Bot } from 'lucide-react'
+import { Settings, ArrowLeft, Mail, Loader2, CheckCircle2, AlertTriangle, Link2Off, User, Sliders, Cpu, Puzzle, Search, Globe, Bot, GraduationCap, School, Key, X } from 'lucide-react'
 import Link from 'next/link'
 import { loadGolemVisible, saveGolemVisible } from '@/lib/golem-mascot'
 
@@ -285,6 +285,205 @@ function ConnectorsSection() {
   )
 }
 
+// ── School credentials section ──────────────────────────────────────────────
+
+function SchoolSection() {
+  const searchParams = useSearchParams()
+  const [icBusy, setIcBusy] = useState(false)
+  const [classroomBusy, setClassroomBusy] = useState(false)
+  const [icHasCreds, setIcHasCreds] = useState(false)
+  const [classroomConnected, setClassroomConnected] = useState(false)
+  const [icUsername, setIcUsername] = useState('')
+  const [icPassword, setIcPassword] = useState('')
+  const [icShowForm, setIcShowForm] = useState(false)
+  const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null)
+
+  // Check connection status on mount and after OAuth redirect
+  useEffect(() => {
+    fetch('/api/settings/ic-credentials')
+      .then((r) => r.json())
+      .then((d) => setIcHasCreds(d.has_credentials))
+      .catch(() => {})
+
+    fetch('/api/settings/classroom-status')
+      .then((r) => r.json())
+      .then((d) => setClassroomConnected(d.connected))
+      .catch(() => {})
+  }, [])
+
+  // Handle OAuth callback params
+  useEffect(() => {
+    const connected = searchParams.get('classroom_connected')
+    const err = searchParams.get('classroom_error')
+    if (connected) {
+      setClassroomConnected(true)
+      setBanner({ ok: true, text: 'Google Classroom connected successfully.' })
+    } else if (err) {
+      setBanner({ ok: false, text: `Classroom connection failed (${err}). Try again.` })
+    }
+  }, [searchParams])
+
+  const saveIC = async () => {
+    if (!icUsername.trim() || !icPassword.trim()) return
+    setIcBusy(true)
+    try {
+      const res = await fetch('/api/settings/ic-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: icUsername, password: icPassword }),
+      })
+      if (res.ok) {
+        setIcHasCreds(true)
+        setIcShowForm(false)
+        setIcPassword('')
+        setBanner({ ok: true, text: 'Infinite Campus credentials saved.' })
+      } else {
+        const d = await res.json()
+        setBanner({ ok: false, text: d.error ?? 'Failed to save credentials.' })
+      }
+    } catch {
+      setBanner({ ok: false, text: 'Failed to save credentials.' })
+    } finally {
+      setIcBusy(false)
+    }
+  }
+
+  const removeIC = async () => {
+    setIcBusy(true)
+    try {
+      await fetch('/api/settings/ic-credentials', { method: 'DELETE' })
+      setIcHasCreds(false)
+      setBanner({ ok: true, text: 'Infinite Campus credentials removed.' })
+    } catch {
+      setBanner({ ok: false, text: 'Failed to remove credentials.' })
+    } finally {
+      setIcBusy(false)
+    }
+  }
+
+  const connectClassroom = async () => {
+    setClassroomBusy(true)
+    try {
+      const res = await fetch('/api/settings/classroom-connect', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        setBanner({ ok: false, text: data.error ?? 'Could not start connection.' })
+        setClassroomBusy(false)
+        return
+      }
+      window.location.assign(data.redirect_url)
+    } catch {
+      setBanner({ ok: false, text: 'Could not start connection.' })
+      setClassroomBusy(false)
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2 }}
+      className="mt-6"
+    >
+      <p className="mb-3 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">School</p>
+
+      {banner && (
+        <div className={`mb-3 flex items-start gap-2 rounded border px-3 py-2 ${banner.ok ? 'border-primary/30 bg-primary/5' : 'border-destructive/40 bg-destructive/10'}`}>
+          {banner.ok ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-primary" /> : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-destructive" />}
+          <span className={`font-mono text-[11px] ${banner.ok ? 'text-foreground/90' : 'text-destructive'}`}>{banner.text}</span>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {/* Infinite Campus */}
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-secondary p-4">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-border bg-background">
+            <School className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="font-mono text-[12px] text-foreground">Infinite Campus</p>
+              {icHasCreds ? (
+                <span className="flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary"><CheckCircle2 className="h-2.5 w-2.5" /> configured</span>
+              ) : null}
+            </div>
+            <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+              APS student portal — assignments, grades, announcements. Your login is encrypted at rest.
+            </p>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {icHasCreds ? (
+              <button onClick={removeIC} disabled={icBusy}
+                className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40">
+                {icBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />} Remove
+              </button>
+            ) : icShowForm ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={icUsername}
+                  onChange={(e) => setIcUsername(e.target.value)}
+                  className="w-28 rounded border border-border bg-background px-2 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/50"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={icPassword}
+                  onChange={(e) => setIcPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && saveIC()}
+                  className="w-28 rounded border border-border bg-background px-2 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/50"
+                />
+                <button onClick={saveIC} disabled={icBusy}
+                  className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:opacity-40">
+                  {icBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Key className="h-3.5 w-3.5" />} Save
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setIcShowForm(true)}
+                className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20">
+                <Key className="h-3.5 w-3.5" /> Configure
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Google Classroom */}
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-secondary p-4">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-border bg-background">
+            <GraduationCap className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="font-mono text-[12px] text-foreground">Google Classroom</p>
+              {classroomConnected ? (
+                <span className="flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary"><CheckCircle2 className="h-2.5 w-2.5" /> connected</span>
+              ) : null}
+            </div>
+            <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+              Assignments, due dates, and announcements. Read-only — Golem never modifies anything.
+            </p>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <button onClick={connectClassroom} disabled={classroomBusy}
+              className={`flex items-center gap-1.5 rounded border px-3 py-1.5 font-mono text-[11px] transition-colors disabled:opacity-40 ${
+                classroomConnected
+                  ? 'border-border text-muted-foreground hover:text-foreground'
+                  : 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
+              }`}>
+              {classroomBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {classroomConnected ? 'Reconnect' : 'Connect'}
+            </button>
+          </div>
+        </div>
+      </div>
+      <p className="mt-3 font-mono text-[9px] leading-relaxed text-muted-foreground/70">
+        Each user connects their own school accounts. Credentials are encrypted at rest and never exposed to other users or the client. Golem only reads — no submissions or modifications.
+      </p>
+    </motion.div>
+  )
+}
+
 export default function SettingsPage() {
   return (
     <div className="relative flex min-h-screen flex-col bg-transparent">
@@ -355,6 +554,7 @@ export default function SettingsPage() {
 
         <Suspense fallback={null}>
           <ConnectorsSection />
+          <SchoolSection />
         </Suspense>
       </div>
     </div>

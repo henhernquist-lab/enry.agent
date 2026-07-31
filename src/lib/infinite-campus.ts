@@ -1,20 +1,16 @@
-// Infinite Campus student portal scraper — read-only.
+// Infinite Campus student portal scraper — read-only, per-user.
 // Infinite Campus has NO public student API. This uses Playwright to log in
-// with stored credentials, navigate to the assignments and announcements
-// views, and parse the rendered page.
+// with each user's stored IC credentials, navigate to the assignments and
+// announcements views, and parse the rendered page.
 //
-// Required env vars:
-//   IC_USERNAME  — Henry's Infinite Campus login (student ID or username)
-//   IC_PASSWORD  — Henry's Infinite Campus password
+// Credentials are stored encrypted in user_credentials (service='infinite_campus')
+// and decrypted at runtime. No env var fallback — every user provides their own.
 //
 // Portal URL: https://ic.apsk12.org/campus/portal/students/atlanta.jsp
-//
-// IMPORTANT — credential risk tier: this stores a real personal login
-// (username + password), not just an API key. Henry explicitly confirmed
-// this is acceptable. The credentials are only accessed server-side and
-// never exposed to the client.
 
 import { chromium, Browser, Page } from 'playwright'
+import { supabase } from '@/lib/supabase'
+import { decrypt } from '@/lib/crypto'
 
 const PORTAL_URL = 'https://ic.apsk12.org/campus/portal/students/atlanta.jsp'
 
@@ -44,13 +40,51 @@ async function getBrowser(): Promise<Browser> {
   return _browser
 }
 
+// ── Credential lookup ───────────────────────────────────────────────────────
+
+async function getCredentials(uid: string): Promise<{
+  username: string
+  password: string
+  error: string | null
+}> {
+  const { data } = await supabase
+    .from('user_credentials')
+    .select('credential_a, credential_b')
+    .eq('user_id', uid)
+    .eq('service', 'infinite_campus')
+    .maybeSingle()
+
+  if (!data?.credential_a || !data?.credential_b) {
+    return {
+      username: '',
+      password: '',
+      error: 'Infinite Campus is not configured. Go to Settings → School to add your IC login.',
+    }
+  }
+
+  try {
+    return {
+      username: decrypt(data.credential_a),
+      password: decrypt(data.credential_b),
+      error: null,
+    }
+  } catch (e) {
+    return {
+      username: '',
+      password: '',
+      error: 'Failed to decrypt IC credentials. Try re-saving them in Settings.',
+    }
+  }
+}
+
 // ── Login ───────────────────────────────────────────────────────────────────
 
-async function login(): Promise<{ page: Page; error: string | null }> {
-  const username = process.env.IC_USERNAME
-  const password = process.env.IC_PASSWORD
-  if (!username || !password) {
-    return { page: null as unknown as Page, error: 'Infinite Campus is not configured. Set IC_USERNAME and IC_PASSWORD in env vars.' }
+async function login(
+  uid: string,
+): Promise<{ page: Page; error: string | null }> {
+  const { username, password, error: credError } = await getCredentials(uid)
+  if (credError) {
+    return { page: null as unknown as Page, error: credError }
   }
 
   let browser: Browser
@@ -64,22 +98,17 @@ async function login(): Promise<{ page: Page; error: string | null }> {
   const page = await context.newPage()
 
   try {
-    // Navigate to login page
     await page.goto(PORTAL_URL, { waitUntil: 'networkidle', timeout: 30_000 })
 
-    // The IC portal shows a login form with username/password fields.
-    // Field names vary by district but typically are: username, password
     await page.fill('input[name="username"]', username)
     await page.fill('input[name="password"]', password)
     await page.click('input[type="submit"], button[type="submit"], #loginButton, .login-button')
 
-    // Wait for navigation to the student dashboard
     await page.waitForURL(/campus\/portal\/students\/atlanta\.jsp/, {
       timeout: 20_000,
       waitUntil: 'networkidle',
     })
 
-    // Check for login failure (look for error messages)
     const errorMsg = await page.$('.error-message, .alert-danger, #errorMessage')
     if (errorMsg) {
       const text = await errorMsg.textContent()
@@ -96,38 +125,27 @@ async function login(): Promise<{ page: Page; error: string | null }> {
 
 // ── Scrape assignments ──────────────────────────────────────────────────────
 
-export async function getAssignments(): Promise<{
+export async function getAssignments(uid: string): Promise<{
   assignments: ICAssignment[]
   error: string | null
 }> {
-  const { page, error: loginError } = await login()
+  const { page, error: loginError } = await login(uid)
   if (loginError) return { assignments: [], error: loginError }
 
   try {
     const context = page.context()
 
-    // Navigate to the grades/assignments view. The exact URL path varies by
-    // district, but typically: /campus/portal/students/atlanta.jsp then
-    // click "Grades" or navigate to the grades tab.
-    //
-    // Common pattern: the student portal has a "Grades" link/button that
-    // loads the gradebook view with assignments.
-    await page.goto('https://ic.apsk12.org/campus/portal/students/atlanta.jsp', {
+    await page.goto(PORTAL_URL, {
       waitUntil: 'networkidle',
       timeout: 20_000,
     })
 
-    // Try clicking the Grades tab/link — IC portals typically have a tab
-    // navigation with links like "Grades", "Schedule", "Reports", etc.
     const gradesTab = await page.$('a[href*="grades"], a:has-text("Grades"), #grades, .tab-grades')
     if (gradesTab) {
       await gradesTab.click()
       await page.waitForLoadState('networkidle')
     }
 
-    // Parse assignment rows from the gradebook table.
-    // IC's DOM structure uses tables with class names like .gradebook-table,
-    // .assignment-table, or plain <table> inside a content area.
     const rawRows = await page.$$eval(
       'table tr, .assignment-row, .gradebook-row, [data-row]',
       (els) =>
@@ -167,23 +185,21 @@ export async function getAssignments(): Promise<{
 
 // ── Scrape announcements ────────────────────────────────────────────────────
 
-export async function getAnnouncements(): Promise<{
+export async function getAnnouncements(uid: string): Promise<{
   announcements: ICAnnouncement[]
   error: string | null
 }> {
-  const { page, error: loginError } = await login()
+  const { page, error: loginError } = await login(uid)
   if (loginError) return { announcements: [], error: loginError }
 
   try {
     const context = page.context()
 
-    await page.goto('https://ic.apsk12.org/campus/portal/students/atlanta.jsp', {
+    await page.goto(PORTAL_URL, {
       waitUntil: 'networkidle',
       timeout: 20_000,
     })
 
-    // Announcements typically appear on the portal home/dashboard page
-    // or under a dedicated "Announcements" section. Look for common containers.
     const items = await page.$$eval(
       '.announcement-item, .message-item, .notification-item, .portal-announcement, .dashboard-message',
       (els) =>
@@ -195,8 +211,6 @@ export async function getAnnouncements(): Promise<{
         }),
     )
 
-    // Fallback: if no announcement-specific elements found, check for
-    // dashboard content blocks that might contain announcements.
     if (items.length === 0) {
       const blocks = await page.$$eval(
         '.dashboard-widget, .portal-block, .content-block, .message-block',

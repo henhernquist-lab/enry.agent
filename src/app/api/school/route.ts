@@ -88,7 +88,7 @@ function parseDueDate(
 
 // ── Fetch helpers ───────────────────────────────────────────────────────────
 
-async function fetchDueWork(): Promise<{
+async function fetchDueWork(uid: string): Promise<{
   assignments: UnifiedAssignment[]
   errors: string[]
 }> {
@@ -97,7 +97,7 @@ async function fetchDueWork(): Promise<{
 
   // Google Classroom
   try {
-    const { courses: gcCourses, error: gcError } = await getAllDueWork()
+    const { courses: gcCourses, error: gcError } = await getAllDueWork(uid)
     if (gcError) {
       errors.push(`Google Classroom: ${gcError}`)
     } else {
@@ -123,7 +123,7 @@ async function fetchDueWork(): Promise<{
 
   // Infinite Campus
   try {
-    const { assignments: icAssignments, error: icError } = await getAssignments()
+    const { assignments: icAssignments, error: icError } = await getAssignments(uid)
     if (icError) {
       errors.push(`Infinite Campus: ${icError}`)
     } else {
@@ -156,7 +156,7 @@ async function fetchDueWork(): Promise<{
   return { assignments, errors }
 }
 
-async function fetchAnnouncements(): Promise<{
+async function fetchAnnouncements(uid: string): Promise<{
   announcements: UnifiedAnnouncement[]
   errors: string[]
 }> {
@@ -165,7 +165,7 @@ async function fetchAnnouncements(): Promise<{
 
   // Google Classroom
   try {
-    const { courses: gcCourses, error: gcError } = await getAllAnnouncements()
+    const { courses: gcCourses, error: gcError } = await getAllAnnouncements(uid)
     if (gcError) {
       errors.push(`Google Classroom: ${gcError}`)
     } else {
@@ -187,7 +187,7 @@ async function fetchAnnouncements(): Promise<{
 
   // Infinite Campus
   try {
-    const { announcements: icItems, error: icError } = await getICAnnouncements()
+    const { announcements: icItems, error: icError } = await getICAnnouncements(uid)
     if (icError) {
       errors.push(`Infinite Campus: ${icError}`)
     } else {
@@ -234,7 +234,7 @@ export async function GET(req: Request) {
       return Response.json({ items: _dueCache.data, cached: true })
     }
 
-    const { assignments, errors } = await fetchDueWork()
+    const { assignments, errors } = await fetchDueWork(uid)
     _dueCache = { data: assignments, expiresAt: Date.now() + CACHE_TTL_MS }
 
     return Response.json({ items: assignments, errors: errors.length > 0 ? errors : undefined })
@@ -245,7 +245,7 @@ export async function GET(req: Request) {
       return Response.json({ items: _announcementsCache.data, cached: true })
     }
 
-    const { announcements, errors } = await fetchAnnouncements()
+    const { announcements, errors } = await fetchAnnouncements(uid)
     _announcementsCache = {
       data: announcements,
       expiresAt: Date.now() + CACHE_TTL_MS,

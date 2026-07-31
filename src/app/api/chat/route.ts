@@ -674,7 +674,7 @@ export async function POST(req: Request) {
 
       // Google Classroom
       try {
-        const { courses: gcCourses, error: gcError } = await getAllDueWork()
+        const { courses: gcCourses, error: gcError } = await getAllDueWork(uid!)
         if (gcError) {
           errors.push(`Google Classroom: ${gcError}`)
         } else {
@@ -709,7 +709,7 @@ export async function POST(req: Request) {
 
       // Infinite Campus
       try {
-        const { assignments: icItems, error: icError } = await getAssignments()
+        const { assignments: icItems, error: icError } = await getAssignments(uid!)
         if (icError) {
           errors.push(`Infinite Campus: ${icError}`)
         } else {
@@ -766,7 +766,7 @@ export async function POST(req: Request) {
 
       // Google Classroom
       try {
-        const { courses: gcCourses, error: gcError } = await getAllAnnouncements()
+        const { courses: gcCourses, error: gcError } = await getAllAnnouncements(uid!)
         if (gcError) {
           errors.push(`Google Classroom: ${gcError}`)
         } else {
@@ -788,7 +788,7 @@ export async function POST(req: Request) {
 
       // Infinite Campus
       try {
-        const { announcements: icItems, error: icError } = await getICAnnouncements()
+        const { announcements: icItems, error: icError } = await getICAnnouncements(uid!)
         if (icError) {
           errors.push(`Infinite Campus: ${icError}`)
         } else {
