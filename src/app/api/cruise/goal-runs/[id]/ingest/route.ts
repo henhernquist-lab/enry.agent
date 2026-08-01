@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { supabase } from '@/lib/supabase'
 import { createPullRequest } from '@/lib/github'
+import { notify } from '@/lib/notify'
 
 export const maxDuration = 30
 
@@ -132,6 +133,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       patch.status = status === 'build_failed' ? 'completed' : 'failed'
       await supabase.from('cruise_goal_runs').update(patch).eq('id', id)
     }
+    // Fire-and-forget ntfy notification — never blocks the response.
+    // Fetch repo name here (outside the PR block above, which guards on status)
+    // so notifications fire on every terminal state: no_changes, build_failed,
+    // failed, cancelled, capped, and completed.
+    void (async () => {
+      const { data: repo } = await supabase.from('cruise_repos').select('full_name').eq('id', run.repo_id).maybeSingle()
+      const outcome = status === 'completed' ? 'changes+build_ok' : status === 'capped' ? 'changes+build_ok' : status
+      void notify(`Cruise: ${repo?.full_name ?? 'unknown repo'} — ${outcome} (scanfix)`)
+    })()
+
     return Response.json({ ok: true, pr_url: patch.pr_url ?? null })
   }
 

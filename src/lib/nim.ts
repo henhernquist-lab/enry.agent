@@ -9,12 +9,13 @@ import { createOpenAI } from '@ai-sdk/openai'
 // All UI pickers drive off MODEL_LIST — no more inline arrays.
 //
 // Free-tier final lineup (July 2026 cleanup):
-//   * DeepSeek V4 Pro  → OpenRouter (DEEPSEEK_API_KEY / OPENROUTER_API_KEY)
 //   * GLM 5.2          → NVIDIA NIM (GLM_API_KEY)
-//   * Gemini 3.5 Flash → Google AI Studio (GEMINI_API_KEY)
-//   * Llama 3.3 70B    → Groq (GROQ_API_KEY)
-//   * Llama 3.1 8B Instant → Groq (GROQ_API_KEY)
-//   * GPT-OSS 120B     → Groq (GROQ_API_KEY)
+//   * DeepSeek V4 Flash → NVIDIA NIM (DEEPSEEK_API_KEY / NVIDIA_API_KEY)
+//   * DeepSeek V4 Pro   → NVIDIA NIM (DEEPSEEK_API_KEY / NVIDIA_API_KEY)
+//   * Gemini 3.5 Flash  → Google AI Studio (GEMINI_API_KEY)
+//   * Llama 3.3 70B     → Groq (GROQ_API_KEY)
+//   * GPT-OSS 120B       → Groq (GROQ_API_KEY)
+//   * Claude 3.5 Sonnet  → GitHub Models (GITHUB_MODELS_TOKEN)
 // Models are only shown in pickers if their provider key is configured.
 // ───────────────────────────────────────────────────────────────────
 
@@ -51,39 +52,13 @@ export interface ModelMeta {
    */
   maxOutputTokens?: number
   /**
-   * Output reservation to use when tools are attached, overriding
-   * `maxOutputTokens` for that turn.
-   *
-   * A tool-calling turn is not one request — the SDK re-sends the entire
-   * context once per step, and Groq both admits and debits on
-   * `prompt + max_tokens`, not on tokens actually produced. So the reservation
-   * is paid in full again on every step while the prompt only grows, and an
-   * unused output budget is what starves the follow-up request.
-   *
-   * Measured on this route: 2408 tokens of system prompt + 1343 of tool schemas
-   * = 3791 fixed per step, and a 5-result Tavily response adds 1489 more. On the
-   * 70B that made step 2 ask for 5280 + 4096 = 9376 against ~8193 remaining —
-   * the 429 Henry hit ~21s into a web search.
+   * System prompt terseness tier. Maps to Claude naming as shorthand:
+   * - 'haiku' = terse, minimal (rate-limited models)
+   * - 'sonnet' = medium detail (balanced models)
+   * - 'full' (or undefined) = unchanged original prompt (default)
+   * GPT-OSS 120B is left untouched — omit the field to keep it on full.
    */
-  maxOutputTokensWithTools?: number
-  /**
-   * Cap on the characters of a single tool result fed back into context.
-   * Sized from the model's TPM headroom, since every later step re-sends it.
-   */
-  toolResultMaxChars?: number
-  /**
-   * False when a tool round-trip cannot fit the model's per-minute budget at
-   * all, so tools are withheld rather than offered and then failing mid-call.
-   */
-  supportsTools?: boolean
-  /**
-   * Which chat system prompt this model gets. Omitted = 'full'.
-   *
-   * 'lean' is the same agent with the same safety rules, at roughly 40% of the
-   * tokens — for models whose per-minute budget is spent re-sending the prompt
-   * on every step of a tool turn. See src/lib/prompts/system.ts.
-   */
-  systemPrompt?: 'full' | 'lean'
+  systemPromptTier?: 'haiku' | 'sonnet' | 'full'
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
@@ -102,6 +77,7 @@ export const MODEL_LIST: ModelMeta[] = [
     company: 'NVIDIA NIM',
     description: 'Default. Versatile all-rounder.',
     scopes: ['chat', 'drive'],
+    systemPromptTier: 'full',
   },
   {
     // Was deepseek/deepseek-v4-pro on OpenRouter — removed, not renamed. That
@@ -124,6 +100,7 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
     supportsReasoning: true,
+    systemPromptTier: 'sonnet',
   },
   {
     // The full-size DeepSeek, kept selectable alongside Flash rather than
@@ -139,6 +116,7 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
     defaultEffort: 'high',
     supportsReasoning: true,
+    systemPromptTier: 'full',
     // Re-measured after the initial 0/2 timeouts: it now answers 6/6, but at
     // ~50s per reply versus ~3s for Flash, and it returned nothing at all
     // earlier the same day. Shared NVIDIA free-tier capacity, so the honest
@@ -152,6 +130,7 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Fast multimodal — free-tier quota available.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
+    systemPromptTier: 'sonnet',
   },
   {
     id: 'llama-3.3-70b-versatile',
@@ -160,48 +139,44 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Fast, capable generalist on Groq.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
-    systemPrompt: 'lean',
-    // 12000 TPM — the default output budget fits comfortably for a plain reply.
-    maxOutputTokens: 4096,
-    // A tool round-trip is two requests and Groq debits prompt + reservation,
-    // so the budget is 2×P1 + results + 2×reservation ≤ 12000.
-    //
-    // With the lean system prompt P1 is 3617 against the real 22-tool
-    // production set (5123 on the full prompt — the prompt was costing more
-    // than a third of every step). That leaves 4766 to split instead of 1726,
-    // which is what makes 1024 affordable again: 7234 + 800 + 2048 = 10082,
-    // with ~1900 to spare on an empty conversation.
-    //
-    // History is charged on BOTH steps, so that spare covers roughly 950
-    // tokens of conversation (~3800 chars) before this goes over.
-    maxOutputTokensWithTools: 1024,
-    toolResultMaxChars: 2800,
+    // 12000 TPM. 4096 + lean prompt + 20+ tool schemas + focus/effort
+    // directives was exceeding the per-minute budget on tool-annotated
+    // requests (same class as the 8B 6000 TPM bug). 2048 leaves enough
+    // headroom that a request with all tools won't 413.
+    maxOutputTokens: 2048,
+    // Groq bills prompt + output tokens against a per-minute budget, so
+    // lean prompt saves meaningful TPM headroom on every message.
+    systemPromptTier: 'haiku',
   },
   {
-    id: 'llama-3.1-8b-instant',
-    label: 'Llama 3.1 8B Instant',
-    company: 'Groq',
-    description: 'Ultra-fast lightweight model on Groq. Chat only — no tools or web search.',
+    // Replaces Llama 3.1 8B Instant (removed). GitHub Models exposes Claude
+    // 3.5 Sonnet through an OpenAI-compatible endpoint at
+    // https://models.inference.ai.azure.com. Needs a GitHub PAT with default
+    // scopes — no special Models scope required. Set as GITHUB_MODELS_TOKEN.
+    //
+    // Rate limits: GitHub Models free tier for Claude 3.5 Sonnet is NOT yet
+    // confirmed live — the endpoint and model ID should be verified against
+    // the current GitHub Models catalog before promoting this beyond a
+    // selectable option. Start with a low defaultEffort to avoid burning
+    // through unknown quota on aggressive prompts.
+    //
+    // Tool calling: GitHub Models' Claude deployment MAY support tool calls,
+    // but this is unconfirmed — Anthropic's native API does, but the
+    // OpenAI-compatible shim may not. Flag: supportsTools implied by the
+    // adapter (all OpenAI-compatible endpoints get tool schemas), but the
+    // model may ignore or error on them.
+    id: 'anthropic/claude-3.5-sonnet',
+    label: 'Claude 3.5 Sonnet',
+    company: 'Anthropic (GitHub Models)',
+    description: 'Claude via GitHub Models — strong reasoning, long context. Rate limits unconfirmed.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'low',
-    // Lowest TPM of the lineup (6000/min). At the route's default 4096 a single
-    // "hello" — system prompt + tool schemas + the reservation — exceeded the
-    // limit and Groq returned 413, which read to the user as the request being
-    // rejected for its content. 1024 is ample for this model's short-reply role
-    // and leaves ~5000/min for prompt and follow-up turns.
-    maxOutputTokens: 1024,
-    // No tools — a tool round-trip cannot fit this model's budget at any
-    // setting. The fixed overhead of a tool-calling turn (2408 tokens of system
-    // prompt + 1343 of tool schemas = ~3791) is already 63% of a 6000 TPM
-    // minute, and Groq debits prompt + reservation, so step 1 alone spends
-    // 4823 and leaves 1177. Step 2 must re-send that same ~3799-token prompt,
-    // so it cannot be admitted even with zero-length results.
-    // Measured on a 150s-rested window: step 1 200, step 2 429 with the search
-    // results emptied entirely. Truncation and reservation tuning both bottom
-    // out above the limit — only a smaller prompt or fewer tools would help.
-    // Offering tools here only produces a call that always dies on the
-    // follow-up, so they're withheld and the model stays a fast chat-only one.
-    supportsTools: false,
+    // Context window: 200K (native Claude), but GitHub Models may cap lower.
+    // 4096 is conservative for an unknown-quota provider, following the
+    // same pattern as Groq models.
+    maxOutputTokens: 4096,
+    // Rate limits unconfirmed — lean prompt is the safest default.
+    systemPromptTier: 'haiku',
   },
   {
     id: 'openai/gpt-oss-120b',
@@ -210,28 +185,10 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Open-source OpenAI model hosted on Groq.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'high',
-    systemPrompt: 'lean',
     supportsReasoning: true,
     // 8000 TPM — headroom for a longer reply than the 8B, but not the full
     // 4096 default once prompt and tools are counted.
     maxOutputTokens: 2048,
-    // Tools restored. Two things changed since they were withheld:
-    //
-    //   * The lean system prompt drops P1 from 3661 to 2166 against the real
-    //     22-tool set, so two steps cost 4332 of the 8000 TPM ceiling instead
-    //     of 7322. 1024 reserved + a 1500-char result cap lands at 6810.
-    //   * The "cannot emit a tool call below 512 reserved" finding was an
-    //     artifact of the test forcing tool_choice. This route sends
-    //     tool_choice auto, and under auto this model emits a tool call 3/3 at
-    //     1024 reserved. Forcing it is what produced the 400s.
-    //
-    // 768 rather than 1024: history is charged on both steps, and at 1024 a
-    // turn with ~750 tokens of prior conversation measured 8340 against the
-    // 8000 ceiling — a real 429, not window noise. 768 with a 1200-char cap
-    // brings the same turn to ~7740. This model has the least room of the
-    // three and only comfortably supports short conversations.
-    maxOutputTokensWithTools: 768,
-    toolResultMaxChars: 1200,
   },
 ]
 
@@ -382,13 +339,19 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     baseURL: GROQ_BASE,
     getApiKey: () => process.env.GROQ_API_KEY ?? '',
   },
-  'llama-3.1-8b-instant': {
-    baseURL: GROQ_BASE,
-    getApiKey: () => process.env.GROQ_API_KEY ?? '',
-  },
   'openai/gpt-oss-120b': {
     baseURL: GROQ_BASE,
     getApiKey: () => process.env.GROQ_API_KEY ?? '',
+  },
+  // GitHub Models — OpenAI-compatible endpoint. Claude 3.5 Sonnet is the
+  // first model here. Endpoint: https://models.inference.ai.azure.com.
+  // Auth: GitHub PAT with default scopes. Checks both GITHUB_MODELS_TOKEN
+  // and GITHUB_MODELS_API_KEY (env var name was inconsistent in early UI
+  // error messages, so both are accepted to avoid silent miss-on-key-update).
+  // Flags: endpoint + model ID need live verification against current catalog.
+  'anthropic/claude-3.5-sonnet': {
+    baseURL: 'https://models.inference.ai.azure.com',
+    getApiKey: () => process.env.GITHUB_MODELS_TOKEN ?? process.env.GITHUB_MODELS_API_KEY ?? '',
   },
 }
 
@@ -398,7 +361,7 @@ const PROVIDERS: Record<string, ProviderConfig> = {
 // non-NEXT_PUBLIC env var is undefined — without the window guard this warning
 // fires in every visitor's browser console regardless of the real server config.
 if (typeof window === 'undefined' && typeof process !== 'undefined' && !process.env.GROQ_API_KEY) {
-  console.warn('[nim] GROQ_API_KEY is missing. Groq models (Llama 3.3 70B, Llama 3.1 8B Instant, GPT-OSS 120B) are still listed in pickers but will fail on use until the key is set.')
+  console.warn('[nim] GROQ_API_KEY is missing. Groq models (Llama 3.3 70B, GPT-OSS 120B) are still listed in pickers but will fail on use until the key is set.')
 }
 
 // ─── Lookup helpers (used by pickers + server routes) ──────────────

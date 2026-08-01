@@ -46,6 +46,7 @@ jobs:
           echo "CRON_SECRET is set."
 
       - name: Ping Cruise tick endpoint
+        id: tick
         run: |
           code=$(curl -sS -o /tmp/tick.json -w "%{http_code}" -X GET \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
@@ -54,3 +55,9 @@ jobs:
           cat /tmp/tick.json 2>/dev/null || true
           echo
           test "$code" = "200"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -d "Cron failed: enry-cruise-tick — HTTP $(cat /tmp/tick.json 2>/dev/null | head -c 200)" \
+            "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}" 2>/dev/null || true

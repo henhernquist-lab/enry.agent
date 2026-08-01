@@ -1,7 +1,7 @@
 import { streamText, convertToModelMessages } from 'ai'
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
-import { getChatModel, listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
+import { nimClientFor, isCommunityModelId, communityRouteParam, listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
 import { logUsage } from '@/lib/usage/log'
 import { compactMessages } from '@/lib/compaction'
 import { safeStreamErrorMessage } from '@/lib/stream-error'
@@ -141,15 +141,18 @@ export async function POST(req: Request) {
   const { messages, model } = body
   const selectedModel: string = CHAT_MODELS.includes(model) ? model : DEFAULT_MODEL
 
-  let chatModel: ReturnType<typeof getChatModel>
+  let chatClient: ReturnType<typeof nimClientFor>
   try {
-    chatModel = getChatModel(selectedModel)
+    chatClient = nimClientFor(selectedModel)
   } catch {
     return new Response(
       JSON.stringify({ error: `No API key configured for ${selectedModel}` }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
     )
   }
+
+  // Pass the provider model param. Community ids carry a `community:` marker.
+  const modelParam = isCommunityModelId(selectedModel) ? communityRouteParam(selectedModel) : selectedModel
 
   const session = await auth()
   const googleId = (session?.user as { id?: string })?.id
@@ -163,7 +166,7 @@ export async function POST(req: Request) {
   let result: ReturnType<typeof streamText>
   try {
     result = streamText({
-      model: chatModel,
+      model: chatClient.chat(modelParam),
       system: ARCHITECT_SYSTEM_PROMPT,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: finalMessages as any,
@@ -189,7 +192,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error('[architect/chat] streamText init error:', err)
     return new Response(
-      JSON.stringify({ error: safeStreamErrorMessage(err, '[architect/chat] stream init') }),
+      JSON.stringify({ error: 'Failed to initialize model stream — try again or switch models.' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
     )
   }

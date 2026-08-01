@@ -26,16 +26,21 @@ import {
   Brain,
   Globe,
   Folder,
+  Eraser,
 } from 'lucide-react'
 import { GolemLogo } from './golem-logo'
 import { StatusIndicator } from './status-indicator'
 import { TypingText } from './typing-text'
+import { MarkdownMessage } from './markdown-message'
 import { FileAttachmentChip, type PendingUpload } from './file-attachment-chip'
 import { FileAttachmentCard } from './file-attachment-card'
 import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploads'
 import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/attachment-marker'
 
 import { setAgentBusy } from '@/lib/agent-presence'
+import { GolemInline } from './golem/golem-inline'
+import { onGolemQuickAction, pulseGolem, setGolemModel, setGolemSeekTarget } from '@/lib/golem-signals'
+import { getDailySuggestionCards, type SuggestionCard } from '@/lib/suggestion-cards'
 import { RecoveryBanner } from './recovery-banner'
 import { RecoveryState } from '@/lib/recovery/types'
 import { SkillBanner } from './skill-banner'
@@ -43,8 +48,9 @@ import { CompactionIndicator } from './compaction-indicator'
 import { ThinkingTrace } from './thinking-trace'
 import { ChatToolSteps } from './chat-tool-steps'
 import { SkillFeedbackBar } from './skill-feedback-bar'
-import { parseReasoningTrace, parseStreamingReasoning } from '@/lib/reasoning-trace'
+import { parseReasoningTrace, parseStreamingReasoning, modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { detectSkillInvocation, SKILLS, filterSkillsByDomain } from '@/lib/skills/registry'
+import { detectRelevantSkills } from '@/lib/skills/auto-trigger'
 import { listModels, DEFAULT_MODEL_ID } from '@/lib/nim'
 import type { SkillDefinition } from '@/lib/skills/types'
 import { useMessageQueue } from '@/lib/message-queue'
@@ -65,6 +71,8 @@ type ChatQueueItem = {
 }
 
 interface CenterPanelProps {
+  /** Unique id for localStorage namespacing (e.g. 'left' | 'right' for split view). */
+  paneId?: string
   agentStatus: 'online' | 'thinking' | 'streaming' | 'idle'
   setAgentStatus: (status: 'online' | 'thinking' | 'streaming' | 'idle') => void
   initialMessages?: UIMessage[]
@@ -128,9 +136,9 @@ type PickerModel = { id: string; label: string; company: string; desc: string; c
 // ─── Chatbot effort (3 levels, separate from coding agent's 5) ───
 
 const CHAT_EFFORTS = [
-  { id: 'low' as const,    label: 'Low',    desc: 'Minimal reasoning, fast' },
-  { id: 'medium' as const,  label: 'Medium', desc: 'Default reasoning depth' },
-  { id: 'high' as const,    label: 'High',   desc: 'Maximum reasoning, slower' },
+  { id: 'low' as const,    label: 'Low',    desc: 'Short, direct answers only' },
+  { id: 'medium' as const,  label: 'Medium', desc: 'Length matches the question (default)' },
+  { id: 'high' as const,    label: 'High',   desc: 'Allows full depth on complex asks' },
 ]
 
 type ChatEffortId = typeof CHAT_EFFORTS[number]['id']
@@ -151,57 +159,13 @@ const QUICK_ACTIONS = [
   { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages' },
 ]
 
-interface SuggestionCard {
-  label: string
-  glyph: string
-  prompt: string
-  description: string
-}
+// SuggestionCard + the 28-card pool now live in @/lib/suggestion-cards so the
+// mascot's click-to-fire draws from the same deck this rotation does.
 
-const SUGGESTION_CARD_POOL: SuggestionCard[] = [
-  // Set 0 — Mon / Thu / Sun / ...
-  { label: 'Search the web', glyph: '/', prompt: 'Search the web for the latest AI news', description: 'Find real-time information from across the internet' },
-  { label: 'Summarize a URL', glyph: '↗', prompt: 'Summarize the content at this URL: ', description: 'Extract key insights from any webpage' },
-  { label: 'Write code', glyph: '<>', prompt: 'Write code to build a todo app', description: 'Generate, refactor, and debug code in any language' },
-  { label: 'Check my email', glyph: '@', prompt: 'Check my email for new messages', description: 'Read and draft email responses' },
-  // Set 1 — Tue / Fri / ...
-  { label: 'Explain a concept', glyph: '?', prompt: 'Explain ', description: 'Break down complex topics into simple explanations' },
-  { label: 'Debug my code', glyph: '🐛', prompt: 'Debug this code: ', description: 'Find and fix bugs with detailed explanations' },
-  { label: 'Plan my week', glyph: '📅', prompt: 'Help me plan my week. I need to: ', description: 'Organize tasks and schedule your week efficiently' },
-  { label: 'Draft an email', glyph: '✉', prompt: 'Draft an email that ', description: 'Compose professional or personal emails quickly' },
-  // Set 2 — Wed / Sat / ...
-  { label: 'Analyze data', glyph: '📊', prompt: 'Analyze this data: ', description: 'Find patterns and insights in your data' },
-  { label: 'Research a topic', glyph: '🔍', prompt: 'Research and summarize: ', description: 'Deep-dive into any topic with cited sources' },
-  { label: 'Refactor code', glyph: '♻', prompt: 'Refactor this code to ', description: 'Improve code structure without changing behavior' },
-  { label: 'Create flashcards', glyph: '🃏', prompt: 'Create flashcards for: ', description: 'Generate study flashcards from any material' },
-]
 
-// Module-level compaction state — written by the transport's custom fetch,
-// read by the component's useEffect after each response settles.
-let _pendingCompaction: { compacted: boolean; summary: string | null } | null = null
-
-// Module-level skill invocation ID — written by the transport's custom fetch
-// when a skill response includes the header, read by the component's useEffect
-let _pendingSkillInvocationId: string | null = null
-
-const transport = new DefaultChatTransport({
-  api: '/api/chat',
-  fetch: async (url, options) => {
-    const response = await fetch(url, options)
-    const compacted = response.headers.get('X-Context-Compacted')
-    if (compacted === 'true') {
-      const summary = response.headers.get('X-Context-Compacted-Summary')
-      _pendingCompaction = { compacted: true, summary: summary ? decodeURIComponent(summary) : null }
-    }
-    const skillInvocationId = response.headers.get('X-Skill-Invocation-Id')
-    if (skillInvocationId) {
-      _pendingSkillInvocationId = skillInvocationId
-    }
-    return response
-  },
-})
 
 export function CenterPanel({
+  paneId,
   agentStatus,
   setAgentStatus,
   initialMessages,
@@ -295,8 +259,9 @@ export function CenterPanel({
   // `focusMode` above — same session can be "The Forge" (domain) + "repo_only"
   // (source). Mid-session swap is live: change the pill, the next chat POST
   // carries the new value; prior messages keep their old context.
-  const SESSION_FOCUS_STORAGE_KEY = 'enry.sessionFocus.v1'
-  const CUSTOM_FOCUSES_STORAGE_KEY = 'enry.customFocuses.v1'
+  const ns = paneId ? `.${paneId}` : ''
+  const SESSION_FOCUS_STORAGE_KEY = `enry.sessionFocus.v1${ns}`
+  const CUSTOM_FOCUSES_STORAGE_KEY = `enry.customFocuses.v1${ns}`
   const [sessionFocus, setSessionFocus] = useState<SessionFocus>({ kind: 'none' })
   const [sessionFocusMenuOpen, setSessionFocusMenuOpen] = useState(false)
   const sessionFocusDropdownRef = useRef<HTMLDivElement>(null)
@@ -350,10 +315,45 @@ export function CenterPanel({
   ]
   const currentFocus = FOCUS_MODES.find((f) => f.id === focusMode)!
 
-  // Reasoning trace depth — how much model thinking to surface
-  const [reasoningDepth, setReasoningDepth] = useState<'off' | 'summary' | 'full'>('off')
+  // Reasoning trace visibility — on/off only. Was a 3-state off/summary/full
+  // dropdown, but summary vs full sent an identical upstream request
+  // (enable_thinking:true either way) — "summary" was purely a client-side
+  // 300-char truncation of the same trace, not a real depth control. Collapsed
+  // to the two states that actually differ. Only meaningful for models with
+  // supportsReasoning: true (see modelSupportsReasoning below) — the button is
+  // hidden entirely for the rest so it can't be toggled into a dead param.
+  // ─── Per-instance transport + response-header bridge ───────────
+  // Was module-scoped — two panes sharing the same transport and
+  // header-intercepting variables would clobber each other mid-stream.
+  // Now scoped to the component instance via useMemo + useRef.
+  const pendingCompactionRef = useRef<{ compacted: boolean; summary: string | null } | null>(null)
+  const pendingSkillIdRef = useRef<string | null>(null)
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: '/api/chat',
+        fetch: async (url, options) => {
+          const response = await fetch(url, options)
+          const compacted = response.headers.get('X-Context-Compacted')
+          if (compacted === 'true') {
+            const summary = response.headers.get('X-Context-Compacted-Summary')
+            pendingCompactionRef.current = { compacted: true, summary: summary ? decodeURIComponent(summary) : null }
+          }
+          const skillInvocationId = response.headers.get('X-Skill-Invocation-Id')
+          if (skillInvocationId) {
+            pendingSkillIdRef.current = skillInvocationId
+          }
+          return response
+        },
+      }),
+    [],
+  )
+
+  const [reasoningDepth, setReasoningDepth] = useState<'off' | 'full'>('off')
   const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false)
   const reasoningDropdownRef = useRef<HTMLDivElement>(null)
+  const reasoningSupported = modelSupportsReasoning(model)
 
   // Context compaction state — set from X-Context-Compacted response header
   // Populated by the custom fetch in the transport, synced after useChat below
@@ -362,8 +362,7 @@ export function CenterPanel({
 
   const REASONING_DEPTHS = [
     { id: 'off' as const, label: 'Think: Off', desc: 'Show only the final answer' },
-    { id: 'summary' as const, label: 'Think: Brief', desc: 'Show a condensed reasoning summary' },
-    { id: 'full' as const, label: 'Think: Full', desc: 'Show the complete reasoning trace' },
+    { id: 'full' as const, label: 'Think: On', desc: 'Show the reasoning trace' },
   ]
   const currentReasoning = REASONING_DEPTHS.find((r) => r.id === reasoningDepth)!
 
@@ -381,6 +380,13 @@ export function CenterPanel({
   // Keep ref in sync — useChat callbacks see stale closures
   useEffect(() => { recoveryStateRef.current = recoveryState }, [recoveryState])
 
+  // ─── Scratch mode (ephemeral chat) ─────────────────────────────
+  // When on, messages live only in React state — never persisted to
+  // Supabase. Refreshing the page or toggling off clears everything.
+  const [scratchMode, setScratchMode] = useState(false)
+  const scratchModeRef = useRef(false)
+  useEffect(() => { scratchModeRef.current = scratchMode }, [scratchMode])
+
   // Auto-hide "Recovered" banner after 3s
   useEffect(() => {
     if (recoveryState === RecoveryState.Recovered) {
@@ -394,7 +400,7 @@ export function CenterPanel({
     transport,
     messages: initialMessages,
     onFinish: ({ messages: finalMessages }) => {
-      onSaveMessages(finalMessages, model)
+      if (!scratchModeRef.current) onSaveMessages(finalMessages, model)
       onActivity({ type: 'assistant-complete', content: '', at: Date.now() })
       // Clear recovery state on successful completion
       if (recoveryStateRef.current === RecoveryState.Recovering) {
@@ -403,7 +409,7 @@ export function CenterPanel({
     },
     onError: (err) => {
       console.error('[chat] streamText error:', err)
-      if (messagesRef.current.length > 0) onSaveMessages(messagesRef.current, model)
+      if (messagesRef.current.length > 0 && !scratchModeRef.current) onSaveMessages(messagesRef.current, model)
       /* eslint-disable-next-line react-hooks/purity */
       onActivity({ type: 'error', content: (err as Error).message, at: Date.now() })
 
@@ -437,9 +443,9 @@ export function CenterPanel({
 
   // Sync compaction state after each response (written by transport's custom fetch)
   useEffect(() => {
-    if (status === 'ready' && _pendingCompaction) {
-      const pending = _pendingCompaction
-      _pendingCompaction = null
+    if (status === 'ready' && pendingCompactionRef.current) {
+      const pending = pendingCompactionRef.current
+      pendingCompactionRef.current = null
       setTimeout(() => {
         setContextCompacted(pending.compacted)
         setCompactionSummary(pending.summary)
@@ -447,9 +453,9 @@ export function CenterPanel({
     }
     // Sync skill invocation ID for the latest assistant message
     /* eslint-disable react-hooks/purity */
-    if (status === 'ready' && _pendingSkillInvocationId) {
-      const invocationId = _pendingSkillInvocationId
-      _pendingSkillInvocationId = null
+    if (status === 'ready' && pendingSkillIdRef.current) {
+      const invocationId = pendingSkillIdRef.current
+      pendingSkillIdRef.current = null
       setSkillInvocationIds((prev) => ({
         ...prev,
         [messages.length - 1]: invocationId, // Last message is the assistant response
@@ -510,7 +516,14 @@ export function CenterPanel({
   // goes away mid-stream (e.g. navigating away).
   useEffect(() => () => {
     if (busyRef.current) setAgentBusy(false)
+    setGolemSeekTarget(null)
   }, [])
+
+  // Tell the mascot which model is active so it can tint itself.
+  useEffect(() => { setGolemModel(model) }, [model])
+
+  // A failed request makes Golem flinch.
+  useEffect(() => { if (error) pulseGolem('error') }, [error])
 
   useEffect(() => {
     if (status !== 'streaming') return
@@ -613,12 +626,35 @@ export function CenterPanel({
       return
     }
 
-    if (!text && !uploadResult) return
+    if (!text && !uploadResult) return      // ── Relevance-based skill detection ──
+      // Scan the message against ALL skills' trigger phrases (same matching
+      // logic as /skill). Multiple matching skills fire simultaneously via
+      // the multi-skill path in the chat route.
+      if (text && !uploadResult && !activeSkill) {
+        const relevant = detectRelevantSkills(text)
+        if (relevant.length > 0) {
+          const startIndex = messages.length
+          const slugs = relevant.map((r) => r.skill.slug)
+          // For the SkillBanner: show all skill names
+          const multiNames = relevant.map((r) => r.skill.name)
+          // Use the first skill as activeSkill for state tracking;
+          // the banner receives `names` for multi-skill display.
+          setActiveSkill(relevant[0].skill)
+          setSkillStartIndex(startIndex)
+          setInput('')
+          // Fire all skills at once via the multi-skill path
+          const topic = relevant[0].topic
+          onActivity({ type: 'user-sent', content: text, at: Date.now() })
+          onActivity({ type: 'assistant-start', content: '', at: Date.now(), model })
+          sendMessage({ text: topic || text }, { body: { model, effort: chatEffort, skills: slugs, focusMode, sessionFocus: serializeSessionFocus(sessionFocus), reasoningDepth } })
+          return
+        }
+      }
 
-    // ── Skill invocation from normal chat (command or natural language) ──
-    // Only when there's no attachment in flight — skills are text-only modes.
-    if (text && !uploadResult) {
-      const inv = detectSkillInvocation(text)
+      // ── Skill invocation from normal chat (command or natural language) ──
+      // Only when there's no attachment in flight — skills are text-only modes.
+      if (text && !uploadResult) {
+        const inv = detectSkillInvocation(text)
       if (inv) {
         const startIndex = messages.length
         setActiveSkill(inv.skill)
@@ -712,21 +748,37 @@ export function CenterPanel({
   const router = useRouter()
 
   // Daily card rotation — pick a different set of 4 each day
-  const dailyCards = useMemo(() => {
-    const dayIndex = Math.floor(Date.now() / 86400000) % 3
-    return SUGGESTION_CARD_POOL.slice(dayIndex * 4, dayIndex * 4 + 4)
-  }, [])
+  const dailyCards = useMemo(() => getDailySuggestionCards(), [])
 
-  const handlePrefillPrompt = (prompt: string) => {
+  const handlePrefillPrompt = useCallback((prompt: string) => {
     setInput(prompt)
     setTimeout(() => textareaRef.current?.focus(), 0)
-  }
+  }, [])
+
+  // Clicking the mascot fires a random card from the same pool.
+  useEffect(() => {
+    return onGolemQuickAction((card: SuggestionCard) => {
+      if (card.label === 'Write code') router.push('/agent')
+      else handlePrefillPrompt(card.prompt)
+    })
+  }, [handlePrefillPrompt, router])
 
   const handleModelSelect = (id: ModelId) => {
     setModel(id)
     setChatEffort(CHAT_MODEL_DEFAULTS[id] ?? 'medium')
+    if (!modelSupportsReasoning(id)) setReasoningDepth('off')
     onModelChange(id)
     setModelOpen(false)
+  }
+
+  // Typing pulls Golem over toward the composer. The target expires on its own
+  // a few seconds after the last keystroke, so there's nothing to clear here.
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    const rect = textareaRef.current?.getBoundingClientRect()
+    // Aim above the composer, not at it — combined with the engine's hover
+    // distance that keeps him near the input without sitting on top of it.
+    if (rect) setGolemSeekTarget({ x: rect.left + rect.width / 2, y: rect.top - 40 })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -829,6 +881,38 @@ export function CenterPanel({
         </div>
       </div>
 
+      {/* Scratch mode banner */}
+      <AnimatePresence>
+        {scratchMode && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-b border-accent/30 bg-accent/10"
+          >
+            <div className="mx-auto max-w-3xl px-8 py-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eraser className="h-3.5 w-3.5 text-accent" />
+                  <span className="font-mono text-[11px] text-accent font-semibold uppercase tracking-wider">
+                    Scratch
+                  </span>
+                  <span className="font-sans text-[11px] text-muted-foreground">
+                    ephemeral — nothing is saved, messages lost on refresh
+                  </span>
+                </div>
+                <button
+                  onClick={() => setScratchMode(false)}
+                  className="font-mono text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  exit scratch
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Skill mode banner */}
       <AnimatePresence>
         {activeSkill && (
@@ -883,8 +967,9 @@ export function CenterPanel({
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 28 }}
-                className="mb-6"
+                className="mb-6 flex flex-col items-center gap-4"
               >
+                <GolemInline size={96} slow />
                 <GolemLogo size="lg" />
               </motion.div>
 
@@ -986,13 +1071,13 @@ export function CenterPanel({
                           : 'border-primary/20 bg-primary/5 text-left'
                       } ${inSkillRange && message.role === 'assistant' ? 'border-l-2 border-l-warning/60' : ''}`}
                     >
-                      <p className={`whitespace-pre-wrap text-sm leading-relaxed ${message.role === 'assistant' ? 'font-mono text-primary/90' : 'text-foreground'}`}>
-                        {isCurrentStream ? (
-                          <TypingText text={displayAnswer} isStreaming={true} />
-                        ) : (
-                          displayAnswer
-                        )}
-                      </p>
+                      {message.role === 'assistant' ? (
+                        <MarkdownMessage content={displayAnswer} isStreaming={isCurrentStream} />
+                      ) : (
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                          {displayAnswer}
+                        </p>
+                      )}
                     </div>
                     {message.role === 'assistant' && sources.length > 0 && (
                       <div className="mt-2">
@@ -1059,12 +1144,13 @@ export function CenterPanel({
               animate={{ opacity: 1, y: 0 }}
               className="flex gap-4"
             >
-              <div className="rounded border border-primary/30 bg-surface-secondary px-4 py-3 shadow-[0_0_18px_rgba(0,255,102,0.07)]">
+              <div className="flex items-center gap-3 rounded border border-primary/30 bg-surface-secondary px-4 py-2 shadow-[0_0_18px_rgba(0,255,102,0.07)]">
+                <GolemInline state="thinking" size={40} />
                 <div className="flex items-center gap-1.5">
                   {[0, 0.2, 0.4].map((delay) => (
                     <motion.div
                       key={delay}
-                      className="h-2 w-2 rounded-full bg-primary"
+                      className="h-1.5 w-1.5 rounded-full bg-primary"
                       animate={{ scale: [1, 1.2, 1], opacity: [0.6, 1, 0.6] }}
                       transition={{ duration: 0.6, repeat: Infinity, delay }}
                     />
@@ -1261,42 +1347,59 @@ export function CenterPanel({
             </div>
           </div>
 
+          {/* Scratch toggle */}
+          <button
+            type="button"
+            onClick={() => setScratchMode((p) => !p)}
+            className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-accent/30 hover:text-foreground ${
+              scratchMode ? 'border-accent/30 bg-accent/5 text-accent' : 'border-border bg-surface-elevated text-muted-foreground'
+            }`}
+            title={scratchMode ? 'Scratch mode on — click to exit' : 'Start an ephemeral scratch session'}
+          >
+            <Eraser className="h-3 w-3" />
+            Scratch
+          </button>
+
           {/* Flex spacer */}
           <div className="flex-1" />
 
           {/* Right group: Think · Focus · Effort */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {/* Reasoning Depth */}
-            <div ref={reasoningDropdownRef} className="relative flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => setReasoningMenuOpen((o) => !o)}
-                className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
-                  reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
-                }`}
-                title={currentReasoning.desc}
-              >
-                <Brain className="h-3 w-3" />
-                {reasoningDepth === 'off' ? 'Think' : currentReasoning.label.replace('Think: ', '')}
-              </button>
-              {reasoningMenuOpen && (
-                <div className="absolute top-full right-0 z-50 mt-1 w-48 border border-border bg-surface-secondary shadow-xl">
-                  {REASONING_DEPTHS.map((r) => (
-                    <button
-                      type="button"
-                      key={r.id}
-                      onClick={() => { setReasoningDepth(r.id); setReasoningMenuOpen(false) }}
-                      className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
-                        reasoningDepth === r.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      <span className="font-mono text-[10px] font-semibold">{r.label}</span>
-                      <span className="font-sans text-[9px] text-muted-foreground leading-tight">{r.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Reasoning Depth — only rendered for models that actually honor it
+                (route.ts gates the upstream param on the same check); hidden
+                rather than disabled so there's no dead control to notice. */}
+            {reasoningSupported && (
+              <div ref={reasoningDropdownRef} className="relative flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setReasoningMenuOpen((o) => !o)}
+                  className={`flex h-10 items-center gap-1 rounded border px-2.5 font-mono text-[10px] transition-colors hover:border-primary/30 hover:text-foreground ${
+                    reasoningDepth !== 'off' ? 'border-primary/30 bg-primary/5 text-primary' : 'border-border bg-surface-elevated text-muted-foreground'
+                  }`}
+                  title={currentReasoning.desc}
+                >
+                  <Brain className="h-3 w-3" />
+                  {reasoningDepth === 'off' ? 'Think' : currentReasoning.label.replace('Think: ', '')}
+                </button>
+                {reasoningMenuOpen && (
+                  <div className="absolute top-full right-0 z-50 mt-1 w-48 border border-border bg-surface-secondary shadow-xl">
+                    {REASONING_DEPTHS.map((r) => (
+                      <button
+                        type="button"
+                        key={r.id}
+                        onClick={() => { setReasoningDepth(r.id); setReasoningMenuOpen(false) }}
+                        className={`flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-surface-elevated ${
+                          reasoningDepth === r.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <span className="font-mono text-[10px] font-semibold">{r.label}</span>
+                        <span className="font-sans text-[9px] text-muted-foreground leading-tight">{r.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Focus Mode */}
             <div ref={focusDropdownRef} className="relative flex-shrink-0">
@@ -1483,7 +1586,7 @@ export function CenterPanel({
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={
                 isDraggingFile

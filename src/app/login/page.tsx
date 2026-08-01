@@ -1,73 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
-
-const MATRIX_CHARS = 'ｦｧｨｩｪｫｬｭｮｯｱｲｳｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ABCDEF'
-
-class MatrixRain {
-  private canvas: HTMLCanvasElement
-  private ctx: CanvasRenderingContext2D
-  private drops: number[] = []
-  private animationId: number | null = null
-
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas
-    this.ctx = canvas.getContext('2d')!
-  }
-
-  resize() {
-    this.canvas.width = window.innerWidth
-    this.canvas.height = window.innerHeight
-    const columns = Math.floor(this.canvas.width / 20)
-    this.drops = Array(columns).fill(1)
-  }
-
-  draw() {
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.05)'
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
-
-    this.ctx.fillStyle = '#003300'
-    this.ctx.font = '14px monospace'
-
-    for (let i = 0; i < this.drops.length; i++) {
-      if (Math.random() > 0.3) {
-        const char = MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)]
-        this.ctx.fillText(char, i * 20, this.drops[i] * 20)
-      }
-      if (this.drops[i] * 20 > this.canvas.height && Math.random() > 0.975) {
-        this.drops[i] = 0
-      }
-      this.drops[i]++
-    }
-
-    this.ctx.fillStyle = '#00ff41'
-    this.ctx.font = '14px monospace'
-    for (let i = 0; i < this.drops.length; i++) {
-      if (Math.random() > 0.975) {
-        const char = MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)]
-        this.ctx.fillText(char, i * 20, this.drops[i] * 20)
-      }
-    }
-  }
-
-  start() {
-    this.resize()
-    const loop = () => {
-      this.draw()
-      this.animationId = requestAnimationFrame(loop)
-    }
-    loop()
-  }
-
-  stop() {
-    if (this.animationId !== null) {
-      cancelAnimationFrame(this.animationId)
-      this.animationId = null
-    }
-  }
-}
+import { GolemInline } from '@/components/golem/golem-inline'
 
 type AuthTab = 'google' | 'github' | 'email'
 type FormMode = 'signin' | 'signup'
@@ -82,8 +18,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 }
 
 export default function LoginPage() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
   const [tab,      setTab]      = useState<AuthTab>('google')
   const [mode,     setMode]     = useState<FormMode>('signin')
   const [email,    setEmail]    = useState('')
@@ -91,19 +25,6 @@ export default function LoginPage() {
   const [confirm,  setConfirm]  = useState('')
   const [error,    setError]    = useState<string | null>(null)
   const [loading,  setLoading]  = useState(false)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rain = new MatrixRain(canvas)
-    rain.start()
-    const handleResize = () => rain.resize()
-    window.addEventListener('resize', handleResize)
-    return () => {
-      rain.stop()
-      window.removeEventListener('resize', handleResize)
-    }
-  }, [])
 
   const switchTab = (t: AuthTab) => { setTab(t); setError(null) }
   const switchMode = (m: FormMode) => { setMode(m); setError(null); setConfirm('') }
@@ -126,7 +47,6 @@ export default function LoginPage() {
         const json = await res.json()
         if (!res.ok) { setError(ERROR_MESSAGES[json.error] ?? ERROR_MESSAGES.SERVER_ERROR); return }
 
-        // Account created — sign in immediately
         const result = await signIn('credentials', { email, password, redirect: false, callbackUrl: '/' })
         if (result?.ok) window.location.href = '/'
         else setError(ERROR_MESSAGES.CREDENTIALS)
@@ -146,19 +66,23 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative flex h-screen w-full flex-col items-center justify-center overflow-hidden bg-transparent">
-      <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-25" />
-
-      {/* Vignette */}
+    <div className="relative flex h-screen w-full flex-col items-center justify-center overflow-hidden bg-[#1a1614]">
+      {/* Warm grain texture overlay */}
       <div
-        className="pointer-events-none absolute inset-0 z-[1]"
-        style={{ background: 'radial-gradient(ellipse at center, transparent 40%, rgba(8,8,8,0.8) 100%)' }}
+        className="pointer-events-none absolute inset-0 z-0 opacity-[0.04]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+        }}
       />
 
-      {/* Scanlines */}
-      <div className="pointer-events-none absolute inset-0 z-[1] opacity-[0.03]">
-        <div className="h-full w-full" style={{ background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.15) 2px, rgba(0,0,0,0.15) 4px)' }} />
-      </div>
+      {/* Warm ambient glow */}
+      <div
+        className="pointer-events-none absolute left-1/2 top-1/4 z-0 h-[60vh] w-[80vw] -translate-x-1/2 -translate-y-1/2 opacity-20"
+        style={{
+          background: 'radial-gradient(ellipse at center, rgba(184, 147, 90, 0.15) 0%, transparent 70%)',
+          filter: 'blur(120px)',
+        }}
+      />
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center gap-8">
@@ -169,16 +93,14 @@ export default function LoginPage() {
           transition={{ duration: 0.6, ease: [0, 0, 0.2, 1] }}
           className="flex flex-col items-center gap-6"
         >
+          {/* Golem himself is the centerpiece here — dozing until you sign in.
+              The clay plinth keeps the warm Grimoire framing the old mark had. */}
           <motion.div
-            className="flex h-20 w-20 items-center justify-center rounded-xl border border-primary/30 bg-surface-secondary"
-            animate={{ boxShadow: ['0 0 8px rgba(0,255,102,0.1)', '0 0 24px rgba(0,255,102,0.25)', '0 0 8px rgba(0,255,102,0.1)'] }}
-            transition={{ duration: 3, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
+            className="flex h-32 w-32 items-center justify-center rounded-2xl border border-[#b8935a]/30 bg-[#201b18]"
+            animate={{ boxShadow: ['0 0 8px rgba(184,147,90,0.08)', '0 0 28px rgba(184,147,90,0.2)', '0 0 8px rgba(184,147,90,0.08)'] }}
+            transition={{ duration: 4, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
           >
-            <svg viewBox="0 0 24 24" fill="none" className="h-12 w-12" stroke="currentColor" strokeWidth="1.5">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" className="fill-primary/20 stroke-primary" />
-              <path d="M2 17L12 22L22 17" className="stroke-primary" />
-              <path d="M2 12L12 17L22 12" className="stroke-primary/60" />
-            </svg>
+            <GolemInline state="dozing" size={96} slow />
           </motion.div>
 
           <div className="text-center">
@@ -186,19 +108,17 @@ export default function LoginPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.6 }}
-              className="font-display text-4xl font-bold tracking-tight"
+              className="font-serif text-4xl font-bold tracking-tight text-[#e8dccc]"
             >
-              <span className="text-foreground">Golem</span>
-              <span className="text-primary">.</span>
-              <span className="text-foreground">AGENT</span>
+              Golem HQ
             </motion.h1>
             <motion.p
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5, duration: 0.6 }}
-              className="mt-2 font-mono text-sm text-muted-foreground tracking-wider"
+              className="mt-2 font-mono text-sm tracking-wider text-[#b8935a]/70"
             >
-              personal AI superagent
+              autonomous AI operating system
             </motion.p>
           </div>
         </motion.div>
@@ -208,18 +128,18 @@ export default function LoginPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.7, duration: 0.5 }}
-          className="w-80 rounded-xl border border-border bg-surface-secondary shadow-2xl"
+          className="w-80 rounded-xl border border-[#3a342e] bg-[#201b18] shadow-2xl shadow-[#b8935a]/5"
         >
           {/* Tab switcher */}
-          <div className="flex border-b border-border">
+          <div className="flex border-b border-[#3a342e]">
             {(['google', 'github', 'email'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => switchTab(t)}
                 className={`flex-1 py-3 font-mono text-xs capitalize transition-colors ${
                   tab === t
-                    ? 'border-b-2 border-primary text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'border-b-2 border-[#b8935a] text-[#b8935a]'
+                    : 'text-[#8a8076] hover:text-[#e8dccc]'
                 }`}
               >
                 {t}
@@ -240,7 +160,7 @@ export default function LoginPage() {
                   <button
                     data-testid="google-signin-button"
                     onClick={() => signIn('google', { callbackUrl: '/' })}
-                    className="group flex w-full items-center justify-center gap-3 rounded-lg border border-primary/20 bg-surface-elevated px-6 py-3 font-mono text-sm text-foreground transition-all duration-200 hover:border-primary/50 hover:bg-surface-elevated/80"
+                    className="group flex w-full items-center justify-center gap-3 rounded-lg border border-[#b8935a]/20 bg-[#161210] px-6 py-3 font-mono text-sm text-[#e8dccc] transition-all duration-200 hover:border-[#b8935a]/50 hover:bg-[#1e1a16]"
                   >
                     <svg viewBox="0 0 24 24" className="h-5 w-5" xmlns="http://www.w3.org/2000/svg">
                       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
@@ -262,15 +182,14 @@ export default function LoginPage() {
                   <button
                     data-testid="github-signin-button"
                     onClick={() => signIn('github', { callbackUrl: '/' })}
-                    className="group flex w-full items-center justify-center gap-3 rounded-lg border border-primary/20 bg-surface-elevated px-6 py-3 font-mono text-sm text-foreground transition-all duration-200 hover:border-primary/50 hover:bg-surface-elevated/80"
+                    className="group flex w-full items-center justify-center gap-3 rounded-lg border border-[#b8935a]/20 bg-[#161210] px-6 py-3 font-mono text-sm text-[#e8dccc] transition-all duration-200 hover:border-[#b8935a]/50 hover:bg-[#1e1a16]"
                   >
-                    {/* GitHub mark */}
                     <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" xmlns="http://www.w3.org/2000/svg">
                       <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
                     </svg>
                     sign in with github
                   </button>
-                  <p className="mt-3 text-center font-mono text-[11px] text-muted-foreground">
+                  <p className="mt-3 text-center font-mono text-[11px] text-[#8a8076]/70">
                     Enables GitHub tools in chat — list repos, read files, open issues.
                   </p>
                 </motion.div>
@@ -285,7 +204,7 @@ export default function LoginPage() {
                   className="flex flex-col gap-3"
                 >
                   {/* Sign in / Sign up toggle */}
-                  <div className="flex gap-1 rounded-lg border border-border bg-surface-base p-1">
+                  <div className="flex gap-1 rounded-lg border border-[#3a342e] bg-[#161210] p-1">
                     {(['signin', 'signup'] as const).map((m) => (
                       <button
                         key={m}
@@ -293,8 +212,8 @@ export default function LoginPage() {
                         onClick={() => switchMode(m)}
                         className={`flex-1 rounded py-1.5 font-mono text-[11px] transition-all ${
                           mode === m
-                            ? 'bg-primary/15 text-primary'
-                            : 'text-muted-foreground hover:text-foreground'
+                            ? 'bg-[#b8935a]/15 text-[#b8935a]'
+                            : 'text-[#8a8076] hover:text-[#e8dccc]'
                         }`}
                       >
                         {m === 'signin' ? 'sign in' : 'sign up'}
@@ -308,7 +227,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="w-full rounded border border-border bg-surface-base px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none"
+                    className="w-full rounded border border-[#3a342e] bg-[#161210] px-3 py-2.5 font-mono text-sm text-[#e8dccc] placeholder:text-[#8a8076]/50 focus:border-[#b8935a]/50 focus:outline-none"
                   />
                   <input
                     type="password"
@@ -316,7 +235,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="w-full rounded border border-border bg-surface-base px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none"
+                    className="w-full rounded border border-[#3a342e] bg-[#161210] px-3 py-2.5 font-mono text-sm text-[#e8dccc] placeholder:text-[#8a8076]/50 focus:border-[#b8935a]/50 focus:outline-none"
                   />
 
                   <AnimatePresence>
@@ -331,7 +250,7 @@ export default function LoginPage() {
                         value={confirm}
                         onChange={(e) => setConfirm(e.target.value)}
                         required
-                        className="w-full rounded border border-border bg-surface-base px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none"
+                        className="w-full rounded border border-[#3a342e] bg-[#161210] px-3 py-2.5 font-mono text-sm text-[#e8dccc] placeholder:text-[#8a8076]/50 focus:border-[#b8935a]/50 focus:outline-none"
                       />
                     )}
                   </AnimatePresence>
@@ -342,7 +261,7 @@ export default function LoginPage() {
                         initial={{ opacity: 0, y: -4 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
-                        className="font-mono text-[11px] text-red-400"
+                        className="font-mono text-[11px] text-[#a85c3f]"
                       >
                         {error}
                       </motion.p>
@@ -352,7 +271,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="mt-1 flex items-center justify-center rounded border border-primary/30 bg-primary/10 py-2.5 font-mono text-sm text-primary transition-all hover:border-primary/60 hover:bg-primary/20 disabled:opacity-50"
+                    className="mt-1 flex items-center justify-center rounded border border-[#b8935a]/30 bg-[#b8935a]/10 py-2.5 font-mono text-sm text-[#b8935a] transition-all hover:border-[#b8935a]/60 hover:bg-[#b8935a]/20 disabled:opacity-50"
                   >
                     {loading ? (
                       <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -371,7 +290,7 @@ export default function LoginPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1, duration: 0.6 }}
-          className="font-mono text-[10px] text-muted-foreground/50 tracking-widest uppercase"
+          className="font-mono text-[10px] tracking-widest uppercase text-[#8a8076]/50"
         >
           secure • encrypted • autonomous
         </motion.p>

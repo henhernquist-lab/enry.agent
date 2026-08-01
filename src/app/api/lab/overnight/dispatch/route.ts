@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { getOvernightIdeas, insertOvernightRun, updateOvernightIdea, updateOvernightRun, reclaimStaleOvernightRuns } from '@/lib/lab/db'
+import { notify } from '@/lib/notify'
 import { createHash, randomUUID } from 'node:crypto'
 import { checkWriteScope } from '@/lib/github'
 import { ensureScratchRepo } from '@/lib/lab/overnight-provision'
@@ -126,8 +127,8 @@ export async function POST(req: Request) {
     return Response.json({ error: `GitHub dispatch failed with status ${status}` }, { status: 502 })
   }
 
-  // Mark idea as running
-  await updateOvernightIdea(idea.id, uid, { status: 'running', latest_run_id: run.id })
+  // Fire-and-forget: automated branch dispatch notification
+  void notify(`New branch: enry-overnight/${idea.scratch_repo_name} (created by Overnight R&D)`)
 
   return Response.json({
     run: { id: run.id, idea_id: idea.id, status: 'dispatched', scratch_repo_full: repoFull },

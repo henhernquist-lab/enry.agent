@@ -19,7 +19,6 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'z-ai/glm-5.2':             { inputPer1m: 1.0, outputPer1m: 2.5 },
   'gemini-3.5-flash':         { inputPer1m: 0.3, outputPer1m: 1.2 },
   'llama-3.3-70b-versatile':  { inputPer1m: 0.5, outputPer1m: 0.8 },
-  'llama-3.1-8b-instant':     { inputPer1m: 0.1, outputPer1m: 0.2 },
   'openai/gpt-oss-120b':      { inputPer1m: 0.8, outputPer1m: 1.5 },
 }
 

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown, GitCompare, Loader2, Play, CheckCircle2, AlertCircle } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowLeft, ChevronDown, GitCompare, Loader2, Play, CheckCircle2, AlertCircle } from 'lucide-react'
 import { BenchmarkCard } from '@/components/models/trials-card'
 import { ComparisonTable } from '@/components/models/comparison-table'
 import {
@@ -136,11 +137,23 @@ export default function BenchmarkPage() {
 
   return (
     <div>
+      {/* Back + header */}
+      <div className="mb-4 flex items-center gap-3">
+        <Link
+          href="/"
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-elevated px-3 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Home
+        </Link>
+        <h1 className="font-serif text-lg font-semibold text-foreground">The Trials</h1>
+      </div>
+
       {/* Controls bar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <p className="font-mono text-xs text-muted-foreground">
-            {loading ? 'Loading…' : `${benchmarks.length} models`}
+            {loading ? 'Loading…' : `${benchmarks.length} benchmarked · ${MODEL_LIST.length} models available`}
           </p>
         </div>
 

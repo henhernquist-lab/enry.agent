@@ -1,4 +1,5 @@
 import { updateOvernightRun, updateOvernightIdea, getOvernightIdeas } from '@/lib/lab/db'
+import { notify } from '@/lib/notify'
 import { createHash } from 'node:crypto'
 
 export const maxDuration = 15
@@ -105,8 +106,8 @@ export async function POST(req: Request) {
       morning_note: resultSummary || null,
     })
 
-    // Log a morning-report summary to console (can be extended to notifications later)
-    console.log(`[overnight] Run ${runId} finished: ${newStatus} — ${resultSummary || error || 'no summary'}`)
+    // Fire-and-forget notification on every result
+    void notify(`Cruise: ${run.scratch_repo_full ?? 'overnight run'} — ${newStatus} (R&D)`)
 
     return Response.json({ ok: true, phase: 'result' })
   }

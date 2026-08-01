@@ -13,8 +13,10 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Edit3,
 } from 'lucide-react'
 import { loadResources, saveResource, updateResource, deleteResource, resourceSummary, type Resource, type NotePayload } from '@/lib/resources'
+import { GolemInline } from '@/components/golem/golem-inline'
 
 function noteTitle(content: string): string {
   const firstLine = content.trimStart().split('\n')[0].replace(/\s+/g, ' ')
@@ -25,16 +27,18 @@ function noteDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+type EditorTarget = { type: 'draft' } | { type: 'saved'; id: string }
+
 function NotesPageContent() {
   const { status } = useSession()
   const router = useRouter()
   const [notes, setNotes] = useState<Resource[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [target, setTarget] = useState<EditorTarget>({ type: 'draft' })
   const [editorContent, setEditorContent] = useState('')
+  const [draftContent, setDraftContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<number | null>(null)
-  const [isNew, setIsNew] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -42,69 +46,95 @@ function NotesPageContent() {
     if (status === 'unauthenticated') router.push('/login')
   }, [status, router])
 
-  const load = useCallback(async () => {
+  const loadNotes = useCallback(async () => {
     const r = await loadResources('note')
     setNotes(r)
-    setLoading(false)
     return r
   }, [])
 
-  useEffect(() => { load() }, [load])
-
-  // Select the first note on initial load if nothing selected
-  useEffect(() => {
-    if (!loading && notes.length > 0 && !selectedId && !isNew) {
-      setSelectedId(notes[0].id)
+  const loadDraft = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notes/draft')
+      const data = await res.json()
+      const c = data.exists ? data.content : ''
+      setDraftContent(c)
+      return c
+    } catch {
+      return ''
     }
-  }, [loading, notes, selectedId, isNew])
+  }, [])
 
-  // Load selected note content into editor
+  // Initial load
   useEffect(() => {
-    if (!selectedId) return
-    const note = notes.find((n) => n.id === selectedId)
-    if (note) {
-      const np = note.payload as NotePayload
-      setEditorContent(np.content)
-      setIsNew(false)
+    (async () => {
+      await Promise.all([loadNotes(), loadDraft()])
+      setLoading(false)
+    })()
+  }, [loadNotes, loadDraft])
+
+  // Load editor content based on target
+  useEffect(() => {
+    if (target.type === 'draft') {
+      setEditorContent(draftContent)
+    } else {
+      const note = notes.find((n) => n.id === target.id)
+      if (note) {
+        const np = note.payload as NotePayload
+        setEditorContent(np.content)
+      }
     }
-  }, [selectedId, notes])
+  }, [target, draftContent, notes])
 
-  // Focus textarea when selecting a note
+  // Focus textarea when target changes
   useEffect(() => {
-    if (selectedId || isNew) {
+    if (!loading) {
       textareaRef.current?.focus()
     }
-  }, [selectedId, isNew])
+  }, [target, loading])
 
-  const save = useCallback(async (text: string, noteId: string | null, newNote: boolean) => {
+  const saveDraft = useCallback(async (text: string) => {
     setSaving(true)
     try {
-      const title = noteTitle(text)
-      if (newNote && !noteId) {
-        // Create new note
-        await saveResource('note', title, { content: text })
-        const updated = await load()
-        const last = updated[0] // most recent, since resources are sorted desc
-        if (last) setSelectedId(last.id)
-        setIsNew(false)
-      } else if (noteId) {
-        // Update existing
-        await updateResource(noteId, 'note', title, { content: text })
-        await load()
-      }
+      await fetch('/api/notes/draft', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      })
+      setDraftContent(text)
+      window.dispatchEvent(new CustomEvent('grimoire:draft-changed'))
       setSavedAt(Date.now())
     } catch {
       // silently fail
     } finally {
       setSaving(false)
     }
-  }, [load])
+  }, [])
+
+  const saveNote = useCallback(async (text: string, noteId: string) => {
+    setSaving(true)
+    try {
+      const title = noteTitle(text)
+      await updateResource(noteId, 'note', title, { content: text })
+      await loadNotes()
+      setSavedAt(Date.now())
+    } catch {
+      // silently fail
+    } finally {
+      setSaving(false)
+    }
+  }, [loadNotes])
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
     setEditorContent(text)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => save(text, selectedId, isNew), 800)
+    debounceRef.current = setTimeout(() => {
+      if (target.type === 'draft') {
+        saveDraft(text)
+      } else {
+        saveNote(text, target.id)
+      }
+    }, 800)
   }
 
   // Flash saved indicator
@@ -121,27 +151,78 @@ function NotesPageContent() {
     }
   }, [])
 
-  const handleNewNote = () => {
-    setSelectedId(null)
-    setIsNew(true)
-    setEditorContent('')
+  // New Note: commit current draft as saved note, clear draft, start fresh
+  const handleNewNote = async () => {
+    if (target.type === 'draft' && draftContent.trim()) {
+      setSaving(true)
+      try {
+        const title = noteTitle(draftContent)
+        await saveResource('note', title, { content: draftContent.trim() })
+        await fetch('/api/notes/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'commit' }),
+        })
+        setDraftContent('')
+        setEditorContent('')
+        setTarget({ type: 'draft' })
+        await loadNotes()
+        window.dispatchEvent(new CustomEvent('grimoire:note-saved'))
+        window.dispatchEvent(new CustomEvent('grimoire:draft-changed'))
+      } catch {
+        // silently fail
+      } finally {
+        setSaving(false)
+      }
+    } else {
+      // Already on a blank draft — just ensure it's the target
+      setTarget({ type: 'draft' })
+      setEditorContent('')
+    }
+  }
+
+  const handleSelectDraft = () => {
+    setTarget({ type: 'draft' })
+    setEditorContent(draftContent)
   }
 
   const handleSelectNote = (id: string) => {
-    setSelectedId(id)
-    setIsNew(false)
+    setTarget({ type: 'saved', id })
   }
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     await deleteResource(id)
-    if (selectedId === id) {
-      setSelectedId(null)
-      setIsNew(false)
-      setEditorContent('')
+    if (target.type === 'saved' && target.id === id) {
+      setTarget({ type: 'draft' })
+      setEditorContent(draftContent)
     }
-    await load()
+    await loadNotes()
   }
+
+  // Listen for external note-saved events (from widget/floating panel)
+  useEffect(() => {
+    const handler = () => loadNotes()
+    window.addEventListener('grimoire:note-saved', handler)
+    return () => window.removeEventListener('grimoire:note-saved', handler)
+  }, [loadNotes])
+
+  // Listen for external draft changes
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        const res = await fetch('/api/notes/draft')
+        const data = await res.json()
+        const c = data.exists ? data.content : ''
+        setDraftContent(c)
+        if (target.type === 'draft') {
+          setEditorContent(c)
+        }
+      } catch {}
+    }
+    window.addEventListener('grimoire:draft-changed', handler)
+    return () => window.removeEventListener('grimoire:draft-changed', handler)
+  }, [target])
 
   if (status === 'loading') {
     return (
@@ -151,7 +232,9 @@ function NotesPageContent() {
     )
   }
 
-  const selectedNote = selectedId ? notes.find((n) => n.id === selectedId) : null
+  const isDraftActive = target.type === 'draft'
+  const selectedNote = target.type === 'saved' ? notes.find((n) => n.id === target.id) : null
+  const draftHasContent = draftContent.trim().length > 0
 
   return (
     <div className="flex h-screen flex-col bg-surface-base">
@@ -165,8 +248,8 @@ function NotesPageContent() {
             <ArrowLeft className="h-3.5 w-3.5" />
             Home
           </Link>
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            notebook
+          <span className="font-display text-xs tracking-wide text-muted-foreground">
+            The Grimoire
           </span>
           <div className="flex items-center gap-2">
             {saving && (
@@ -208,23 +291,52 @@ function NotesPageContent() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto">
+              {/* Current Note (draft) — always at top */}
+              <motion.button
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                onClick={handleSelectDraft}
+                className={`group flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors ${
+                  isDraftActive
+                    ? 'bg-primary/10 border-l-2 border-l-primary'
+                    : 'border-l-2 border-l-transparent hover:bg-surface-elevated/60'
+                }`}
+              >
+                <Edit3 className="mt-0.5 h-3 w-3 shrink-0 text-primary/60" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-foreground">
+                    {draftHasContent ? noteTitle(draftContent) : 'Current Note'}
+                  </p>
+                  <p className="mt-0.5 font-mono text-[9px] text-muted-foreground">
+                    {draftHasContent ? 'draft' : 'start writing…'}
+                  </p>
+                </div>
+              </motion.button>
+
+              {/* Divider */}
+              <div className="mx-3 my-1 border-t border-border/40" />
+
+              {/* Saved notes */}
               <AnimatePresence>
                 {notes.length === 0 ? (
-                  <motion.p
+                  <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="px-3 py-6 text-center font-mono text-[10px] text-muted-foreground"
+                    className="flex flex-col items-center px-3 py-6"
                   >
-                    No notes yet.
-                    <br />
-                    Use The Grimoire on the homepage
-                    <br />
-                    or click New above.
-                  </motion.p>
+                    <GolemInline size={64} slow />
+                    <p className="mt-3 text-center font-mono text-[10px] text-muted-foreground">
+                      No saved notes yet.
+                      <br />
+                      Press &ldquo;New Note&rdquo; to save
+                      <br />
+                      your current draft.
+                    </p>
+                  </motion.div>
                 ) : (
                   notes.map((note) => {
                     const np = note.payload as NotePayload
-                    const isActive = selectedId === note.id && !isNew
+                    const isActive = target.type === 'saved' && target.id === note.id
                     return (
                       <motion.button
                         key={note.id}
@@ -261,55 +373,41 @@ function NotesPageContent() {
 
           {/* Main editor area */}
           <main className="flex flex-1 flex-col overflow-hidden">
-            {isNew || selectedNote ? (
-              <div className="flex flex-1 flex-col">
-                {/* Note header */}
-                <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2">
-                  <Pencil className="h-3 w-3 text-primary/60" />
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {isNew ? 'New note' : noteTitle(editorContent || (selectedNote?.payload as NotePayload)?.content || '')}
-                  </span>
-                  <span className="font-mono text-[9px] text-muted-foreground/40 ml-auto">
-                    {isNew ? 'unsaved' : `last changed ${noteDate(selectedNote?.updated_at ?? '')}`}
-                  </span>
-                </div>
+            {/* Note header */}
+            <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2">
+              <Pencil className="h-3 w-3 text-primary/60" />
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {isDraftActive
+                  ? draftHasContent
+                    ? `Current Note — ${noteTitle(draftContent)}`
+                    : 'Current Note'
+                  : noteTitle(editorContent || (selectedNote?.payload as NotePayload)?.content || '')}
+              </span>
+              <span className="font-mono text-[9px] text-muted-foreground/40 ml-auto">
+                {isDraftActive
+                  ? draftHasContent ? 'draft' : 'blank'
+                  : `saved ${noteDate(selectedNote?.updated_at ?? '')}`}
+              </span>
+            </div>
 
-                {/* Ruled paper editor */}
-                <div className="flex-1 overflow-y-auto">
-                  <textarea
-                    ref={textareaRef}
-                    value={editorContent}
-                    onChange={handleChange}
-                    placeholder="Start writing…"
-                    spellCheck
-                    className="ruled-notebook block min-h-full w-full resize-none bg-transparent px-6 py-4 font-sans text-sm leading-8 text-foreground placeholder-muted-foreground/30 focus:outline-none"
-                    style={{
-                      lineHeight: '2rem',
-                      backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent calc(2rem - 1px), rgba(58, 158, 96, 0.05) calc(2rem - 1px), rgba(58, 158, 96, 0.05) 2rem)',
-                      backgroundSize: '100% 2rem',
-                      backgroundAttachment: 'local',
-                      paddingTop: 'calc(0.5rem + 2px)',
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-1 items-center justify-center">
-                <div className="text-center space-y-3">
-                  <StickyNote className="mx-auto h-8 w-8 text-muted-foreground/30" />
-                  <p className="font-mono text-xs text-muted-foreground">
-                    Select a note from the sidebar
-                  </p>
-                  <button
-                    onClick={handleNewNote}
-                    className="inline-flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary hover:bg-primary/20 transition-colors"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    New note
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Ruled paper editor */}
+            <div className="flex-1 overflow-y-auto">
+              <textarea
+                ref={textareaRef}
+                value={editorContent}
+                onChange={handleChange}
+                placeholder="Start writing…"
+                spellCheck
+                className="ruled-notebook block min-h-full w-full resize-none bg-transparent px-6 py-4 font-sans text-sm text-foreground placeholder-muted-foreground/30 focus:outline-none"
+                style={{
+                  lineHeight: '2rem',
+                  backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent calc(2rem - 1px), rgba(184, 147, 90, 0.06) calc(2rem - 1px), rgba(184, 147, 90, 0.06) 2rem)',
+                  backgroundSize: '100% 2rem',
+                  backgroundAttachment: 'local',
+                  paddingTop: 'calc(0.5rem + 2px)',
+                }}
+              />
+            </div>
           </main>
         </div>
       )}
