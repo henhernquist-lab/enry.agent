@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GolemInline } from '@/components/golem/golem-inline'
+import { readJsonBody } from '@/lib/fetch-json'
 
 type AuthTab = 'google' | 'github' | 'email'
 type FormMode = 'signin' | 'signup'
@@ -44,8 +45,8 @@ export default function LoginPage() {
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ email, password }),
         })
-        const json = await res.json()
-        if (!res.ok) { setError(ERROR_MESSAGES[json.error] ?? ERROR_MESSAGES.SERVER_ERROR); return }
+        const { data: json } = await readJsonBody<{ error?: string }>(res)
+        if (!res.ok) { setError((json?.error && ERROR_MESSAGES[json.error]) ?? ERROR_MESSAGES.SERVER_ERROR); return }
 
         const result = await signIn('credentials', { email, password, redirect: false, callbackUrl: '/' })
         if (result?.ok) window.location.href = '/'

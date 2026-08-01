@@ -8,6 +8,7 @@ import type { CausalLayer, RootCausePayload } from '@/lib/resources'
 import type { FailureDomain } from '@/lib/synthesis'
 import { EvidenceCard, EvidenceList } from './evidence-card'
 import { CausalChainView } from './causal-chain'
+import { parseJsonResponse } from '@/lib/fetch-json'
 
 type Phase = 'setup' | 'matched' | 'interview' | 'synthesis' | 'saved'
 
@@ -70,11 +71,13 @@ export function RootCauseInterview({ onExit, onSaved, initialDescription = '' }:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ failure_description: description.trim(), failure_date: failureDate, domain }),
       })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Failed to start')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parsed = await parseJsonResponse<any>(res)
+      if (!parsed.ok) {
+        setError(parsed.message)
         return
       }
+      const data = parsed.data
       setEvidence(data.evidence)
       setSignatureDescription(data.signature_description ?? '')
       setMatches(data.matches ?? [])
@@ -119,11 +122,13 @@ export function RootCauseInterview({ onExit, onSaved, initialDescription = '' }:
           force_synthesis: force,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Interview failed')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parsed = await parseJsonResponse<any>(res)
+      if (!parsed.ok) {
+        setError(parsed.message)
         return
       }
+      const data = parsed.data
 
       setHistory(updatedHistory)
       setAcceptedChain(updatedChain)
@@ -198,8 +203,8 @@ export function RootCauseInterview({ onExit, onSaved, initialDescription = '' }:
         } satisfies Partial<RootCausePayload> & { signature_description: string }),
       })
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setError(data.error ?? 'Save failed')
+        const parsed = await parseJsonResponse(res)
+        setError(!parsed.ok ? parsed.message : 'Save failed')
         return
       }
       setPhase('saved')

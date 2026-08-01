@@ -36,6 +36,7 @@ import { FileAttachmentChip, type PendingUpload } from './file-attachment-chip'
 import { FileAttachmentCard } from './file-attachment-card'
 import { detectFileType, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/lib/uploads'
 import { buildMessageText, parseMessageText, type AttachmentMeta } from '@/lib/attachment-marker'
+import { parseJsonResponse } from '@/lib/fetch-json'
 
 import { setAgentBusy } from '@/lib/agent-presence'
 import { GolemInline } from './golem/golem-inline'
@@ -706,11 +707,12 @@ export function CenterPanel({
       const form = new FormData()
       form.append('file', file)
       const res = await fetch('/api/upload', { method: 'POST', body: form })
-      const data = await res.json()
-      if (!res.ok) {
-        setPendingUpload({ file, status: 'error', error: data.error || 'Upload failed', fileType })
+      const parsed = await parseJsonResponse<AttachmentMeta>(res)
+      if (!parsed.ok) {
+        setPendingUpload({ file, status: 'error', error: parsed.message, fileType })
         return
       }
+      const data = parsed.data
       setPendingUpload({ file, status: 'ready', fileType })
       setUploadResult({
         filename: data.filename,

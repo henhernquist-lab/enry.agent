@@ -60,7 +60,12 @@ function extractResponseBody(error: unknown, depth = 0): string | undefined {
   return undefined
 }
 
-function messageForStatus(status: number | undefined): string | null {
+/**
+ * Same per-status mapping the stream sanitizer uses, exported for plain
+ * fetch() call sites (non-streaming API routes) so a 500 there gets the same
+ * differentiated message instead of a second, drifting copy of this table.
+ */
+export function messageForStatus(status: number | undefined): string | null {
   if (status === undefined) return null
   if (status === 401 || status === 403) {
     return 'This model rejected Enry\'s API key — it\'s a configuration problem, not a temporary one. Check the provider key, or pick another model.'

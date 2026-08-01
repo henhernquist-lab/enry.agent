@@ -5,6 +5,7 @@ import { Activity, Loader2, RefreshCw } from 'lucide-react'
 import { CruiseAutoCard } from '@/components/mobile/CruiseAutoCard'
 import { CruiseScheduleSheet } from '@/components/mobile/CruiseScheduleSheet'
 import type { CruiseAutoJob } from '@/app/api/cruise/autos/route'
+import { parseJsonResponse } from '@/lib/fetch-json'
 
 // Cruise Auto-run management for Shard. Reads/writes the SAME
 // cruise_repos / cruise_goal_runs state desktop's AutoRunPanel does — no
@@ -29,10 +30,10 @@ export default function MobileStatusPage() {
   const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch('/api/cruise/autos')
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? 'Failed to load'); return }
+      const parsed = await parseJsonResponse<{ jobs?: CruiseAutoJob[] }>(res)
+      if (!parsed.ok) { setError(parsed.message); return }
       setError(null)
-      setJobs(data.jobs ?? [])
+      setJobs(parsed.data.jobs ?? [])
     } catch {
       setError('Network error loading Cruise status')
     } finally {
@@ -49,8 +50,8 @@ export default function MobileStatusPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ repo }),
     })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error ?? 'Run failed to start')
+    const parsed = await parseJsonResponse(res)
+    if (!parsed.ok) throw new Error(parsed.message)
     // Real state (queued/running, real heartbeat) replaces the card's
     // optimistic "running…" flip once this lands.
     setTimeout(() => { fetchJobs() }, 3000)

@@ -17,6 +17,7 @@ import { SCANFIX_CATEGORIES, SCANFIX_LABEL, DEFAULT_SCANFIX_CONFIG, isGoalRunAct
 import { nextRun } from '@/lib/cruise/schedule'
 import { LiveWorkspace } from '@/components/live-workspace'
 import { pulseGolem } from '@/lib/golem-signals'
+import { parseJsonResponse, readJsonBody } from '@/lib/fetch-json'
 
 // Golem Cruise — the autonomous-scan main pane. Per-repo allowlist, on-demand
 // static scans, scan-and-fix categories, ranked findings with dismiss/not-a-bug.
@@ -159,9 +160,9 @@ export function CruisePanel({ repo }: { repo: string }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repo }),
       })
-      const data = await res.json()
-      if (res.status === 403 && data.error === 'missing_scope') { setNeedsReauth(true); setError(data.message); return }
-      if (!res.ok) { setError(data.message ?? data.error ?? 'Enable failed'); return }
+      const { data, fallbackMessage } = await readJsonBody<{ error?: string; message?: string; workflow_present?: boolean; workflow_version?: string; default_branch?: string }>(res)
+      if (res.status === 403 && data?.error === 'missing_scope') { setNeedsReauth(true); setError(data.message ?? fallbackMessage); return }
+      if (!res.ok || !data) { setError(data?.message ?? data?.error ?? fallbackMessage ?? 'Enable failed'); return }
       setEnableNote(data.workflow_present
         ? { ok: true, text: `Golem Relay v${data.workflow_version} confirmed on ${data.default_branch}.` }
         : { ok: false, text: 'Enable Golem Rounds scan workflow is NOT on the default branch. Try disable + enable again.' })
@@ -185,8 +186,9 @@ export function CruisePanel({ repo }: { repo: string }) {
       const res = await fetch('/api/cruise/scan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo }),
       })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? 'Scan failed to start'); return }
+      const parsed = await parseJsonResponse<{ scan_id: string }>(res)
+      if (!parsed.ok) { setError(parsed.message); return }
+      const data = parsed.data
       setSelectedScan(data.scan_id)
       // Auto-chain: when this scan completes, if any auto-fix category produced
       // findings, dispatch a scanfix run (one PR). See the effect below.
@@ -206,8 +208,8 @@ export function CruisePanel({ repo }: { repo: string }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repo, categories: { [category]: mode }, ...(confirmBtns !== undefined ? { buttons_autofix_confirmed: confirmBtns } : {}) }),
       })
-      const data = await res.json()
-      if (!res.ok) { setConfig(prev); setError(data.error ?? 'Could not save category config'); return }
+      const parsed = await parseJsonResponse(res)
+      if (!parsed.ok) { setConfig(prev); setError(parsed.message); return }
     } catch { setConfig(prev) } finally { setSavingCat(false) }
   }
 
@@ -220,8 +222,8 @@ export function CruisePanel({ repo }: { repo: string }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repo, ...payload }),
       })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? 'Could not save schedule'); return false }
+      const parsed = await parseJsonResponse(res)
+      if (!parsed.ok) { setError(parsed.message); return false }
       await loadConfig()
       return true
     } finally { setAutoSaving(false) }
@@ -235,8 +237,8 @@ export function CruisePanel({ repo }: { repo: string }) {
       const res = await fetch('/api/cruise/goal-runs', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo }),
       })
-      const data = await res.json()
-      if (!res.ok) { setGoalError(data.error ?? 'Auto-fix failed to start'); return }
+      const parsed = await parseJsonResponse(res)
+      if (!parsed.ok) { setGoalError(parsed.message); return }
       await loadGoalRuns()
     } finally { setGoalBusy(false) }
   }
