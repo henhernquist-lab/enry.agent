@@ -139,8 +139,11 @@ export const MODEL_LIST: ModelMeta[] = [
     description: 'Fast, capable generalist on Groq.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
-    // 12000 TPM — the default output budget fits comfortably.
-    maxOutputTokens: 4096,
+    // 12000 TPM. 4096 + lean prompt + 20+ tool schemas + focus/effort
+    // directives was exceeding the per-minute budget on tool-annotated
+    // requests (same class as the 8B 6000 TPM bug). 2048 leaves enough
+    // headroom that a request with all tools won't 413.
+    maxOutputTokens: 2048,
     // Groq bills prompt + output tokens against a per-minute budget, so
     // lean prompt saves meaningful TPM headroom on every message.
     systemPromptTier: 'haiku',
@@ -342,11 +345,13 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   },
   // GitHub Models — OpenAI-compatible endpoint. Claude 3.5 Sonnet is the
   // first model here. Endpoint: https://models.inference.ai.azure.com.
-  // Auth: GitHub PAT with default scopes (GITHUB_MODELS_TOKEN).
+  // Auth: GitHub PAT with default scopes. Checks both GITHUB_MODELS_TOKEN
+  // and GITHUB_MODELS_API_KEY (env var name was inconsistent in early UI
+  // error messages, so both are accepted to avoid silent miss-on-key-update).
   // Flags: endpoint + model ID need live verification against current catalog.
   'anthropic/claude-3.5-sonnet': {
     baseURL: 'https://models.inference.ai.azure.com',
-    getApiKey: () => process.env.GITHUB_MODELS_TOKEN ?? '',
+    getApiKey: () => process.env.GITHUB_MODELS_TOKEN ?? process.env.GITHUB_MODELS_API_KEY ?? '',
   },
 }
 
