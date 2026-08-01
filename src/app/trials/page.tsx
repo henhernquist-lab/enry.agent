@@ -136,7 +136,7 @@ export default function BenchmarkPage() {
   }
 
   return (
-    <div>
+    <div className="min-h-screen bg-background p-4 sm:p-6">
       {/* Back + header */}
       <div className="mb-4 flex items-center gap-3">
         <Link
@@ -153,11 +153,11 @@ export default function BenchmarkPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <p className="font-mono text-xs text-muted-foreground">
-            {loading ? 'Loading…' : `${benchmarks.length} benchmarked · ${MODEL_LIST.length} models available`}
+            {loading ? 'Loading…' : `${benchmarks.length} benchmarked${MODEL_LIST.length > 0 ? ` · ${MODEL_LIST.length} models in registry` : ''}`}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto">
           {/* Selection indicator */}
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5">
