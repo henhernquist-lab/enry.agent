@@ -73,7 +73,8 @@ export function modelSupportsReasoning(model: string): boolean {
   return getModelMeta(model)?.supportsReasoning === true
 }
 
-/** Extra body parameters to enable thinking on supported models. */
-export function reasoningExtraBody(_model: string): Record<string, unknown> | undefined {
+/** Extra body parameters to enable thinking on supported models — now gated. */
+export function reasoningExtraBody(model: string): Record<string, unknown> | undefined {
+  if (!modelSupportsReasoning(model)) return undefined
   return { chat_template_kwargs: { enable_thinking: true } }
 }

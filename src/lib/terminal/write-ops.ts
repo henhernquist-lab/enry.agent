@@ -4,7 +4,7 @@ import { generateText } from 'ai'
 import { generateDiff, contentHash } from './diff'
 import { confinePath } from './snapshot'
 import { getWorkingFile, upsertWorkingFile, listWorkingFiles, clearWorkingFiles, resolveExecutionDir } from './working-copy'
-import { reasoningExtraBody, parseReasoningTrace } from '../reasoning-trace'
+import { reasoningExtraBody, modelSupportsReasoning, parseReasoningTrace } from '../reasoning-trace'
 import type { TerminalSessionPayload, PendingDiff } from '../resources'
 
 // Live Terminal write mode — orchestration. Everything that actually touches
@@ -379,7 +379,7 @@ export async function generateReasoningTrace(
       // invocation with its own untouched 40s budget.
       timeout: 25_000,
       maxRetries: 0,
-      ...(reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}),
+      ...(modelSupportsReasoning(ctx.model ?? DEFAULT_NIM_MODEL) ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
     })
     const { answer } = parseReasoningTrace(text)
     const trimmed = answer.trim()

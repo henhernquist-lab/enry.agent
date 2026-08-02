@@ -16,7 +16,7 @@ import { getSkillWithOverride } from '@/lib/skills/loader'
 import { generateText } from 'ai'
 import { nimClientFor, DEFAULT_NIM_MODEL } from '@/lib/nim'
 import { insertSkillInvocation, updateSkillInvocationOutput } from '@/lib/lab/db'
-import { parseReasoningTrace, renderReasoningTrace, reasoningExtraBody, type ReasoningDepth } from '@/lib/reasoning-trace'
+import { parseReasoningTrace, renderReasoningTrace, reasoningExtraBody, modelSupportsReasoning, type ReasoningDepth } from '@/lib/reasoning-trace'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
 import { readRequestJson } from '@/lib/request-json'
 
@@ -534,7 +534,7 @@ async function runSkillResponse(
       // maxRetries: 0 so a retry can't silently double wall-clock past 60s.
       timeout: 40_000,
       maxRetries: 0,
-      ...(reasoningDepth !== 'off' ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
+      ...(reasoningDepth !== 'off' && modelSupportsReasoning(ctx.model ?? DEFAULT_NIM_MODEL) ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
     })
 
     // Parse reasoning trace from the response
@@ -640,7 +640,7 @@ async function runMultiSkillResponse(
       // maxRetries: 0 so a retry can't silently double wall-clock past 60s.
       timeout: 40_000,
       maxRetries: 0,
-      ...(reasoningDepth !== 'off' ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
+      ...(reasoningDepth !== 'off' && modelSupportsReasoning(ctx.model ?? DEFAULT_NIM_MODEL) ? (reasoningExtraBody(ctx.model ?? DEFAULT_NIM_MODEL) ?? {}) : {}),
     })
 
     const { reasoning: trace, answer } = parseReasoningTrace(text)
