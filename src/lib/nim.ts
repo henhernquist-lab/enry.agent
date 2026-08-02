@@ -67,6 +67,30 @@ export interface ModelMeta {
    * whether to pass the tool set to streamText at all.
    */
   supportsTools?: boolean
+  /**
+   * Output reservation for a turn that has tools attached, overriding
+   * `maxOutputTokens` for that turn only.
+   *
+   * Orthogonal to systemPromptTier: the tier decides how many tokens the
+   * system prompt costs, this decides how many the reservation costs. They
+   * compound rather than conflict — a leaner tier lowers P1, which is what
+   * makes a given reservation affordable.
+   *
+   * It matters because a tool turn is not one request. The SDK re-sends the
+   * whole context once per step, and Groq both admits and debits on
+   * `prompt + max_tokens` rather than tokens actually produced — so the
+   * reservation is paid again on every step while the prompt only grows, and
+   * an unused output budget is what starves the follow-up request. Budget for
+   * a two-step turn is `2×P1 + toolResult + 2×reservation ≤ TPM`.
+   */
+  maxOutputTokensWithTools?: number
+  /**
+   * Cap on the characters of a single tool result fed back into context.
+   * Applies to Tavily search results and every Composio result (Gmail bodies,
+   * scraped pages). Sized from the model's headroom, since every later step of
+   * the turn re-sends it. Omitted = the tool layer's own defaults.
+   */
+  toolResultMaxChars?: number
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
@@ -167,18 +191,30 @@ export const MODEL_LIST: ModelMeta[] = [
     // (no tool attempt) work fine, so withhold tools rather than offer a
     // capability that fails whenever it's actually used.
     supportsTools: false,
+    // Latent while supportsTools is false — kept so re-enabling tools doesn't
+    // also silently restore the flat 2048 reservation that caused the original
+    // 429s. Measured against the haiku tier: P1 is 2816 with the 24-tool set,
+    // so a two-step turn costs 5632 + results + 2×reservation of 12000. At the
+    // flat 2048 that leaves ~1470 spare (about 730 tokens of history, charged
+    // on both steps); at 1024 it leaves ~3520 (about 1760 tokens of history).
+    maxOutputTokensWithTools: 1024,
+    toolResultMaxChars: 2800,
   },
   {
     // Replaces Llama 3.1 8B Instant (removed). GitHub Models exposes Claude
     // 3.5 Sonnet through an OpenAI-compatible endpoint at
-    // https://models.inference.ai.azure.com. Needs a GitHub PAT with default
-    // scopes — no special Models scope required. Set as GITHUB_MODELS_TOKEN.
+    // https://models.github.ai/inference — NOT the legacy
+    // models.inference.ai.azure.com host (that one only ever served Azure
+    // OpenAI/Cohere/Meta; hitting it for anthropic/* returns a bare 401
+    // "unauthorized" with no useful detail, which looks like a bad key but
+    // isn't). Auth: GitHub PAT with default scopes, GITHUB_MODELS_TOKEN.
     //
-    // Rate limits: GitHub Models free tier for Claude 3.5 Sonnet is NOT yet
-    // confirmed live — the endpoint and model ID should be verified against
-    // the current GitHub Models catalog before promoting this beyond a
-    // selectable option. Start with a low defaultEffort to avoid burning
-    // through unknown quota on aggressive prompts.
+    // As of 2026-08-01 the live API itself returns 410
+    // github_models_retirement_brownout on this model — GitHub Models is
+    // being sunset. The endpoint/id here are correct; the outage is
+    // upstream, not a config bug. Re-verify against the catalog
+    // (GET https://models.github.ai/catalog/models) before relying on this
+    // entry, and expect it may need to move to a direct Anthropic key.
     //
     // Tool calling: GitHub Models' Claude deployment MAY support tool calls,
     // but this is unconfirmed — Anthropic's native API does, but the
@@ -209,6 +245,20 @@ export const MODEL_LIST: ModelMeta[] = [
     // 8000 TPM — headroom for a longer reply than the 8B, but not the full
     // 4096 default once prompt and tools are counted.
     maxOutputTokens: 2048,
+    // This is the only Groq model still offering tools, and on the full tier a
+    // tool turn does not fit at any reservation: P1 measures 3793 with the
+    // 24-tool set, so two steps cost 7586 of 8000 before a single byte of tool
+    // result or output budget. `2×P1 + results + 2×reservation ≤ 8000` leaves
+    // 414 to split, which even a 256 reservation overruns.
+    //
+    // 512 is therefore the smallest useful value rather than a sufficient one,
+    // and the result cap genuinely helps on the steps that do land. The real
+    // fix is a leaner tier — on haiku, P1 drops to roughly what the 70B
+    // measures (2816) and the same turn fits with room to spare. That's a
+    // deliberate one-field change to systemPromptTier, left to Henry rather
+    // than made here.
+    maxOutputTokensWithTools: 512,
+    toolResultMaxChars: 1200,
   },
 ]
 
@@ -364,13 +414,18 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     getApiKey: () => process.env.GROQ_API_KEY ?? '',
   },
   // GitHub Models — OpenAI-compatible endpoint. Claude 3.5 Sonnet is the
-  // first model here. Endpoint: https://models.inference.ai.azure.com.
-  // Auth: GitHub PAT with default scopes. Checks both GITHUB_MODELS_TOKEN
-  // and GITHUB_MODELS_API_KEY (env var name was inconsistent in early UI
-  // error messages, so both are accepted to avoid silent miss-on-key-update).
-  // Flags: endpoint + model ID need live verification against current catalog.
+  // first model here. Endpoint: https://models.github.ai/inference (the
+  // legacy models.inference.ai.azure.com host never served Anthropic models
+  // at all — its catalog is Azure OpenAI/Cohere/Meta only, so requests for
+  // anthropic/* there 401 with a "Server Error" that has nothing to do with
+  // the key). Auth: GitHub PAT with default scopes. Checks both
+  // GITHUB_MODELS_TOKEN and GITHUB_MODELS_API_KEY (env var name was
+  // inconsistent in early UI error messages, so both are accepted to avoid
+  // silent miss-on-key-update).
+  // As of 2026-08-01 GitHub Models returns 410 github_models_retirement_
+  // brownout for this model — an upstream sunset, not a config issue.
   'anthropic/claude-3.5-sonnet': {
-    baseURL: 'https://models.inference.ai.azure.com',
+    baseURL: 'https://models.github.ai/inference',
     getApiKey: () => process.env.GITHUB_MODELS_TOKEN ?? process.env.GITHUB_MODELS_API_KEY ?? '',
   },
 }

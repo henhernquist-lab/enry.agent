@@ -14,6 +14,7 @@ import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
 import { nimClientFor, isCommunityModelId, communityRouteParam, warmCommunityModel } from '@/lib/nim'
 import { safeStreamErrorMessage } from '@/lib/stream-error'
+import { budgetSearchResults } from '@/lib/tool-budget'
 import { logUsage } from '@/lib/usage/log'
 import { buildComposioTools } from '@/lib/composio-tools'
 import { monidDiscover, monidRun } from '@/lib/monid'
@@ -274,6 +275,16 @@ export async function POST(req: Request) {
   // wins; 4096 stays the default for everything else.
   const modelMeta = getModelMeta(selectedModel)
   const modelMaxOutputTokens = modelMeta?.maxOutputTokens ?? 4096
+  // A tool-calling turn pays the reservation once per STEP, not once per turn,
+  // because the SDK re-sends the whole context each step and Groq debits
+  // prompt + max_tokens. Falls back to the plain budget when a model has no
+  // tool-specific value. Independent of systemPromptTier, which sizes the
+  // prompt rather than the reservation.
+  const modelToolTurnOutputTokens = modelMeta?.maxOutputTokensWithTools ?? modelMaxOutputTokens
+  // Per-model ceiling on a single tool result. Whatever a tool returns is
+  // re-sent on every later step, so an unbounded Tavily response or Gmail body
+  // is charged repeatedly against the same per-minute budget.
+  const modelToolResultMaxChars = modelMeta?.toolResultMaxChars
   const systemPromptTier = modelMeta?.systemPromptTier
   const modelSupportsTools = modelMeta?.supportsTools !== false
 
@@ -510,8 +521,23 @@ export async function POST(req: Request) {
       inputSchema: z.object({ query: z.string().describe('The search query'), max_results: z.number().optional().default(5).describe('Number of results to return') }),
       execute: async ({ query, max_results }: { query: string; max_results?: number }) => {
         const response = await tavilyClient.search(query, { maxResults: max_results, includeAnswer: true })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return { answer: response.answer, results: response.results.map((r: any) => ({ title: r.title, url: r.url, content: r.content })) }
+        // Clip before returning, not after: this result is re-sent on every
+        // remaining step of the turn. A full 5-result Tavily response is
+        // ~1489 tokens, enough on its own to push a follow-up past a Groq
+        // per-minute admission check.
+        const budgeted = budgetSearchResults(
+          response.answer,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          response.results.map((r: any) => ({ title: r.title, url: r.url, content: r.content })),
+          modelToolResultMaxChars,
+        )
+        return {
+          answer: budgeted.answer,
+          results: budgeted.results,
+          ...(budgeted.truncated
+            ? { note: 'Snippets were shortened to fit this model\'s context budget. Use the URLs if you need the full text.' }
+            : {}),
+        }
       },
     })
   }
@@ -652,7 +678,7 @@ export async function POST(req: Request) {
   // returns {} when the user is unauthenticated, when focus mode disallows it
   // (web_only, repo_only), or when the user has no connected_account_id for a
   // given toolkit - so the model never sees a tool it can't actually call.
-  const composioTools = await buildComposioTools(uid, focusMode)
+  const composioTools = await buildComposioTools(uid, focusMode, modelToolResultMaxChars)
   Object.assign(allTools, composioTools)
 
   // School tools — Google Classroom + Infinite Campus (read-only). Always
@@ -849,6 +875,14 @@ export async function POST(req: Request) {
     },
   })
 
+  // Models with supportsTools:false (unreliable tool-call syntax, or a
+  // per-minute token budget that can't fit a tool round-trip) never get the
+  // schemas — offering a capability that fails whenever it's used is worse
+  // than not offering it. Gated once here so the set can't drift as tools are
+  // added above.
+  const activeTools = modelSupportsTools ? allTools : {}
+  const usingTools = Object.keys(activeTools).length > 0
+
   const chatStartedAt = Date.now()
   const result = streamText({
     model: chatClient.chat(modelParam),
@@ -870,7 +904,7 @@ export async function POST(req: Request) {
     // per-minute token budget that can't fit a tool round-trip) never get the
     // schemas — offering a capability that fails whenever it's used is worse
     // than not offering it.
-    tools: modelSupportsTools ? allTools : {},
+    tools: activeTools,
     // Inject recovery continuation into the system prompt when recovering
     // Same reasoning as the multi-skill call above: unset here defaults to
     // maxRetries 2, and this path additionally runs up to 7 tool-calling
@@ -881,8 +915,10 @@ export async function POST(req: Request) {
     maxRetries: 0,
     // See the multi-skill call above — an uncapped max_tokens request
     // exceeds what the free-tier OpenRouter account (DeepSeek's provider)
-    // can afford per call and fails before generating anything.
-    maxOutputTokens: modelMaxOutputTokens,
+    // can afford per call and fails before generating anything. A turn that
+    // actually carries tools uses the smaller per-step reservation, since it
+    // pays that reservation once per step rather than once per turn.
+    maxOutputTokens: usingTools ? modelToolTurnOutputTokens : modelMaxOutputTokens,
     onError: ({ error }) => {
       console.error('streamText error:', error)
     },
