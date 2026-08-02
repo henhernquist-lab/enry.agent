@@ -75,7 +75,7 @@ export function GolemMascot({ state, size = SIZE }: GolemMascotProps) {
   })
 
   const effectiveState = state ?? ambientState
-  const droop = useGolemDroop(visible === true)
+  const droop = useGolemDroop(visible === true, modelId)
 
   const positionRef = useRef<HTMLDivElement>(null)
   const bobRef = useRef<HTMLDivElement>(null)

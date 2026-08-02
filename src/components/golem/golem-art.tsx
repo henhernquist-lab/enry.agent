@@ -45,6 +45,19 @@ interface GolemArtProps {
   state: GolemState
   /** Supplied by the floating mascot; omitted for static inline placements. */
   deformRef?: GolemDeformRef
+  /** Daily token budget running low — heavy, slow, sunk down. */
+  droop?: boolean
+}
+
+// Droop is a modifier on whatever mood he's already in, not a sixth state:
+// any mood can run out of budget, and a state of its own would have to
+// duplicate all five. Multiplied onto / added to the tuning below.
+const DROOP = {
+  breathRate: 0.5, // half-speed breathing
+  breathDepth: 1.25, // heavier, deeper
+  lean: 0.16, // slumped forward
+  sink: 0.13, // and lower to the ground
+  eyeClose: 0.34, // lids at half mast
 }
 
 // ─── Geometry ────────────────────────────────────────────────────────
@@ -152,7 +165,17 @@ const TUNING: Record<GolemState, StateTuning> = {
   error: { breathRate: 0.5, breathDepth: 0.035, eyeClose: 0.5, lean: 0.11, blinks: true },
 }
 
-function Blob({ state, deformRef, colors }: { state: GolemState; deformRef?: GolemDeformRef; colors: GolemColors }) {
+function Blob({
+  state,
+  deformRef,
+  colors,
+  droop = false,
+}: {
+  state: GolemState
+  deformRef?: GolemDeformRef
+  colors: GolemColors
+  droop?: boolean
+}) {
   const root = useRef<THREE.Group>(null)
   const body = useRef<THREE.Group>(null)
   const eyes = useRef<THREE.Group>(null)
@@ -162,6 +185,11 @@ function Blob({ state, deformRef, colors }: { state: GolemState; deformRef?: Gol
   // starts a reaction without re-rendering anything.
   const anim = useRef({
     t: 0,
+    // Breathing is integrated rather than derived from `t`, so the rate can
+    // change — mood switch, droop easing in — without the sine jumping phase.
+    breathPhase: 0,
+    /** Eased 0→1 droop, so budget news arrives as a slump, not a snap. */
+    droop: 0,
     blinkAt: 1.5 + Math.random() * 3,
     blinkFor: 0,
     hop: 0,
@@ -199,8 +227,16 @@ function Blob({ state, deformRef, colors }: { state: GolemState; deformRef?: Gol
     a.blinkFor = Math.max(0, a.blinkFor - dt)
     const blinking = a.blinkFor > 0 ? 1 : 0
 
-    // Breathing — the baseline "this thing is alive" signal.
-    const breath = Math.sin(a.t * tune.breathRate * Math.PI * 2) * tune.breathDepth
+    // Ease toward the droop so crossing the threshold reads as running out of
+    // steam rather than a costume change.
+    a.droop += ((droop ? 1 : 0) - a.droop) * Math.min(1, dt * 1.4)
+    const d = a.droop
+
+    // Breathing — the baseline "this thing is alive" signal. Drooping halves
+    // the rate and deepens it: the same primitive, tired.
+    const breathRate = tune.breathRate * (1 + (DROOP.breathRate - 1) * d)
+    a.breathPhase += dt * breathRate * Math.PI * 2
+    const breath = Math.sin(a.breathPhase) * tune.breathDepth * (1 + (DROOP.breathDepth - 1) * d)
 
     // Bounce squash from the motion engine, eased so an edge hit lands soft.
     const deform = deformRef?.current
@@ -216,9 +252,10 @@ function Blob({ state, deformRef, colors }: { state: GolemState; deformRef?: Gol
       )
       // Bob: the engine's when it's driving, a gentle idle sway otherwise.
       const bob = deform ? deform.bob * 0.012 : Math.sin(a.t * 0.9) * 0.03
-      body.current.position.y = bob + hopEase * 0.34
+      // Drooping sits lower and slumps forward.
+      body.current.position.y = bob + hopEase * 0.34 - DROOP.sink * d
       body.current.rotation.z = Math.sin(a.t * 0.6) * 0.03 + a.shudder * Math.sin(a.t * 46) * 0.16
-      body.current.rotation.x = tune.lean
+      body.current.rotation.x = tune.lean + DROOP.lean * d
     }
 
     if (root.current) {
@@ -229,7 +266,7 @@ function Blob({ state, deformRef, colors }: { state: GolemState; deformRef?: Gol
     }
 
     if (eyes.current) {
-      const closed = Math.max(tune.eyeClose, blinking)
+      const closed = Math.max(tune.eyeClose, DROOP.eyeClose * d, blinking)
       eyes.current.scale.y = Math.max(0.06, 1 - closed)
       // A closing toad's eyes sink back into the skull rather than just
       // shrinking, so drop the domes as they shut.
@@ -330,7 +367,7 @@ function Blob({ state, deformRef, colors }: { state: GolemState; deformRef?: Gol
  * The character. Mounted by GolemFigure for both the floating mascot and the
  * static inline placements.
  */
-export function GolemArt({ state, deformRef }: GolemArtProps) {
+export function GolemArt({ state, deformRef, droop = false }: GolemArtProps) {
   const host = useRef<HTMLDivElement>(null)
   const colors = useGolemColors(host)
 
@@ -377,7 +414,7 @@ export function GolemArt({ state, deformRef }: GolemArtProps) {
         style={{ background: 'transparent' }}
       >
         {lights}
-        <Blob state={state} deformRef={deformRef} colors={colors} />
+        <Blob state={state} deformRef={deformRef} colors={colors} droop={droop} />
       </Canvas>
     </div>
   )

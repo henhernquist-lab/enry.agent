@@ -144,12 +144,21 @@ export function useGolemColors(host: React.RefObject<HTMLElement | null>): Golem
     const observer = new MutationObserver(sync)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
 
+    // The per-model tint is an inline style on the .golem-figure ancestor, not
+    // on <html>, so the theme observer alone never sees it: switching models
+    // repainted the CSS but left the 3D material on the previous model's
+    // accent until something else forced a re-read.
+    const figure = host.current?.closest('.golem-figure')
+    const tintObserver = figure ? new MutationObserver(sync) : null
+    if (figure) tintObserver?.observe(figure, { attributes: true, attributeFilter: ['style'] })
+
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     media.addEventListener('change', sync)
 
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()
+      tintObserver?.disconnect()
       media.removeEventListener('change', sync)
     }
   }, [host])

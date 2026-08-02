@@ -29,7 +29,7 @@ export function GolemFigure({ state, droop = false, modelId, deformRef, classNam
       style={tint ? ({ '--golem-model-tint': tint } as React.CSSProperties) : undefined}
     >
       <div className={`h-full w-full golem-state-${state}`}>
-        <GolemArt state={state} deformRef={deformRef} />
+        <GolemArt state={state} deformRef={deformRef} droop={droop} />
       </div>
     </div>
   )
