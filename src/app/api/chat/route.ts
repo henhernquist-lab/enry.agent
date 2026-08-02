@@ -35,6 +35,7 @@ import type { GitHubActionPayload } from '@/lib/resources'
 import { listModels, getModelMeta, DEFAULT_MODEL_ID } from '@/lib/nim'
 import { getSystemPrompt } from '@/lib/system-prompt'
 import { readRequestJson } from '@/lib/request-json'
+import { toUIMessages } from '@/lib/messages'
 
 // Chat-scoped model allowlist — subset of MODEL_LIST that has 'chat' scope.
 const CHAT_MODELS = listModels('chat').map((m) => m.id)
@@ -262,7 +263,15 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 
 export async function POST(req: Request) {
   const body = await readRequestJson(req)
-  const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn, recovery, partialContent } = body
+  const { messages: rawMessages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn, recovery, partialContent } = body
+  // Normalize to the AI SDK v6 UIMessage shape. The v6 `useChat` client sends
+  // `parts`; the mobile tools page (m/tools) and any legacy/third-party caller
+  // send `{ role, content }`. convertToModelMessages reads `parts` and throws
+  // `undefined.map` on the legacy shape, which 500s the route with raw HTML.
+  const messages = toUIMessages(rawMessages)
+  if (messages.length === 0) {
+    return Response.json({ error: 'No messages provided.' }, { status: 400 })
+  }
   // Community models (The Foundry) aren't in the static CHAT_MODELS
   // allowlist but are valid chat targets — recognized by their id prefix and
   // routed via HF Inference Providers. Trust of the id itself is fine: routing

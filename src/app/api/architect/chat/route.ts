@@ -6,6 +6,7 @@ import { logUsage } from '@/lib/usage/log'
 import { compactMessages } from '@/lib/compaction'
 import { safeStreamErrorMessage } from '@/lib/stream-error'
 import { readRequestJson } from '@/lib/request-json'
+import { toUIMessages } from '@/lib/messages'
 
 export const maxDuration = 60
 
@@ -140,6 +141,13 @@ Output in exactly this order:
 export async function POST(req: Request) {
   const body = await readRequestJson(req)
   const { messages, model } = body
+  // The Scribe/Architect client still sends the legacy `{ role, content }`
+  // shape; convertToModelMessages (ai v6) needs `parts`. Normalize so a
+  // legacy body doesn't throw `undefined.map` and 500 the route with HTML.
+  const normalizedMessages = toUIMessages(messages)
+  if (normalizedMessages.length === 0) {
+    return Response.json({ error: 'No messages provided.' }, { status: 400 })
+  }
   const selectedModel: string = CHAT_MODELS.includes(model) ? model : DEFAULT_MODEL
 
   let chatClient: ReturnType<typeof nimClientFor>
@@ -159,7 +167,7 @@ export async function POST(req: Request) {
   const googleId = (session?.user as { id?: string })?.id
   const uid = await resolveResourceUserId(googleId ?? null)
 
-  const modelMessages = await convertToModelMessages(messages)
+  const modelMessages = await convertToModelMessages(normalizedMessages)
   const compactResult = compactMessages(modelMessages as Parameters<typeof compactMessages>[0])
   const { messages: finalMessages, compacted, summary: compactionSummary } = compactResult
 
