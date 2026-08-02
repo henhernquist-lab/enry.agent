@@ -11,9 +11,12 @@ import { useEffect, useState } from 'react'
 // not a resolved colour — THREE.Color can't parse that.
 //
 // So resolve them through a throwaway probe: set `color: var(--token)` on it
-// and read back computed `color`, which the browser always resolves to rgb().
-// The probe inherits from the host element, so .golem-figure-scoped tokens
-// (--golem-accent, --golem-eye, and the per-model tint) resolve correctly.
+// and read back computed `color`, which the browser always resolves to a real
+// colour. The probe inherits from the host element, so .golem-figure-scoped
+// tokens (--golem-accent, --golem-eye, and the per-model tint) resolve
+// correctly.
+//
+// What the resolved value is *not* is `rgb()` — see toThreeColorStyle below.
 
 export interface GolemColors {
   body: string
@@ -42,6 +45,48 @@ const TOKENS: Record<keyof GolemColors, string> = {
   glow: '--golem-glow',
 }
 
+/**
+ * Normalise a computed CSS colour into something THREE.Color can actually
+ * parse.
+ *
+ * The catch that made the first version of this file a no-op: a computed
+ * `color` that originated from `color-mix()` does not serialise as `rgb()`.
+ * Chromium hands back the CSS Color 4 form —
+ *
+ *   color(srgb 0.474675 0.415059 0.329882)
+ *
+ * — for every one of these tokens. THREE.Color has no parser for that
+ * function ("Unknown color model"), and it fails *soft*: it warns and leaves
+ * the colour at white. So the string has to be converted here, numerically,
+ * before three ever sees it.
+ *
+ * Returns null for anything unrecognised so the caller can fall back loudly.
+ */
+function toThreeColorStyle(value: string): string | null {
+  const v = value.trim()
+  if (!v) return null
+  // Legacy serialisations three already understands, passed through untouched.
+  if (v.startsWith('#') || v.startsWith('rgb')) return v
+
+  const srgb = /^color\(\s*srgb\s+([-\d.eE]+)\s+([-\d.eE]+)\s+([-\d.eE]+)/.exec(v)
+  if (!srgb) return null
+
+  // Components are 0–1 floats and may fall outside the gamut; clamp before
+  // quantising. Alpha (after the `/`) is deliberately dropped — these feed
+  // material colours, where opacity is a separate channel.
+  const hex = [1, 2, 3]
+    .map((i) => {
+      const f = Number(srgb[i])
+      if (!Number.isFinite(f)) return null
+      return Math.round(Math.min(1, Math.max(0, f)) * 255)
+        .toString(16)
+        .padStart(2, '0')
+    })
+    .join('')
+
+  return hex.length === 6 ? `#${hex}` : null
+}
+
 export function readGolemColors(host: HTMLElement | null): GolemColors {
   if (typeof window === 'undefined' || !host) return FALLBACK
 
@@ -52,20 +97,27 @@ export function readGolemColors(host: HTMLElement | null): GolemColors {
   host.appendChild(probe)
 
   const out = { ...FALLBACK }
+  const missed: string[] = []
   try {
     for (const key of Object.keys(TOKENS) as (keyof GolemColors)[]) {
       probe.style.color = ''
       probe.style.color = `var(${TOKENS[key]})`
-      const resolved = getComputedStyle(probe).color
-      // An unresolvable var leaves `color` at its inherited value; anything
-      // that parses to rgb()/rgba() is a real answer.
-      if (resolved && resolved.startsWith('rgb')) out[key] = resolved
+      const parsed = toThreeColorStyle(getComputedStyle(probe).color)
+      if (parsed) out[key] = parsed
+      else missed.push(TOKENS[key])
     }
   } catch {
     /* fall through to defaults */
   } finally {
     probe.remove()
   }
+
+  // Falling back silently is how this broke the first time: Golem rendered a
+  // hardcoded grey in every theme and looked merely "wrong", not "broken".
+  if (missed.length && process.env.NODE_ENV !== 'production') {
+    console.warn(`[golem-colors] unresolved, using fallback: ${missed.join(', ')}`)
+  }
+
   return out
 }
 

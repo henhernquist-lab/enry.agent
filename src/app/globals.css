@@ -148,6 +148,19 @@ html[data-theme='light'] {
   --golem-shadow: color-mix(in srgb, #000 26%, transparent);
 }
 
+/* Light theme is the one case the generic derivation gets wrong. Mixing
+   toward --surface-elevated works in the dark themes because that token is a
+   mid-tone; in light it is nearly white, so Golem came out pale-on-white and
+   lost his silhouette. Mix toward --primary over a soft blue instead: same
+   token-driven approach, but it lands on a light blue that still reads as a
+   solid object against the page. */
+html[data-theme='light'] {
+  --golem-clay: color-mix(in srgb, var(--primary) 30%, #e8f0fd);
+  --golem-body: color-mix(in srgb, var(--primary) 22%, var(--golem-clay));
+  --golem-body-shade: color-mix(in srgb, var(--golem-body) 74%, #24405f);
+  --golem-body-light: color-mix(in srgb, var(--golem-body) 82%, #fff);
+}
+
 /* The accent swatches are declared on the figure, not on :root, because a
    var() in a custom property resolves against the element it computes on —
    the per-instance --golem-model-tint set inline on this element has to be
