@@ -56,7 +56,9 @@ export interface ModelMeta {
    * - 'haiku' = terse, minimal (rate-limited models)
    * - 'sonnet' = medium detail (balanced models)
    * - 'full' (or undefined) = unchanged original prompt (default)
-   * GPT-OSS 120B is left untouched — omit the field to keep it on full.
+   * Groq models sit on 'haiku': the prompt is re-sent on every step of a tool
+   * turn and charged against a per-minute ceiling, so its size decides whether
+   * a tool round-trip fits at all.
    */
   systemPromptTier?: 'haiku' | 'sonnet' | 'full'
   /**
@@ -242,23 +244,27 @@ export const MODEL_LIST: ModelMeta[] = [
     scopes: ['chat', 'drive'],
     defaultEffort: 'high',
     supportsReasoning: true,
-    // 8000 TPM — headroom for a longer reply than the 8B, but not the full
-    // 4096 default once prompt and tools are counted.
+    systemPromptTier: 'haiku',
+    // 8000 TPM. Deliberately NOT raised despite the haiku tier freeing room:
+    // a plain turn is 1409 + history + reservation, so 2048 tolerates ~4540
+    // tokens of history (~20k chars) while compaction fires at 16k chars. That
+    // ordering is the safety property — at 4096 the ceiling drops to ~11k
+    // chars, below the compaction threshold, and a long conversation would 413
+    // before compaction could rescue it.
     maxOutputTokens: 2048,
-    // This is the only Groq model still offering tools, and on the full tier a
-    // tool turn does not fit at any reservation: P1 measures 3793 with the
-    // 24-tool set, so two steps cost 7586 of 8000 before a single byte of tool
-    // result or output budget. `2×P1 + results + 2×reservation ≤ 8000` leaves
-    // 414 to split, which even a 256 reservation overruns.
+    // Moved to the haiku tier (Henry's call, overriding the earlier decision to
+    // leave this model on full). P1 falls from 3793 to 1409 against the 24-tool
+    // production set — a bigger drop than the 70B's, since this tokenizer is
+    // more efficient on the short prompt.
     //
-    // 512 is therefore the smallest useful value rather than a sufficient one,
-    // and the result cap genuinely helps on the steps that do land. The real
-    // fix is a leaner tier — on haiku, P1 drops to roughly what the 70B
-    // measures (2816) and the same turn fits with room to spare. That's a
-    // deliberate one-field change to systemPromptTier, left to Henry rather
-    // than made here.
-    maxOutputTokensWithTools: 512,
-    toolResultMaxChars: 1200,
+    // That turns a turn that could not fit at ANY reservation into one with
+    // real headroom. Two steps now cost 2818 of 8000 rather than 7586, leaving
+    // 5182 to split instead of 414:
+    //   2×1409 + 800 (2800-char result) + 2×1024 = 5666, margin 2334.
+    // History is charged on both steps, so that margin covers roughly 1160
+    // tokens (~4600 chars) of prior conversation.
+    maxOutputTokensWithTools: 1024,
+    toolResultMaxChars: 2800,
   },
 ]
 
