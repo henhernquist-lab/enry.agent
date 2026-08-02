@@ -12,7 +12,7 @@ import { parseSessionFocusId, SESSION_FOCUS_PROMPTS, sessionFocusLabel } from '@
 import { insertSkillInvocation, updateSkillInvocationOutput, getActivePromptOverride } from '@/lib/lab/db'
 import { modelSupportsReasoning } from '@/lib/reasoning-trace'
 import { compactMessages } from '@/lib/compaction'
-import { nimClientFor, isCommunityModelId, communityRouteParam, warmCommunityModel } from '@/lib/nim'
+import { nimClientFor, isCommunityModelId, isGroqModel, communityRouteParam, warmCommunityModel } from '@/lib/nim'
 import { safeStreamErrorMessage } from '@/lib/stream-error'
 import { budgetSearchResults } from '@/lib/tool-budget'
 import { logUsage } from '@/lib/usage/log'
@@ -680,6 +680,45 @@ export async function POST(req: Request) {
   // given toolkit - so the model never sees a tool it can't actually call.
   const composioTools = await buildComposioTools(uid, focusMode, modelToolResultMaxChars)
   Object.assign(allTools, composioTools)
+
+  // ── Groq tool-count guard ────────────────────────────────────────
+  // Llama 3 models on Groq emit malformed tool-call JSON at high tool
+  // counts (~20+). Groq's API validates tool-call outputs before
+  // streaming and returns HTTP 400 when the model concatenates JSON
+  // args onto the tool name (a known Llama 3 failure mode). Unlike the
+  // Gemini index patch in nim.ts (which fixes a quirky but valid 200
+  // stream), this can't be patched at the response layer — Groq blocks
+  // the stream entirely. Mitigation: trim to a safe subset for Groq.
+  if (isGroqModel(selectedModel)) {
+    const GROQ_MAX_TOOLS = 18
+    const groqBefore = Object.keys(allTools).length
+    // Read-only GitHub tools only (4): list_repos, read_file, list_issues, read_enryrules.
+    // Drop 6 write tools: create_issue, create_branch, create_file, update_file, create_pr, create_repo.
+    // Drop monid_api (1) — it's a fallback discover-and-call tool that adds little value on Groq.
+    // Keep: web_search, memory (2), school (2), composio_search (5 no-auth), plus any connected Gmail/Firecrawl.
+    const lowPriority = ['github_create_issue', 'github_create_branch', 'github_create_file', 'github_update_file', 'github_create_pull_request', 'github_create_repo', 'monid_api']
+    for (const key of lowPriority) delete allTools[key]
+    // If still over the cap (e.g. Gmail + Firecrawl both connected), trim
+    // the least-used Composio tools further.
+    const remaining = Object.keys(allTools)
+    if (remaining.length > GROQ_MAX_TOOLS) {
+      const excessTools = ['composio_finance', 'composio_flights', 'composio_amazon', 'firecrawl_map', 'firecrawl_crawl', 'gmail_search_emails']
+      for (const key of excessTools) {
+        if (remaining.length <= GROQ_MAX_TOOLS) break
+        delete allTools[key]
+      }
+    }
+    const groqAfter = Object.keys(allTools).length
+    if (groqBefore !== groqAfter) {
+      console.log(`[chat] Groq tool trim: ${groqBefore} → ${groqAfter} tools (model=${selectedModel}, focus=${focusMode})`)
+    }
+  }
+
+  // ── Diagnostic: log tool count for every request ────────────────
+  const toolKeys = Object.keys(allTools)
+  if (toolKeys.length > 15) {
+    console.log(`[chat] high tool count: ${toolKeys.length} tools, model=${selectedModel}, focus=${focusMode}, tools=[${toolKeys.join(', ')}]`)
+  }
 
   // School tools — Google Classroom + Infinite Campus (read-only). Always
   // available regardless of focus mode (school data isn't web/repo/memory).

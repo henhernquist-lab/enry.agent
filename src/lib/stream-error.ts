@@ -92,7 +92,14 @@ export function messageForStatus(status: number | undefined): string | null {
   if (status >= 500) {
     return 'This model is temporarily unavailable at the provider. Try again shortly, or switch models.'
   }
-  if (status >= 400) {
+  if (status === 400) {
+    // 400 on a chat-completions call is almost always a malformed request
+    // the provider can't parse — tool-calling model emitted invalid JSON,
+    // a required field was missing, or the schema was rejected. Distinct
+    // from 401/403 (auth), 413 (too large), and 429 (rate limit).
+    return 'The provider rejected this request as malformed — the model likely emitted an invalid tool call. Try again, or switch to a model with better tool-calling reliability.'
+  }
+  if (status > 400) {
     return 'The provider rejected this request. Try rephrasing, or switch models.'
   }
   return null

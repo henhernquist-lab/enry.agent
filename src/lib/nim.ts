@@ -372,6 +372,11 @@ export function isCommunityModelId(id: string): boolean {
   return id.startsWith(COMMUNITY_MODEL_PREFIX)
 }
 
+/** Returns true if the model routes through Groq (known tool-calling quirk at high tool counts). */
+export function isGroqModel(id: string): boolean {
+  return id === 'llama-3.3-70b-versatile' || id === 'openai/gpt-oss-120b' || id === 'llama-3.1-8b-instant'
+}
+
 /** The HF-router model param for a community id (strips the marker prefix). */
 export function communityRouteParam(id: string): string {
   return id.slice(COMMUNITY_MODEL_PREFIX.length)
