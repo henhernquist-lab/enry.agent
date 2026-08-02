@@ -275,6 +275,7 @@ export async function POST(req: Request) {
   const modelMeta = getModelMeta(selectedModel)
   const modelMaxOutputTokens = modelMeta?.maxOutputTokens ?? 4096
   const systemPromptTier = modelMeta?.systemPromptTier
+  const modelSupportsTools = modelMeta?.supportsTools !== false
 
   // HF Inference Providers cold-start less-popular models; warm it here (with
   // retries) so the first message doesn't error mid-stream. No-op otherwise.
@@ -865,7 +866,11 @@ export async function POST(req: Request) {
     ...(reasoningDepth !== 'off' && modelSupportsReasoning(selectedModel) ? {
       providerOptions: { openai: { extra_body: { chat_template_kwargs: { enable_thinking: true } } } },
     } : {}),
-    tools: allTools,
+    // Models with supportsTools:false (unreliable tool-call syntax, or a
+    // per-minute token budget that can't fit a tool round-trip) never get the
+    // schemas — offering a capability that fails whenever it's used is worse
+    // than not offering it.
+    tools: modelSupportsTools ? allTools : {},
     // Inject recovery continuation into the system prompt when recovering
     // Same reasoning as the multi-skill call above: unset here defaults to
     // maxRetries 2, and this path additionally runs up to 7 tool-calling

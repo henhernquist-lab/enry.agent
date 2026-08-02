@@ -59,6 +59,14 @@ export interface ModelMeta {
    * GPT-OSS 120B is left untouched — omit the field to keep it on full.
    */
   systemPromptTier?: 'haiku' | 'sonnet' | 'full'
+  /**
+   * False when a model cannot reliably use tools right now — either a token
+   * budget that can't fit a tool round-trip, or (as with Llama 3.3 70B on
+   * Groq) a model that mangles the function-call syntax whenever it attempts
+   * one. Omitted = tools attached normally. Read by the chat route to decide
+   * whether to pass the tool set to streamText at all.
+   */
+  supportsTools?: boolean
 }
 
 // Client-safe metadata. Pickers read this directly. No secrets here.
@@ -136,7 +144,7 @@ export const MODEL_LIST: ModelMeta[] = [
     id: 'llama-3.3-70b-versatile',
     label: 'Llama 3.3 70B',
     company: 'Groq',
-    description: 'Fast, capable generalist on Groq.',
+    description: 'Fast, capable generalist on Groq. Chat only — no tools or web search.',
     scopes: ['chat', 'drive'],
     defaultEffort: 'medium',
     // 12000 TPM. 4096 + lean prompt + 20+ tool schemas + focus/effort
@@ -147,6 +155,18 @@ export const MODEL_LIST: ModelMeta[] = [
     // Groq bills prompt + output tokens against a per-minute budget, so
     // lean prompt saves meaningful TPM headroom on every message.
     systemPromptTier: 'haiku',
+    // The 413 above is fixed, but tools stayed broken: with the full ~22-tool
+    // schema set, this model reliably mangles Groq's function-call syntax —
+    // observed as `tool call validation failed: attempted to call tool
+    // 'web_search [{"query": ...}]' which was not in request.tools`, i.e. it
+    // concatenates the JSON arguments onto the tool name instead of using a
+    // separate arguments field. Reproduced on every message that triggers (or
+    // over-triggers) a tool call, including plain conversational input with
+    // no search-shaped request — not a prompt-size problem, a Groq/model
+    // tool-calling compatibility problem at this schema count. Plain replies
+    // (no tool attempt) work fine, so withhold tools rather than offer a
+    // capability that fails whenever it's actually used.
+    supportsTools: false,
   },
   {
     // Replaces Llama 3.1 8B Instant (removed). GitHub Models exposes Claude
