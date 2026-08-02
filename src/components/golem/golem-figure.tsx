@@ -1,5 +1,5 @@
 import { golemTintForModel, type GolemState } from '@/lib/golem-mascot'
-import { GolemArt } from './golem-art'
+import { GolemArt, type GolemDeformRef } from './golem-art'
 
 interface GolemFigureProps {
   state: GolemState
@@ -7,6 +7,8 @@ interface GolemFigureProps {
   droop?: boolean
   /** Active model id; tints the accents by the model's house. */
   modelId?: string | null
+  /** Per-frame bounce/bob/facing from the motion engine (mascot only). */
+  deformRef?: GolemDeformRef
   className?: string
 }
 
@@ -18,7 +20,7 @@ interface GolemFigureProps {
  * writes its own transform on ancestors of both, so nothing here ever competes
  * with the rAF for the same `transform` property.
  */
-export function GolemFigure({ state, droop = false, modelId, className = '' }: GolemFigureProps) {
+export function GolemFigure({ state, droop = false, modelId, deformRef, className = '' }: GolemFigureProps) {
   const tint = golemTintForModel(modelId ?? null)
 
   return (
@@ -27,7 +29,7 @@ export function GolemFigure({ state, droop = false, modelId, className = '' }: G
       style={tint ? ({ '--golem-model-tint': tint } as React.CSSProperties) : undefined}
     >
       <div className={`h-full w-full golem-state-${state}`}>
-        <GolemArt state={state} />
+        <GolemArt state={state} deformRef={deformRef} />
       </div>
     </div>
   )

@@ -15,11 +15,12 @@ import {
 } from '@/lib/golem-signals'
 import { randomSuggestionCard } from '@/lib/suggestion-cards'
 import { GolemFigure } from './golem-figure'
+import { GOLEM_DEFAULT_SIZE, type GolemDeform } from './golem-art'
 import { GolemMotion } from './golem-motion'
 import { useGolemState } from './golem-state-context'
 import { useGolemDroop } from './use-golem-droop'
 
-const SIZE = 72
+const SIZE = GOLEM_DEFAULT_SIZE
 const MARGIN = 20
 
 // A press that stays under this distance and duration is a click, not a drag.
@@ -78,6 +79,9 @@ export function GolemMascot({ state, size = SIZE }: GolemMascotProps) {
 
   const positionRef = useRef<HTMLDivElement>(null)
   const bobRef = useRef<HTMLDivElement>(null)
+  // Written every rAF, read every useFrame — the handoff from the 2D motion
+  // engine into the 3D character without a React render in between.
+  const deformRef = useRef<GolemDeform | null>(null)
   // Drag bookkeeping, kept in a ref so pointermove never triggers a render.
   const dragRef = useRef({
     active: false,
@@ -208,13 +212,22 @@ export function GolemMascot({ state, size = SIZE }: GolemMascotProps) {
   useEffect(() => {
     if (!visible || !motion) return
     const position = positionRef.current
-    const bob = bobRef.current
-    if (!position || !bob) return
+    if (!position) return
 
     const paint = () => {
       const frame = motion.current()
       position.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0)`
-      bob.style.transform = `translateY(${frame.bob}px) scale(${frame.facing * frame.squashX}, ${frame.squashY})`
+      // Drift stays a DOM transform — it moves the whole canvas across the
+      // viewport. Bob, bounce squash and facing are handed to the 3D scene
+      // instead of scaling the canvas element: scaling a WebGL canvas stretches
+      // the rendered raster, where deforming the mesh is what the squash is
+      // actually meant to look like.
+      deformRef.current = {
+        bob: frame.bob,
+        squashX: frame.squashX,
+        squashY: frame.squashY,
+        facing: frame.facing,
+      }
     }
 
     if (reducedMotion) {
@@ -301,7 +314,7 @@ export function GolemMascot({ state, size = SIZE }: GolemMascotProps) {
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
-          <GolemFigure state={effectiveState} droop={droop} modelId={modelId} className="h-full w-full" />
+          <GolemFigure state={effectiveState} droop={droop} modelId={modelId} deformRef={deformRef} className="h-full w-full" />
         </div>
       </div>
     </div>
