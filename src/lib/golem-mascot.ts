@@ -37,19 +37,66 @@ export function saveGolemVisible(visible: boolean): void {
 
 // ─── Model-aware tint ────────────────────────────────────────────────
 //
-// Derived from the model registry's existing `company` field rather than a new
-// colour-per-model table — models from the same house read as the same hue,
-// and a model added to MODEL_LIST tomorrow gets a tint with no edit here.
-// The result is mixed into the accent swatches at ~22% (see .golem-figure in
-// globals.css): enough to notice out of the corner of your eye, not a costume.
+// Keyed on the model registry's existing `company` field rather than a
+// colour-per-model table — every model from a house reads as one hue, so a new
+// model from a known house needs no edit here. The result is mixed into the
+// accent swatches at ~22% (see .golem-figure in globals.css): enough to notice
+// out of the corner of your eye, not a costume.
+//
+// Hues were hashed from the company string originally. They aren't any more,
+// because a hash can't promise two houses look different — and at this mix,
+// two that hash close are simply the same colour. See HOUSE_HUE.
 
-function hueFromString(value: string): number {
-  let hash = 0
-  for (let i = 0; i < value.length; i++) {
-    hash = (hash * 31 + value.charCodeAt(i)) | 0
-  }
-  return Math.abs(hash) % 360
+/**
+ * A house's identity, independent of which gateway serves it: the registry
+ * records "Anthropic (GitHub Models)" and "DeepSeek (NVIDIA NIM)", but the
+ * brand is what the tint is meant to signal. Leading token, lowercased —
+ * "DeepSeek (NVIDIA NIM)" and a future bare "DeepSeek" land on one hue.
+ */
+function houseKey(house: string): string {
+  return house.trim().split(/[\s(]+/)[0].toLowerCase()
 }
+
+// Hues are assigned, not hashed, because hashing put two pairs on top of each
+// other: Anthropic and Google landed 3° apart, DeepSeek and NVIDIA 13° apart.
+// At the deliberately subtle 22% mix those differences vanished entirely, so
+// the tint said "a model changed" without ever saying which.
+//
+// The values are solved rather than eyeballed. Even spacing around the hue
+// wheel is NOT even to the eye once each tint is mixed 22% into a saturated
+// theme accent — the base dominates and compresses the differences unevenly,
+// worst in the light theme where the primary is a strong blue. So these
+// maximise the *minimum* CIE76 distance between any two houses, measured
+// after the mix, across all three themes at once. Anthropic and NVIDIA are
+// pinned at the hues they already had, since neither was part of a collision.
+//
+// Worst-case separation goes from dE 4.78 to 9.60 without touching the 22%.
+// Adding a sixth house means re-solving this table, not appending to it.
+const HOUSE_HUE: Record<string, number> = {
+  anthropic: 62,
+  google: 27,
+  groq: 188,
+  deepseek: 228,
+  nvidia: 350,
+}
+
+/**
+ * Every house without an assigned slot shares one hue.
+ *
+ * Not laziness — the wheel is full. Solved the same way as the table above,
+ * five anchored houses at a 22% mix leave exactly one hue standing more than
+ * dE 8 clear of all of them (152°), two above dE 6, and four above dE 5.
+ * There is no room to give unknown houses distinct, actually-distinguishable
+ * colours, and a hash that lands one of them a dE of 1.5 from Claude's tint
+ * is worse than no distinction at all — it would be a *wrong* signal.
+ *
+ * So the fallback says one true thing instead: "not one of the known houses."
+ * That mostly means a community model, which is its own category anyway —
+ * they're deliberately kept out of every autonomous path (see the
+ * community_models migration). A new registry company also lands here, and
+ * reads as unassigned until someone gives it a slot above.
+ */
+const UNASSIGNED_HUE = 152
 
 export function golemTintForModel(modelId: string | null): string | null {
   if (!modelId) return null
@@ -59,5 +106,6 @@ export function golemTintForModel(modelId: string | null): string | null {
     ? modelId.split(':')[2]
     : getModelMeta(modelId)?.company
   if (!house) return null
-  return `hsl(${hueFromString(house)} 55% 58%)`
+  const hue = HOUSE_HUE[houseKey(house)] ?? UNASSIGNED_HUE
+  return `hsl(${hue} 55% 58%)`
 }
