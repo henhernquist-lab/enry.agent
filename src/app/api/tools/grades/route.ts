@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -27,7 +28,7 @@ export async function PUT(req: Request) {
   const googleId = await getGoogleId()
   if (!googleId) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { grades } = await req.json()
+  const { grades } = await readRequestJson(req)
   if (!grades) return Response.json({ error: 'Missing grades' }, { status: 400 })
 
   const { data: existing } = await supabase

@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { assembleCorpus } from '@/lib/ghost/corpus'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const start = String(body.start ?? '')
   const end = String(body.end ?? '')
 

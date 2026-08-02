@@ -4,6 +4,7 @@ import { generateEmbedding } from '@/lib/embeddings'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import type { ResourceType } from '@/lib/resources'
 import type { ResourceSource } from '@/lib/resource-source'
+import { readRequestJson } from '@/lib/request-json'
 
 const VALID_SOURCES = new Set<ResourceSource>(['user', 'daily_auto', 'featured'])
 
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const { type, title, payload } = body
 
   if (!type || !VALID_TYPES.has(type as ResourceType)) {

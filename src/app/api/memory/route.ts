@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import type { MemoryPayload } from '@/lib/resources'
 import { emitResourceSaved } from '@/lib/resource-events'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const { content, origin, imported } = body as {
     content?: string
     origin?: string

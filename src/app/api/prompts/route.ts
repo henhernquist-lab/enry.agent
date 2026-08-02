@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
   const uid = userId(session)
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { title, body, category, tags, notes } = await req.json()
+  const { title, body, category, tags, notes } = await readRequestJson(req)
 
   if (typeof title !== 'string' || !title.trim()) {
     return Response.json({ error: 'Title is required' }, { status: 400 })
@@ -86,7 +87,7 @@ export async function PUT(req: Request) {
   const uid = userId(session)
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { id, title, body, category, tags, notes } = await req.json()
+  const { id, title, body, category, tags, notes } = await readRequestJson(req)
   if (!id) return Response.json({ error: 'Missing id' }, { status: 400 })
 
   const updates: Record<string, unknown> = {}

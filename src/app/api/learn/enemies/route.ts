@@ -3,6 +3,7 @@
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { addEnemy, getActiveEnemies, getCaughtEnemies, getDefendedEnemies, getEnemyCount } from '@/lib/learn/enemies'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(rawId)
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
 
   try {
     const result = await addEnemy(uid, body.content, body.topic ?? '')

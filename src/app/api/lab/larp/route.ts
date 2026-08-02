@@ -1,5 +1,6 @@
 import { generateText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 60
 
@@ -63,7 +64,7 @@ Return a JSON object with exactly this structure — no preamble, no markdown wr
 - Do not include more than 8 features. Quality over quantity.`
 
 export async function POST(req: Request) {
-  const { url, projectContext, featureIdea } = await req.json()
+  const { url, projectContext, featureIdea } = await readRequestJson(req)
 
   const hasUrl = typeof url === 'string' && url.trim().length > 0
   const hasFeatureIdea = typeof featureIdea === 'string' && featureIdea.trim().length > 0

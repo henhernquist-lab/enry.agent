@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/embeddings'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import type { ResourceSource } from '@/lib/resource-source'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const query = typeof body.query === 'string' ? body.query.trim() : ''
   const source = (typeof body.source === 'string' ? body.source : null) as ResourceSource | null
   if (!query) return Response.json({ error: 'query required' }, { status: 400 })

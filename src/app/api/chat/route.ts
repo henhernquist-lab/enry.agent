@@ -34,6 +34,7 @@ import type { GitHubActionPayload } from '@/lib/resources'
 
 import { listModels, getModelMeta, DEFAULT_MODEL_ID } from '@/lib/nim'
 import { getSystemPrompt } from '@/lib/system-prompt'
+import { readRequestJson } from '@/lib/request-json'
 
 // Chat-scoped model allowlist — subset of MODEL_LIST that has 'chat' scope.
 const CHAT_MODELS = listModels('chat').map((m) => m.id)
@@ -260,7 +261,7 @@ function buildTools(mode: FocusMode, googleId: string | undefined, githubToken: 
 // ─── Main Route ────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const { messages, model, userProfile, skill: skillSlug, skills: skillSlugs, skillTurn, recovery, partialContent } = body
   // Community models (The Foundry) aren't in the static CHAT_MODELS
   // allowlist but are valid chat targets — recognized by their id prefix and

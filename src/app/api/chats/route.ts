@@ -1,6 +1,7 @@
 import { DEFAULT_MODEL_ID } from '@/lib/nim'
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   const googleId = await getGoogleId()
   if (!googleId) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { id, title, model, messages } = await req.json()
+  const { id, title, model, messages } = await readRequestJson(req)
   if (!id || !Array.isArray(messages)) {
     return Response.json({ error: 'Missing id or messages' }, { status: 400 })
   }

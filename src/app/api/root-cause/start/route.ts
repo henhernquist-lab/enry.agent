@@ -8,6 +8,7 @@ import {
   runInterviewTurn,
 } from '@/lib/root-cause'
 import type { FailureDomain } from '@/lib/synthesis'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 60
 
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const failureDescription = String(body.failure_description ?? '').trim()
   const failureDate = String(body.failure_date ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10)
   const domain: FailureDomain = DOMAINS.includes(body.domain) ? body.domain : 'other'

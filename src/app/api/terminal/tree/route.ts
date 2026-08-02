@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth'
 import { getRepoTree } from '@/lib/github'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
   const githubToken = (session as { githubToken?: string } | null)?.githubToken
   if (!githubToken) return Response.json({ error: 'GitHub not connected' }, { status: 400 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const repo = String(body.repo ?? '').trim()
   const branch = String(body.branch ?? '').trim()
   if (!REPO_RE.test(repo)) return Response.json({ error: 'Invalid repo' }, { status: 400 })

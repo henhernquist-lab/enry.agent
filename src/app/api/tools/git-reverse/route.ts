@@ -1,10 +1,11 @@
 import { generateText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 60
 
 export async function POST(req: Request) {
-  const { repo } = await req.json()
+  const { repo } = await readRequestJson(req)
 
   if (!repo) {
     return Response.json({ error: 'Missing repo data' }, { status: 400 })

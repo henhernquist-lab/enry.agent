@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { getFileContent } from '@/lib/github'
 import { createFile, updateFile, createBranch } from '@/lib/github-write'
+import { readRequestJson } from '@/lib/request-json'
 
 const ENRYRULES_PATH = '.enryrules'
 
@@ -42,7 +43,7 @@ export async function PUT(req: Request) {
     return Response.json({ error: 'GitHub not connected' }, { status: 400 })
   }
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const repo = String(body.repo ?? '').trim()
   const content = String(body.content ?? '')
   const [owner, name] = repo.split('/')

@@ -18,6 +18,7 @@ import { nimClientFor, DEFAULT_NIM_MODEL } from '@/lib/nim'
 import { insertSkillInvocation, updateSkillInvocationOutput } from '@/lib/lab/db'
 import { parseReasoningTrace, renderReasoningTrace, reasoningExtraBody, type ReasoningDepth } from '@/lib/reasoning-trace'
 import type { TerminalSessionPayload, TerminalCommand } from '@/lib/resources'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 60
 
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'GitHub not connected. Sign in with GitHub to use the terminal.' }, { status: 400 })
   }
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const repo = String(body.repo ?? '').trim()
   const command = String(body.command ?? '')
   const requestedSessionId: string | null = body.session_id ?? null

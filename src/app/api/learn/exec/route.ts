@@ -4,6 +4,7 @@ import { resolveResourceUserId } from '@/lib/resource-user'
 import { casUpdateSessionPayload } from '@/lib/session-cas'
 import { dispatchLearn, LEARN_VERBS, type LearnVerb, type LearnOpsContext } from '@/lib/learn/learn-ops'
 import type { LearnSessionPayload, LearnCommand } from '@/lib/resources'
+import { readRequestJson } from '@/lib/request-json'
 
 // Mirrors /api/terminal/exec's structure exactly (auth -> parse -> ensure
 // session -> dispatch -> append command -> read back state -> respond) —
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(rawUserId)
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const verbRaw = String(body.verb ?? '').trim()
   const input = String(body.input ?? '')
   const requestedSessionId: string | null = body.session_id ?? null

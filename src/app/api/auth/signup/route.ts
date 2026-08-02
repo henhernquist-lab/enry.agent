@@ -1,9 +1,10 @@
 import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
 import { supabase } from '@/lib/supabase'
+import { readRequestJson } from '@/lib/request-json'
 
 export async function POST(req: Request) {
-  const { email: rawEmail, password } = await req.json()
+  const { email: rawEmail, password } = await readRequestJson(req)
   const email = (rawEmail as string | undefined)?.toLowerCase().trim()
 
   if (!email || !password || typeof password !== 'string') {

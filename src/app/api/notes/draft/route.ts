@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { resolveResourceUserId } from '@/lib/resource-user'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -38,7 +39,7 @@ export async function PUT(req: Request) {
   const uid = await resolveUserId()
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { content } = (await req.json()) as { content: string }
+  const { content } = await readRequestJson<{ content: string }>(req)
 
   const { data: existing } = await supabase
     .from('resources')
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
   const uid = await resolveUserId()
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = (await req.json()) as { action: string }
+  const body = await readRequestJson<{ action: string }>(req)
   if (body.action !== 'commit') {
     return Response.json({ error: 'Unknown action' }, { status: 400 })
   }

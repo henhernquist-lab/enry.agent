@@ -1,3 +1,4 @@
+import { readRequestJson } from '@/lib/request-json'
 export const maxDuration = 30
 
 function parseGithubUrl(url: string): { owner: string; repo: string } | null {
@@ -13,7 +14,7 @@ function parseGithubUrl(url: string): { owner: string; repo: string } | null {
 }
 
 export async function POST(req: Request) {
-  const { url } = await req.json()
+  const { url } = await readRequestJson(req)
   if (!url) return Response.json({ error: 'Missing url' }, { status: 400 })
 
   const parsed = parseGithubUrl(url)

@@ -5,6 +5,7 @@ import { nimClientFor, isCommunityModelId, communityRouteParam, listModels, DEFA
 import { logUsage } from '@/lib/usage/log'
 import { compactMessages } from '@/lib/compaction'
 import { safeStreamErrorMessage } from '@/lib/stream-error'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 60
 
@@ -137,7 +138,7 @@ Output in exactly this order:
 - On iteration requests, output the revised prompt in full plus a brief changelog of what changed and why. Do not make the user reassemble it from fragments.`
 
 export async function POST(req: Request) {
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const { messages, model } = body
   const selectedModel: string = CHAT_MODELS.includes(model) ? model : DEFAULT_MODEL
 

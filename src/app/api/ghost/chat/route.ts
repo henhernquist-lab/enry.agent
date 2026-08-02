@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { nimClientFor, DEFAULT_NIM_MODEL } from '@/lib/nim'
 import { buildPersona } from '@/lib/ghost/persona'
+import { parseRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 60
 
@@ -27,7 +28,12 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(userId(session))
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const parsed = await parseRequestJson<{
+    window?: { start?: unknown; end?: unknown; label?: unknown }
+    messages?: unknown
+  }>(req)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const start = String(body.window?.start ?? '')
   const end = String(body.window?.end ?? '')
   const label = String(body.window?.label ?? '').slice(0, 80) || `${start} — ${end}`

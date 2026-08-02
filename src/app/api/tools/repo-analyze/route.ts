@@ -1,10 +1,11 @@
 import { generateText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 60
 
 export async function POST(req: Request) {
-  const { repo, useCase } = await req.json()
+  const { repo, useCase } = await readRequestJson(req)
 
   if (!repo || !useCase || typeof useCase !== 'string') {
     return Response.json({ error: 'Missing repo or useCase' }, { status: 400 })

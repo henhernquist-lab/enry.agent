@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/embeddings'
 import { resolveResourceUserId } from '@/lib/resource-user'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -51,7 +52,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const { type, title, payload } = body
 
   if (typeof title !== 'string' || !title.trim()) {

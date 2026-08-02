@@ -3,6 +3,7 @@
 import { auth } from '@/lib/auth'
 import { resolveResourceUserId } from '@/lib/resource-user'
 import { placeWager, resolveWager, getBalance, getRecentBets, getCalibration } from '@/lib/learn/casino'
+import { readRequestJson } from '@/lib/request-json'
 
 export const maxDuration = 30
 
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
   const uid = await resolveResourceUserId(rawId)
   if (!uid) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await readRequestJson(req)
   const action = String(body.action ?? '')
 
   try {
