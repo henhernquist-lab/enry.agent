@@ -1283,61 +1283,60 @@ USER REQUEST: ${userText}`
                 <FileText className="h-3 w-3 text-muted-foreground" />
                 <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">.enryrules</span>
               </div>
-              {hasEnryRules ? (
-                <div>
-                  <button
-                    onClick={() => setEnryRulesEditing(!enryRulesEditing)}
-                    className="flex w-full items-center gap-1 rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/5"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    {enryRulesEditing ? 'Close editor' : 'View / Edit'}
-                  </button>
-                  {enryRulesEditing && (
-                    <div className="mt-2">
-                      <textarea
-                        value={enryRulesContent}
-                        onChange={(e) => setEnryRulesContent(e.target.value)}
-                        rows={6}
-                        spellCheck={false}
-                        className="w-full resize-none rounded border border-border bg-surface-elevated px-2.5 py-2 font-mono text-[10px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none"
-                        placeholder="# .enryrules — repo-specific conventions&#10;# e.g.:&#10;# - always use const, never let&#10;# - Tailwind v4 CSS-first config&#10;# - no default exports"
-                      />
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <button
-                          onClick={async () => {
-                            setEnryRulesSaving(true)
-                            try {
-                              const res = await fetch('/api/terminal/enryrules', {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ repo, content: enryRulesContent }),
-                              })
-                              if (res.ok) { setEnryRulesEditing(false); setHasEnryRules(true) }
-                            } catch { /* ignore */ }
-                            setEnryRulesSaving(false)
-                          }}
-                          disabled={enryRulesSaving}
-                          className="flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/10 disabled:opacity-40 min-h-[80px]"
-                        >
-                          {enryRulesSaving ? 'Saving…' : 'Save'}
-                        </button>
-                        <button
-                          onClick={() => { setEnryRulesEditing(false) }}
-                          className="font-mono text-[10px] text-muted-foreground transition-colors hover:text-destructive"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
+              {hasEnryRules && !enryRulesEditing ? (
+                <button
+                  onClick={() => setEnryRulesEditing(true)}
+                  className="flex w-full items-center gap-1 rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/5"
+                >
+                  <Pencil className="h-3 w-3" />
+                  View / Edit
+                </button>
+              ) : null}
+              {!hasEnryRules && !enryRulesEditing ? (
                 <button
                   onClick={() => { setEnryRulesEditing(true); setEnryRulesContent('') }}
                   className="flex w-full items-center gap-1 rounded border border-border bg-surface-secondary px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-primary hover:border-primary/30"
                 >
                   <Pencil className="h-3 w-3" /> Create .enryrules
                 </button>
+              ) : null}
+              {enryRulesEditing && (
+                <div className="mt-2">
+                  <textarea
+                    value={enryRulesContent}
+                    onChange={(e) => setEnryRulesContent(e.target.value)}
+                    rows={6}
+                    spellCheck={false}
+                    className="w-full resize-none rounded border border-border bg-surface-elevated px-2.5 py-2 font-mono text-[10px] leading-relaxed text-foreground placeholder-muted-foreground/40 focus:border-primary/30 focus:outline-none"
+                    placeholder="# .enryrules — repo-specific conventions&#10;# e.g.:&#10;# - always use const, never let&#10;# - Tailwind v4 CSS-first config&#10;# - no default exports"
+                  />
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        setEnryRulesSaving(true)
+                        try {
+                          const res = await fetch('/api/terminal/enryrules', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ repo, content: enryRulesContent }),
+                          })
+                          if (res.ok) { setEnryRulesEditing(false); setHasEnryRules(true) }
+                        } catch { /* ignore */ }
+                        setEnryRulesSaving(false)
+                      }}
+                      disabled={enryRulesSaving}
+                      className="flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/10 disabled:opacity-40"
+                    >
+                      {enryRulesSaving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => { setEnryRulesEditing(false); if (!hasEnryRules) setEnryRulesContent('') }}
+                      className="font-mono text-[10px] text-muted-foreground transition-colors hover:text-destructive"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
