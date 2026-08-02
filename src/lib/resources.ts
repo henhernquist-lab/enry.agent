@@ -1,7 +1,7 @@
 import type { ResourceSource } from './resource-source'
 import { emitResourceSaved } from './resource-events'
 
-export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'note_draft' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret' | 'memory' | 'learn_session'
+export type ResourceType = 'flashcards' | 'grade_calc' | 'workout' | 'meal' | 'repo_scan' | 'habit_streak' | 'race_pace' | 'prompt' | 'article_note' | 'repo_review' | 'countdown' | 'checkin' | 'note' | 'note_draft' | 'bell_schedule' | 'uploaded_file' | 'aperture' | 'briefing' | 'root_cause' | 'terminal_session' | 'ghost_conversation' | 'github_action' | 'contradiction' | 'regret' | 'memory' | 'learn_session' | 'task'
 
 export interface Resource<T = unknown> {
   id: string
@@ -134,6 +134,23 @@ export interface CheckinPayload {
 export interface NotePayload {
   content: string
   title?: string
+  // Deliberate-action only — set by the "Summarize" button in Grimoire, never
+  // by autosave/debounce. Absent until the user explicitly generates one.
+  summary?: string
+  // Suggested by the "Auto-tag" button (also deliberate — see summary above).
+  tags?: string[]
+}
+
+// Minimal task store: no dedicated task system existed anywhere in the app
+// (grepped for a `type` discriminator, /tasks routes, kanban UI — none found),
+// so this reuses the existing `resources` table/pattern with a `task`
+// ResourceType rather than standing up a new schema. Intentionally tiny —
+// just enough to hold a task converted from a Grimoire note.
+export interface TaskPayload {
+  content: string
+  done: boolean
+  source_note_id?: string
+  created_at: string
 }
 
 // Memory entries are plain-text facts/notes Golem has stored about Henry.

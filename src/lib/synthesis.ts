@@ -38,6 +38,7 @@ const TYPE_LABELS: Record<ResourceType, string> = {
   regret: 'regret ledger',
   memory: 'memory entries',
   learn_session: 'Learn sessions',
+  task: 'tasks',
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState, useRef, useCallback } from 'react'
+import { Suspense, useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -14,9 +14,14 @@ import {
   Trash2,
   Pencil,
   Edit3,
+  Sparkles,
+  Tags,
+  ListChecks,
+  Link2,
 } from 'lucide-react'
 import { loadResources, saveResource, updateResource, deleteResource, resourceSummary, type Resource, type NotePayload } from '@/lib/resources'
 import { GolemInline } from '@/components/golem/golem-inline'
+import { extractUrls, urlLabel } from '@/lib/note-links'
 
 function noteTitle(content: string): string {
   const firstLine = content.trimStart().split('\n')[0].replace(/\s+/g, ' ')
@@ -41,6 +46,18 @@ function NotesPageContent() {
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // AI-utility state (summarize / auto-tag) — populated only by explicit
+  // button clicks below, never by the autosave debounce.
+  const [summary, setSummary] = useState<string | null>(null)
+  const [summaryOpen, setSummaryOpen] = useState(true)
+  const [summarizing, setSummarizing] = useState(false)
+  const [summarizeError, setSummarizeError] = useState<string | null>(null)
+  const [tags, setTags] = useState<string[] | null>(null)
+  const [tagging, setTagging] = useState(false)
+  const [tagError, setTagError] = useState<string | null>(null)
+  const [converting, setConverting] = useState(false)
+  const [convertedFlash, setConvertedFlash] = useState(false)
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -91,6 +108,114 @@ function NotesPageContent() {
       textareaRef.current?.focus()
     }
   }, [target, loading])
+
+  // Sync summary/tags display from the persisted note payload when switching
+  // targets. Drafts have no persisted summary/tags field (note_draft payload
+  // is just { content }), so those reset to null on a fresh draft.
+  useEffect(() => {
+    if (target.type === 'saved') {
+      const note = notes.find((n) => n.id === target.id)
+      const np = note?.payload as NotePayload | undefined
+      setSummary(np?.summary ?? null)
+      setTags(np?.tags ?? null)
+    } else {
+      setSummary(null)
+      setTags(null)
+    }
+    setSummarizeError(null)
+    setTagError(null)
+    setConvertedFlash(false)
+  }, [target, notes])
+
+  const detectedUrls = useMemo(() => extractUrls(editorContent), [editorContent])
+
+  // Explicit-action only — bound to the Summarize button's onClick, nowhere
+  // else. No effect watches editorContent/debounce and calls this.
+  const handleSummarize = useCallback(async () => {
+    const text = editorContent.trim()
+    if (!text) return
+    setSummarizing(true)
+    setSummarizeError(null)
+    try {
+      const res = await fetch('/api/notes/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setSummarizeError(typeof data.error === 'string' ? data.error : 'Summarize failed')
+        return
+      }
+      setSummary(data.summary)
+      setSummaryOpen(true)
+      if (target.type === 'saved') {
+        const note = notes.find((n) => n.id === target.id)
+        if (note) {
+          const np = note.payload as NotePayload
+          await updateResource(target.id, 'note', note.title, { ...np, content: text, summary: data.summary })
+          await loadNotes()
+        }
+      }
+    } catch {
+      setSummarizeError('Summarize failed — network error')
+    } finally {
+      setSummarizing(false)
+    }
+  }, [editorContent, target, notes, loadNotes])
+
+  // Explicit-action only — bound to the Auto-tag button's onClick.
+  const handleAutoTag = useCallback(async () => {
+    const text = editorContent.trim()
+    if (!text) return
+    setTagging(true)
+    setTagError(null)
+    try {
+      const res = await fetch('/api/notes/tag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setTagError(typeof data.error === 'string' ? data.error : 'Tagging failed')
+        return
+      }
+      setTags(data.tags)
+      if (target.type === 'saved') {
+        const note = notes.find((n) => n.id === target.id)
+        if (note) {
+          const np = note.payload as NotePayload
+          await updateResource(target.id, 'note', note.title, { ...np, content: text, tags: data.tags })
+          await loadNotes()
+        }
+      }
+    } catch {
+      setTagError('Tagging failed — network error')
+    } finally {
+      setTagging(false)
+    }
+  }, [editorContent, target, notes, loadNotes])
+
+  // Minimal task store: reuses the `resources` table with type: 'task'
+  // (see TaskPayload in src/lib/resources.ts) since no task system exists
+  // anywhere else in the app.
+  const handleConvertToTask = useCallback(async () => {
+    const text = editorContent.trim()
+    if (!text) return
+    setConverting(true)
+    try {
+      await saveResource('task', noteTitle(text), {
+        content: text,
+        done: false,
+        source_note_id: target.type === 'saved' ? target.id : undefined,
+        created_at: new Date().toISOString(),
+      })
+      setConvertedFlash(true)
+    } finally {
+      setConverting(false)
+    }
+  }, [editorContent, target])
 
   const saveDraft = useCallback(async (text: string) => {
     setSaving(true)
@@ -389,6 +514,95 @@ function NotesPageContent() {
                   : `saved ${noteDate(selectedNote?.updated_at ?? '')}`}
               </span>
             </div>
+
+            {/* AI tools + link/tag chips — each action is independent; a
+                failure in one (e.g. bad API key) doesn't block the others
+                or the editor itself. */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2">
+              <button
+                onClick={handleSummarize}
+                disabled={summarizing || !editorContent.trim()}
+                className="flex items-center gap-1.5 rounded border border-primary/30 px-2 py-1 font-mono text-[10px] text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+              >
+                {summarizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                Summarize
+              </button>
+              <button
+                onClick={handleAutoTag}
+                disabled={tagging || !editorContent.trim()}
+                className="flex items-center gap-1.5 rounded border border-primary/30 px-2 py-1 font-mono text-[10px] text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+              >
+                {tagging ? <Loader2 className="h-3 w-3 animate-spin" /> : <Tags className="h-3 w-3" />}
+                Auto-tag
+              </button>
+              <button
+                onClick={handleConvertToTask}
+                disabled={converting || !editorContent.trim()}
+                className="flex items-center gap-1.5 rounded border border-primary/30 px-2 py-1 font-mono text-[10px] text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+              >
+                {converting ? <Loader2 className="h-3 w-3 animate-spin" /> : <ListChecks className="h-3 w-3" />}
+                {convertedFlash ? 'Added to Tasks' : 'Convert to Task'}
+              </button>
+
+              {summarizeError && (
+                <span className="font-mono text-[9px] text-warning">{summarizeError}</span>
+              )}
+              {tagError && (
+                <span className="font-mono text-[9px] text-warning">{tagError}</span>
+              )}
+
+              {tags && tags.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {tags.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded bg-primary/10 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-primary"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {detectedUrls.length > 0 && (
+                <div className="flex w-full flex-wrap items-center gap-1.5 pt-1">
+                  <Link2 className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                  {detectedUrls.map((url) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="truncate rounded border border-border/60 px-1.5 py-0.5 font-mono text-[9px] text-accent hover:border-accent/50 hover:underline max-w-[220px]"
+                      title={url}
+                    >
+                      {urlLabel(url)}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {summary && (
+              <div className="border-b border-border/50 px-4 py-2">
+                <button
+                  onClick={() => setSummaryOpen((o) => !o)}
+                  className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors"
+                >
+                  <Sparkles className="h-3 w-3 text-primary/60" />
+                  Summary {summaryOpen ? '▾' : '▸'}
+                </button>
+                {summaryOpen && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="mt-1.5 text-xs leading-relaxed text-foreground/80"
+                  >
+                    {summary}
+                  </motion.p>
+                )}
+              </div>
+            )}
 
             {/* Ruled paper editor */}
             <div className="flex-1 overflow-y-auto">

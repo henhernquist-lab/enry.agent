@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { StickyNote, Plus, X, Loader2, ChevronRight } from 'lucide-react'
+import { StickyNote, Plus, X, Loader2, ChevronRight, Link2 } from 'lucide-react'
 import { saveResource } from '@/lib/resources'
+import { extractUrls, urlLabel } from '@/lib/note-links'
 
 function noteTitle(content: string): string {
   const firstLine = content.trimStart().split('\n')[0].replace(/\s+/g, ' ')
@@ -19,6 +20,7 @@ export function GrimoireFloatingPanel() {
   const [committing, setCommitting] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const detectedUrls = useMemo(() => extractUrls(content), [content])
 
   // Load draft when opening
   useEffect(() => {
@@ -195,6 +197,25 @@ export function GrimoireFloatingPanel() {
                       paddingTop: 'calc(0.6rem + 2px)',
                     }}
                   />
+
+                  {/* Detected links */}
+                  {detectedUrls.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <Link2 className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                      {detectedUrls.map((url) => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate rounded border border-border/60 px-1.5 py-0.5 font-mono text-[9px] text-accent hover:border-accent/50 hover:underline max-w-[160px]"
+                          title={url}
+                        >
+                          {urlLabel(url)}
+                        </a>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="mt-2.5 flex items-center justify-between">
