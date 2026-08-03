@@ -34,6 +34,7 @@ import type { GitHubActionPayload } from '@/lib/resources'
 
 import { listModels, getModelMeta, DEFAULT_MODEL_ID } from '@/lib/nim'
 import { getSystemPrompt } from '@/lib/system-prompt'
+import { extractAndSaveAutoMemories } from '@/lib/auto-memory'
 import { readRequestJson } from '@/lib/request-json'
 import { toUIMessages } from '@/lib/messages'
 
@@ -985,6 +986,13 @@ export async function POST(req: Request) {
           totalTokens: usage?.totalTokens,
           latencyMs: Date.now() - chatStartedAt,
         }).catch(() => {})
+
+        // Every third user turn, run a small, best-effort extraction in the
+        // background. It only writes pending review entries and never affects
+        // the streamed answer if the provider or database is unavailable.
+        extractAndSaveAutoMemories(uid, googleId ?? '', messages as unknown[]).catch((error) => {
+          console.error('[chat] auto-memory hook failed:', error)
+        })
       }
     },
   })

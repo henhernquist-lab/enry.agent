@@ -11,7 +11,7 @@ import {
   Car, Radar, Swords, FileText, Pencil, Brain, Globe, Plus,
 } from 'lucide-react'
 import { CruisePanel } from '@/components/agent/cruise-panel'
-import { TerminalPane } from '@/components/terminal/terminal-pane'
+import { DriveTerminalWorkspace, type DriveTerminalWorkspaceHandle } from '@/components/terminal/drive-terminal-workspace'
 import { SkillFeedbackBar } from '@/components/skill-feedback-bar'
 import { ThinkingTrace } from '@/components/thinking-trace'
 import { CompactionIndicator } from '@/components/compaction-indicator'
@@ -336,67 +336,13 @@ export default function AgentPage() {
   const [enryRulesEditing, setEnryRulesEditing] = useState(false)
   const [enryRulesSaving, setEnryRulesSaving] = useState(false)
 
-  // ─── Terminal panes ──────────────────────────────────────
-  // Drive stays the primary pane; up to MAX_TERMINALS real PTY-backed shells
-  // split the remaining space on the right. Max 4 panes TOTAL (Drive + 3).
-  // See src/lib/terminal/pty-manager.ts for the backend.
-  const MAX_TERMINALS = 3
-  interface DriveTerminalPane { id: string; cwd: string; createdAt: number }
-  const [terminalPanes, setTerminalPanes] = useState<DriveTerminalPane[]>([])
-  // Surfaced when opening a terminal fails, so "clicking does nothing" becomes
-  // a visible, diagnosable message instead of a silent no-op. Cleared on the
-  // next attempt and auto-dismissed after a few seconds. `tone` distinguishes
-  // a real failure (red) from an expected environment limitation (muted) —
-  // e.g. a 501 on the Vercel deploy, where PTY panes simply can't run.
-  const [terminalNotice, setTerminalNotice] = useState<{ text: string; tone: 'error' | 'info' } | null>(null)
-  const paneIdsRef = useRef<string[]>([])
-  useEffect(() => { paneIdsRef.current = terminalPanes.map((p) => p.id) }, [terminalPanes])
-
-  const addTerminal = useCallback(async () => {
-    if (terminalPanes.length >= MAX_TERMINALS) return
-    setTerminalNotice(null)
-    try {
-      const res = await fetch('/api/terminal/pty', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cols: 80, rows: 24 }),
-      })
-      if (!res.ok) {
-        // Read whatever the route sent back (JSON {error} or plain text) so the
-        // real cause is visible — an auth 401, a 500 from the PTY spawn, or a
-        // serverless host that can't run a real shell all landed here silently
-        // before, which is exactly why this looked like "the button is dead".
-        let detail = ''
-        try { detail = ((await res.json()) as { error?: string })?.error ?? '' }
-        catch { detail = (await res.text().catch(() => '')).slice(0, 160) }
-        console.error('[drive] addTerminal:', res.status, detail || '(no body)')
-        if (res.status === 501) {
-          // Expected environment limitation (the Vercel serverless guard) —
-          // not a failure. Show the server's plain message, muted.
-          setTerminalNotice({ text: detail || 'Terminal panes only run in the Codespace, not on the deployed app.', tone: 'info' })
-        } else if (res.status === 401) {
-          setTerminalNotice({ text: 'Terminal failed: session expired — reload and sign in again.', tone: 'error' })
-        } else {
-          setTerminalNotice({ text: `Terminal failed to open (HTTP ${res.status}${detail ? `: ${detail}` : ''})`, tone: 'error' })
-        }
-        return
-      }
-      const data = await res.json() as { id: string; cwd?: string }
-      setTerminalPanes((p) => [...p, { id: data.id, cwd: data.cwd ?? '', createdAt: Date.now() }])
-    } catch (e) {
-      // Genuine network/transport failure (route unreachable, aborted, etc.).
-      console.error('[drive] addTerminal threw:', e)
-      setTerminalNotice({ text: `Terminal failed to open: ${e instanceof Error ? e.message : 'network error'}`, tone: 'error' })
-    }
-  }, [terminalPanes.length])
-
-  // Auto-dismiss the terminal notice after a few seconds (a touch longer for
-  // the informational one so it's readable).
-  useEffect(() => {
-    if (!terminalNotice) return
-    const t = setTimeout(() => setTerminalNotice(null), terminalNotice.tone === 'info' ? 9000 : 6000)
-    return () => clearTimeout(t)
-  }, [terminalNotice])
+  // ─── Terminal workspace ─────────────────────────────────
+  // The terminal workspace owns its PTY metadata, layout, reconnection, and
+  // lifecycle. Keep only a small bridge here so Drive's header can create the
+  // first shell without coupling the two state machines.
+  const terminalWorkspaceRef = useRef<DriveTerminalWorkspaceHandle>(null)
+  const [terminalCount, setTerminalCount] = useState(0) // workspace bridge
+// (Drive workspace is rendered below in the main layout)
 
   // Auto mode's pick stays in the transcript permanently (the system line in
   // handleSend) but also gets a brief badge near the toggle — same
@@ -415,28 +361,8 @@ export default function AgentPage() {
     return () => clearTimeout(t)
   }, [lastAutoPick, routerExpanded])
 
-  const closeTerminal = useCallback((id: string) => {
-    setTerminalPanes((p) => p.filter((t) => t.id !== id))
-    void fetch(`/api/terminal/pty/${id}`, { method: 'DELETE' }).catch(() => {})
-  }, [])
-
-  // Kill all live PTYs when leaving Drive. Strict Mode's dev double-mount
-  // happens before the user can open any panes, so the snapshot is empty at
-  // that point — real panes only get reaped on actual navigation away.
-  useEffect(() => {
-    return () => {
-      for (const id of paneIdsRef.current) {
-        fetch(`/api/terminal/pty/${id}`, { method: 'DELETE' }).catch(() => {})
-      }
-    }
-  }, [])
-
-  // Drive gets a visibly dominant share of the row; terminals split the rest.
-  // Drive is always >50% width and full height, so it's the biggest pane by
-  // area at every pane count.
-  const terminalCount = terminalPanes.length
-  const driveFlexGrow = terminalCount === 0 ? 1 : terminalCount === 1 ? 62 : terminalCount === 2 ? 60 : 58
-  const terminalsFlexGrow = terminalCount === 0 ? 0 : terminalCount === 1 ? 38 : terminalCount === 2 ? 40 : 42
+  // PTYs intentionally remain alive across route remounts where the backend
+  // supports reconnection; the workspace reaps them explicitly on close.
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -1166,32 +1092,14 @@ USER REQUEST: ${userText}`
           {hasPendingDiff && (
             <span className="font-mono text-[10px] uppercase tracking-wider text-warning">Pending diff</span>
           )}
-          {/* Add a real PTY-backed terminal pane (Drive + up to 3 terminals). */}
           <button
-            onClick={addTerminal}
-            disabled={terminalCount >= MAX_TERMINALS}
-            title={
-              terminalCount >= MAX_TERMINALS
-                ? 'Max terminals reached (Drive + 3)'
-                : 'Add a terminal pane — runs a real shell in this Codespace'
-            }
-            className={`flex items-center gap-1 font-mono text-[10px] transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
-              terminalCount > 0
-                ? 'text-primary hover:text-primary/80'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+            onClick={() => terminalWorkspaceRef.current?.createTerminal()}
+            title="Create an unlimited PTY-backed terminal"
+            className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-primary"
           >
             <Plus className="h-3 w-3" /> Terminal
-            <span className="text-[9px] tabular-nums text-muted-foreground/60">{terminalCount}/{MAX_TERMINALS}</span>
+            {terminalCount > 0 && <span className="text-[9px] tabular-nums text-muted-foreground/60">{terminalCount}</span>}
           </button>
-          {terminalNotice && (
-            <span
-              className={`max-w-[340px] truncate font-mono text-[9px] ${terminalNotice.tone === 'info' ? 'text-muted-foreground' : 'text-destructive'}`}
-              title={terminalNotice.text}
-            >
-              {terminalNotice.text}
-            </span>
-          )}
           <Link href="/resources/terminal" className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground">
             <TerminalSquare className="h-3 w-3" /> Shell
           </Link>
@@ -1347,7 +1255,7 @@ USER REQUEST: ${userText}`
           {/* Main content area: Drive conversation (or Cruise). */}
           <div
             className={`flex min-h-0 min-w-0 flex-col ${terminalCount === 0 ? 'flex-1' : ''}`}
-            style={terminalCount > 0 ? { flexGrow: driveFlexGrow, flexBasis: 0 } : undefined}
+            style={terminalCount > 0 ? { flexGrow: 2, flexBasis: 0 } : undefined}
           >
             {/* Cruise replaces the conversation pane when active */}
             {cruiseMode === 'cruise' && <CruisePanel repo={repo} />}
@@ -1869,16 +1777,8 @@ USER REQUEST: ${userText}`
           </div>
         </div>
           </div>
-          {/* Terminal column — real PTY shells stacked on the right. */}
-          {terminalCount > 0 && (
-            <div className="flex min-h-0 min-w-0 flex-col gap-1.5 border-l border-border bg-[#0a0b0d] p-1.5" style={{ flexGrow: terminalsFlexGrow, flexBasis: 0 }}>
-              {terminalPanes.map((pane) => (
-                <div key={pane.id} className="min-h-0 flex-1" style={{ flexBasis: 0 }}>
-                  <TerminalPane id={pane.id} cwd={pane.cwd} onClose={() => closeTerminal(pane.id)} />
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Drive workspace — unlimited interactive PTYs with nested splits. */}
+          <DriveTerminalWorkspace ref={terminalWorkspaceRef} onCountChange={setTerminalCount} />
         </div>
       </div>
     </div>

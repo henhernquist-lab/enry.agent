@@ -13,6 +13,8 @@ import {
   Import,
   AlertCircle,
   Sparkles,
+  Pencil,
+  Save,
 } from 'lucide-react'
 import type { Resource, MemoryPayload } from '@/lib/resources'
 
@@ -32,6 +34,7 @@ function fmtDate(iso: string): string {
 function sourceLabel(m: MemoryResource): string {
   const p = m.payload
   if (p.imported) return p.origin ? `imported · ${p.origin}` : 'imported'
+  if (p.autoCaptured) return p.reviewState === 'pending' ? 'auto · review' : 'auto · reviewed'
   return 'captured'
 }
 
@@ -198,13 +201,18 @@ function MemoryRow({
   memory,
   index,
   onDelete,
+  onUpdate,
 }: {
   memory: MemoryResource
   index: number
   onDelete: (id: string) => Promise<void>
+  onUpdate: (memory: MemoryResource, content: string) => Promise<void>
 }) {
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(memory.payload.content)
+  const [saving, setSaving] = useState(false)
   const p = memory.payload
   const isLong = p.content.length > 200
   const snippet = expanded ? p.content : p.content.slice(0, 200)
@@ -215,6 +223,18 @@ function MemoryRow({
     setDeleting(false)
   }, [memory.id, onDelete])
 
+  const handleSave = useCallback(async () => {
+    const content = draft.trim()
+    if (!content || content === p.content) {
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    await onUpdate(memory, content)
+    setSaving(false)
+    setEditing(false)
+  }, [draft, memory, onUpdate, p.content])
+
   return (
     <motion.div
       layout
@@ -224,30 +244,51 @@ function MemoryRow({
       transition={{ delay: Math.min(index * 0.02, 0.25), type: 'spring', stiffness: 300, damping: 28 }}
       className="group rounded border border-border bg-surface-secondary transition-colors hover:border-border/80"
     >
-      <button
+      <div
+        role={isLong ? 'button' : undefined}
+        tabIndex={isLong ? 0 : undefined}
         onClick={() => isLong && setExpanded((e) => !e)}
+        onKeyDown={(e) => {
+          if (isLong && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault()
+            setExpanded((expanded) => !expanded)
+          }
+        }}
         className={`flex w-full items-start gap-3 p-3 text-left ${isLong ? 'cursor-pointer' : 'cursor-default'}`}
       >
         <div
-          className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border ${
-            p.imported
-              ? 'border-accent/30 bg-accent/10 text-accent'
-              : 'border-primary/30 bg-primary/10 text-primary'
+          className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border ${              p.imported
+                ? 'border-accent/30 bg-accent/10 text-accent'
+                : p.autoCaptured
+                  ? 'border-amber-400/30 bg-amber-400/10 text-amber-300'
+                  : 'border-primary/30 bg-primary/10 text-primary'
           }`}
-        >
-          {p.imported ? <Import className="h-3 w-3" /> : <Brain className="h-3 w-3" />}
+        >            {p.imported ? <Import className="h-3 w-3" /> : <Brain className="h-3 w-3" />}
         </div>
         <div className="min-w-0 flex-1">
-          <p className={`text-xs leading-relaxed text-foreground ${expanded ? 'whitespace-pre-wrap' : ''}`}>
-            {snippet}
-            {!expanded && isLong && <span className="text-muted-foreground">…</span>}
-          </p>
+          {editing ? (
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              rows={3}
+              autoFocus
+              className="w-full resize-y rounded border border-primary/40 bg-surface-elevated px-2 py-1.5 text-xs leading-relaxed text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+            />
+          ) : (
+            <p className={`text-xs leading-relaxed text-foreground ${expanded ? 'whitespace-pre-wrap' : ''}`}>
+              {snippet}
+              {!expanded && isLong && <span className="text-muted-foreground">…</span>}
+            </p>
+          )}
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <span
               className={`rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider ${
                 p.imported
                   ? 'border-accent/30 text-accent'
-                  : 'border-primary/30 text-primary'
+                  : p.autoCaptured
+                    ? 'border-amber-400/30 text-amber-300'
+                    : 'border-primary/30 text-primary'
               }`}
             >
               {sourceLabel(memory)}
@@ -255,8 +296,27 @@ function MemoryRow({
             <span className="font-mono text-[9px] text-muted-foreground">{fmtDate(memory.created_at)}</span>
           </div>
         </div>
-      </button>
-      <div className="flex justify-end px-3 pb-2">
+      </div>
+      <div className="flex justify-end gap-1 px-3 pb-2">
+        {editing ? (
+          <button
+            onClick={handleSave}
+            disabled={saving || !draft.trim()}
+            className="flex items-center gap-1 rounded p-1 font-mono text-[9px] text-primary transition-colors hover:bg-surface-elevated disabled:opacity-50"
+            aria-label="Save memory"
+          >
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+            Save
+          </button>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            className="rounded p-1 text-muted-foreground opacity-0 transition-all hover:bg-surface-elevated hover:text-foreground group-hover:opacity-100"
+            aria-label="Edit memory"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+        )}
         <button
           onClick={handleDelete}
           disabled={deleting}
@@ -324,6 +384,21 @@ export default function MemoryPage() {
 
   const handleImported = useCallback((m: MemoryResource) => {
     setMemories((prev) => [m, ...prev])
+  }, [])
+
+  const handleUpdate = useCallback(async (memory: MemoryResource, content: string) => {
+    const nextPayload: MemoryPayload = { ...memory.payload, content, reviewState: memory.payload.autoCaptured ? 'reviewed' : memory.payload.reviewState }
+    const res = await fetch(`/api/resources/${memory.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'memory', title: content.slice(0, 80), payload: nextPayload }),
+    })
+    if (!res.ok) {
+      setError('Could not update memory.')
+      return
+    }
+    const data = await res.json()
+    setMemories((prev) => prev.map((item) => item.id === memory.id ? (data.resource as MemoryResource) : item))
   }, [])
 
   return (
@@ -434,7 +509,7 @@ export default function MemoryPage() {
               </p>
               <AnimatePresence mode="popLayout">
                 {filtered.map((m, i) => (
-                  <MemoryRow key={m.id} memory={m} index={i} onDelete={handleDelete} />
+                  <MemoryRow key={m.id} memory={m} index={i} onDelete={handleDelete} onUpdate={handleUpdate} />
                 ))}
               </AnimatePresence>
             </div>

@@ -3,13 +3,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Terminal as XTermTerminal } from '@xterm/xterm'
 import type { FitAddon as XTermFitAddon } from '@xterm/addon-fit'
-import { X, Sparkles, Loader2, ChevronDown } from 'lucide-react'
+import { X, Sparkles, Loader2, ChevronDown, Copy, Eraser, Maximize2, Minimize2, Pencil, Rows2, Columns2, RotateCcw, Square } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPaneProps {
   id: string
   cwd?: string
+  name?: string
+  clearSignal?: number
   onClose: () => void
+  onCommand?: (command: string) => void
+  onOutput?: () => void
+  onRename?: () => void
+  onDuplicate?: () => void
+  onRestart?: () => void
+  onKill?: () => void
+  onClear?: () => void
+  onSplitVertical?: () => void
+  onSplitHorizontal?: () => void
+  onCollapse?: () => void
+  onMaximize?: () => void
+  isMaximized?: boolean
+  status?: 'idle' | 'active'
 }
 
 /**
@@ -21,11 +36,15 @@ interface TerminalPaneProps {
  * unmount it disconnects SSE and disposes xterm, but does NOT kill the PTY,
  * so Strict Mode remounts and brief tab-aways resume via scrollback replay.
  */
-export function TerminalPane({ id, cwd, onClose }: TerminalPaneProps) {
+export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose, onCommand, onOutput, onRename, onDuplicate, onRestart, onKill, onClear, onSplitVertical, onSplitHorizontal, onCollapse, onMaximize, isMaximized = false, status = 'idle' }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTermTerminal | null>(null)
   const fitRef = useRef<XTermFitAddon | null>(null)
   const closedRef = useRef(false)
+  const onCommandRef = useRef(onCommand)
+  const onOutputRef = useRef(onOutput)
+  onCommandRef.current = onCommand
+  onOutputRef.current = onOutput
 
   // ─── "Explain last command" ────────────────────────────────────────
   // lineBufferRef reconstructs the command line from the keystroke stream
@@ -142,12 +161,16 @@ export function TerminalPane({ id, cwd, onClose }: TerminalPaneProps) {
       // sequences (we don't model mid-line cursor edits), which is fine for the
       // "type a command, hit enter, explain it" flow this targets.
       const onDataDisp = term.onData((data) => {
+        onOutputRef.current?.()
         void sendInput(id, data)
         for (const ch of data) {
           if (ch === '\r' || ch === '\n') {
             const cmd = lineBufferRef.current.trim()
             lineBufferRef.current = ''
-            if (cmd) setLastCommand(cmd)
+            if (cmd) {
+              setLastCommand(cmd)
+              onCommandRef.current?.(cmd)
+            }
           } else if (ch === '\x7f' || ch === '\b') {
             lineBufferRef.current = lineBufferRef.current.slice(0, -1)
           } else if (ch === '\x15' || ch === '\x03') {
@@ -163,6 +186,7 @@ export function TerminalPane({ id, cwd, onClose }: TerminalPaneProps) {
       // SSE: replay scrollback, then live output.
       const es = new EventSource(`/api/terminal/pty/${id}`, { withCredentials: true })
       es.addEventListener('output', (e) => {
+        onOutputRef.current?.()
         try {
           const text = JSON.parse((e as MessageEvent).data) as string
           term.write(text)
@@ -222,6 +246,10 @@ export function TerminalPane({ id, cwd, onClose }: TerminalPaneProps) {
     }
   }, [id])
 
+  useEffect(() => {
+    if (clearSignal > 0) termRef.current?.clear()
+  }, [clearSignal])
+
   const handleClose = () => {
     if (closedRef.current) return
     closedRef.current = true
@@ -231,13 +259,22 @@ export function TerminalPane({ id, cwd, onClose }: TerminalPaneProps) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-[#080808]">
       <div className="flex items-center justify-between border-b border-border bg-surface-secondary px-2.5 py-1">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="h-2 w-2 flex-shrink-0 rounded-full bg-primary/60" />
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className={`h-2 w-2 flex-shrink-0 rounded-full ${status === 'active' ? 'animate-pulse bg-primary' : 'bg-muted-foreground/50'}`} />
           <span className="truncate font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            shell{cwd ? ` · ${cwd.replace(/^\/workspaces\/[^/]+/, '.')}` : ''}
+            {name}{cwd ? ` · ${cwd.replace(/^\/workspaces\/[^/]+/, '.')}` : ''}
           </span>
         </div>
-        <div className="flex flex-shrink-0 items-center gap-1">
+        <div className="flex flex-shrink-0 items-center gap-0.5">
+          <button onClick={onSplitVertical} title="Split vertically" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Columns2 className="h-3 w-3" /></button>
+          <button onClick={onSplitHorizontal} title="Split horizontally" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Rows2 className="h-3 w-3" /></button>
+          <button onClick={onDuplicate} title="Duplicate terminal" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Copy className="h-3 w-3" /></button>
+          <button onClick={onRename} title="Rename terminal" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Pencil className="h-3 w-3" /></button>
+          <button onClick={onRestart} title="Restart terminal" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><RotateCcw className="h-3 w-3" /></button>
+          <button onClick={onKill} title="Kill running process" className="rounded p-1 text-muted-foreground/70 hover:bg-warning/10 hover:text-warning"><Square className="h-3 w-3" /></button>
+          <button onClick={onClear} title="Clear terminal" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Eraser className="h-3 w-3" /></button>
+          <button onClick={onMaximize} title={isMaximized ? 'Restore terminal layout' : 'Maximize terminal'} className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary">{isMaximized ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}</button>
+          <button onClick={onCollapse} title="Collapse pane" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Minimize2 className="h-3 w-3" /></button>
           <button
             onClick={explain}
             disabled={!lastCommand || explaining}

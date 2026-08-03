@@ -161,6 +161,9 @@ export interface MemoryPayload {
   content: string
   imported?: boolean
   origin?: string
+  /** Set for facts extracted from a completed chat and awaiting review. */
+  autoCaptured?: boolean
+  reviewState?: 'pending' | 'reviewed'
 }
 
 export interface BellSchedulePayload {
