@@ -52,6 +52,12 @@ export async function GET(req: Request, ctx: RouteCtx) {
     return new Response('Not found', { status: 404 })
   }
 
+  // The workspace uses a lightweight probe during hydration. Return a finite
+  // response instead of opening an unused SSE stream just to test existence.
+  if (new URL(req.url).searchParams.get('probe') === '1') {
+    return Response.json({ ok: true, id })
+  }
+
   // On cloud, revive the WS if it died between function invocations (Vercel
   // torn-down + reconnect, or plain WS idle). If the bash exited meanwhile,
   // getSession still returns the row but its `exited` flag is set — the

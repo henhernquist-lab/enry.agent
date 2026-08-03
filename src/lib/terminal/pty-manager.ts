@@ -95,6 +95,7 @@ export async function createSession(opts?: {
   }
 
   pty.onData((data) => {
+    console.debug('[terminal chain] PTY stdout → transport', { id, bytes: data.length })
     session.scrollback.push(data)
     session.scrollbackBytes += data.length
     trimScrollback(session)
@@ -150,6 +151,7 @@ export function writeInput(id: string, data: string): boolean {
   if (!session || session.exited) return false
   try {
     session.pty.write(data)
+    console.debug('[terminal chain] transport → shell stdin', { id, bytes: data.length })
     session.lastWriteAt = Date.now()
     return true
   } catch {

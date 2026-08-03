@@ -12,6 +12,7 @@ interface TerminalPaneProps {
   name?: string
   clearSignal?: number
   onClose: () => void
+  onClosePane?: () => void
   onCommand?: (command: string) => void
   onOutput?: () => void
   onRename?: () => void
@@ -22,6 +23,7 @@ interface TerminalPaneProps {
   onSplitVertical?: () => void
   onSplitHorizontal?: () => void
   onCollapse?: () => void
+  onMoveToPane?: () => void
   onMaximize?: () => void
   isMaximized?: boolean
   status?: 'idle' | 'active'
@@ -36,13 +38,17 @@ interface TerminalPaneProps {
  * unmount it disconnects SSE and disposes xterm, but does NOT kill the PTY,
  * so Strict Mode remounts and brief tab-aways resume via scrollback replay.
  */
-export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose, onCommand, onOutput, onRename, onDuplicate, onRestart, onKill, onClear, onSplitVertical, onSplitHorizontal, onCollapse, onMaximize, isMaximized = false, status = 'idle' }: TerminalPaneProps) {
+export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose, onClosePane, onCommand, onOutput, onRename, onDuplicate, onRestart, onKill, onClear, onSplitVertical, onSplitHorizontal, onMoveToPane, onCollapse, onMaximize, isMaximized = false, status = 'idle' }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTermTerminal | null>(null)
   const fitRef = useRef<XTermFitAddon | null>(null)
   const closedRef = useRef(false)
   const onCommandRef = useRef(onCommand)
   const onOutputRef = useRef(onOutput)
+  // Serialize stdin writes. A separate fetch per keystroke can resolve out
+  // of order during paste or fast typing; the PTY must receive bytes in order.
+  const inputQueueRef = useRef(Promise.resolve())
+  const inputSequenceRef = useRef(0)
   useEffect(() => {
     onCommandRef.current = onCommand
     onOutputRef.current = onOutput
@@ -168,7 +174,9 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       const onDataDisp = term.onData((data) => {
         onOutputRef.current?.()
         setExitCode(null) // new keystrokes mean a fresh command is in flight
-        void sendInput(id, data)
+        const sequence = ++inputSequenceRef.current
+        console.debug('[terminal chain] xterm → input queue', { id, sequence, bytes: data.length })
+        inputQueueRef.current = inputQueueRef.current.then(() => sendInput(id, data, sequence)).catch(() => {})
         for (const ch of data) {
           if (ch === '\r' || ch === '\n') {
             const cmd = lineBufferRef.current.trim()
@@ -195,6 +203,7 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
         onOutputRef.current?.()
         try {
           const text = JSON.parse((e as MessageEvent).data) as string
+          console.debug('[terminal chain] transport → xterm', { id, bytes: text.length })
           term.write(text)
         } catch {
           /* malformed chunk */
@@ -296,6 +305,7 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
           <button onClick={onKill} title="Kill running process" className="rounded p-1 text-muted-foreground/70 hover:bg-warning/10 hover:text-warning"><Square className="h-3 w-3" /></button>
           <button onClick={onClear} title="Clear terminal" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Eraser className="h-3 w-3" /></button>
           <button onClick={onMaximize} title={isMaximized ? 'Restore terminal layout' : 'Maximize terminal'} className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary">{isMaximized ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}</button>
+          <button onClick={onMoveToPane} title="Move terminal to a new pane" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Columns2 className="h-3 w-3" /></button>
           <button onClick={onCollapse} title="Collapse pane" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Minimize2 className="h-3 w-3" /></button>
           <button
             onClick={explain}
@@ -305,6 +315,13 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
           >
             {explaining ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
             Explain
+          </button>
+          <button
+            onClick={onClosePane}
+            title="Close pane"
+            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Rows2 className="h-3 w-3" />
           </button>
           <button
             onClick={handleClose}
@@ -355,15 +372,18 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
 
 // ─── Helpers ────────────────────────────────────────────────
 
-async function sendInput(id: string, data: string) {
+async function sendInput(id: string, data: string, sequence: number) {
+  console.debug('[terminal chain] input queue → transport', { id, sequence, bytes: data.length })
   try {
-    await fetch(`/api/terminal/pty/${id}/input`, {
+    const response = await fetch(`/api/terminal/pty/${id}/input`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data }),
     })
-  } catch {
-    /* network blip — xterm still shows the keystroke locally via echo */
+    const result = await response.json().catch(() => ({})) as { ok?: boolean }
+    console.debug('[terminal chain] transport → PTY stdin', { id, sequence, status: response.status, ok: result.ok === true })
+  } catch (error) {
+    console.error('[terminal chain] transport failed', { id, sequence, error: error instanceof Error ? error.message : String(error) })
   }
 }
 

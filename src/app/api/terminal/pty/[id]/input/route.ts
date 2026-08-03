@@ -43,5 +43,6 @@ export async function POST(req: Request, ctx: RouteCtx) {
   if (onCloud) ensureWsLive(id)
 
   const ok = onCloud ? writeSpriteInput(id, data) : writeLocalInput(id, data)
+  console.debug('[terminal chain] input route → PTY manager', { id, bytes: data.length, ok, cloud: onCloud })
   return Response.json({ ok })
 }

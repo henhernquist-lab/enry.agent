@@ -1,82 +1,209 @@
 'use client'
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { GripVertical, Minimize2, PanelLeftOpen, Plus, RotateCcw, Search, TerminalSquare } from 'lucide-react'
+import { GripVertical, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search, TerminalSquare, Trash2, X } from 'lucide-react'
 import { TerminalPane } from './terminal-pane'
 
 export interface DriveTerminalWorkspaceHandle {
   createTerminal: () => void
 }
-interface TerminalRecord { id: string; name: string; cwd: string; createdAt: number; autoName: boolean }
+
+interface TerminalRecord {
+  id: string
+  name: string
+  cwd: string
+  createdAt: number
+  autoName: boolean
+}
+
 type SplitDirection = 'vertical' | 'horizontal'
-type LayoutNode =
-  | { kind: 'leaf'; terminalId: string }
-  | { kind: 'split'; id: string; direction: SplitDirection; ratio: number; first: LayoutNode; second: LayoutNode; collapsed?: 'first' | 'second' }
+type PaneNode = { kind: 'pane'; id: string; terminalIds: string[]; activeId: string }
+type SplitNode = { kind: 'split'; id: string; direction: SplitDirection; ratio: number; first: LayoutNode; second: LayoutNode; collapsed?: 'first' | 'second' }
+type LayoutNode = PaneNode | SplitNode
+
 interface PersistedWorkspace {
+  version: 3
   records: TerminalRecord[]
   closed: TerminalRecord[]
-  order: string[]
-  activeId: string | null
   layout: LayoutNode | null
+  focusedPaneId: string | null
 }
-const STORAGE_KEY = 'golem.drive.terminals.v2'
+
+const STORAGE_KEY = 'golem.drive.terminals.v3'
+const LEGACY_STORAGE_KEY = 'golem.drive.terminals.v2'
 const MIN_RATIO = 0.16
 const MAX_RATIO = 0.84
+const MAX_CLOSED = 20
+
+function makeId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
 
 function isRecord(value: unknown): value is TerminalRecord {
   if (!value || typeof value !== 'object') return false
   const v = value as Partial<TerminalRecord>
   return typeof v.id === 'string' && typeof v.name === 'string' && typeof v.cwd === 'string'
 }
+
 function isLayout(value: unknown): value is LayoutNode {
   if (!value || typeof value !== 'object') return false
-  const v = value as { kind?: string; terminalId?: unknown; id?: unknown; first?: unknown; second?: unknown }
+  const v = value as { kind?: string; id?: unknown; activeId?: unknown; terminalIds?: unknown; terminalId?: unknown; first?: unknown; second?: unknown }
+  if (v.kind === 'pane') return typeof v.id === 'string' && Array.isArray(v.terminalIds) && v.terminalIds.every((id) => typeof id === 'string') && typeof v.activeId === 'string'
   if (v.kind === 'leaf') return typeof v.terminalId === 'string'
   return v.kind === 'split' && typeof v.id === 'string' && isLayout(v.first) && isLayout(v.second)
 }
-function containsLeaf(node: LayoutNode, id: string): boolean {
-  return node.kind === 'leaf' ? node.terminalId === id : containsLeaf(node.first, id) || containsLeaf(node.second, id)
-}
-function leafIds(node: LayoutNode | null, out: string[] = []): string[] {
+
+function paneIds(node: LayoutNode | null, out: string[] = []): string[] {
   if (!node) return out
-  if (node.kind === 'leaf') out.push(node.terminalId)
-  else { leafIds(node.first, out); leafIds(node.second, out) }
+  if (node.kind === 'pane') out.push(node.id)
+  else {
+    paneIds(node.first, out)
+    paneIds(node.second, out)
+  }
   return out
 }
-function replaceId(node: LayoutNode | null, from: string, to: string): LayoutNode | null {
+
+function paneForTerminal(node: LayoutNode | null, terminalId: string): PaneNode | null {
   if (!node) return null
-  if (node.kind === 'leaf') return node.terminalId === from ? { ...node, terminalId: to } : node
-  return { ...node, first: replaceId(node.first, from, to)!, second: replaceId(node.second, from, to)! }
+  if (node.kind === 'pane') return node.terminalIds.includes(terminalId) ? node : null
+  return paneForTerminal(node.first, terminalId) ?? paneForTerminal(node.second, terminalId)
 }
-function removeLeaf(node: LayoutNode | null, id: string): LayoutNode | null {
+
+function firstPane(node: LayoutNode | null): PaneNode | null {
   if (!node) return null
-  if (node.kind === 'leaf') return node.terminalId === id ? null : node
-  const first = removeLeaf(node.first, id)
-  const second = removeLeaf(node.second, id)
-  return first ? (second ? { ...node, first, second } : first) : second
+  return node.kind === 'pane' ? node : firstPane(node.first)
 }
-function insertLeaf(node: LayoutNode | null, activeId: string | null, id: string, direction: SplitDirection): LayoutNode {
-  if (!node) return { kind: 'leaf', terminalId: id }
-  if (node.kind === 'leaf') {
-    return !activeId || node.terminalId === activeId
-      ? { kind: 'split', id: `split-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, direction, ratio: 0.5, first: node, second: { kind: 'leaf', terminalId: id } }
-      : node
+
+function findPane(node: LayoutNode | null, id: string): PaneNode | null {
+  if (!node) return null
+  if (node.kind === 'pane') return node.id === id ? node : null
+  return findPane(node.first, id) ?? findPane(node.second, id)
+}
+
+function updatePane(node: LayoutNode | null, paneId: string, update: (pane: PaneNode) => PaneNode): LayoutNode | null {
+  if (!node) return null
+  if (node.kind === 'pane') return node.id === paneId ? update(node) : node
+  return { ...node, first: updatePane(node.first, paneId, update)!, second: updatePane(node.second, paneId, update)! }
+}
+
+function updateSplit(node: LayoutNode | null, splitId: string, update: (split: SplitNode) => SplitNode): LayoutNode | null {
+  if (!node) return null
+  if (node.kind === 'pane') return node
+  if (node.id === splitId) return update(node)
+  return { ...node, first: updateSplit(node.first, splitId, update)!, second: updateSplit(node.second, splitId, update)! }
+}
+
+function addTerminalToPane(node: LayoutNode | null, paneId: string | null, terminalId: string): LayoutNode | null {
+  if (!node || !paneId) return node
+  return updatePane(node, paneId, (pane) => ({ ...pane, terminalIds: [...pane.terminalIds.filter((id) => id !== terminalId), terminalId], activeId: terminalId }))
+}
+
+function setPaneActive(node: LayoutNode | null, paneId: string, terminalId: string): LayoutNode | null {
+  return updatePane(node, paneId, (pane) => pane.terminalIds.includes(terminalId) ? { ...pane, activeId: terminalId } : pane)
+}
+
+function splitPane(node: LayoutNode | null, paneId: string | null, terminalId: string, direction: SplitDirection, newPaneId = makeId('pane')): LayoutNode {
+  if (!node) return { kind: 'pane', id: newPaneId, terminalIds: [terminalId], activeId: terminalId }
+  if (node.kind === 'pane') {
+    if (node.id !== paneId) return node
+    return {
+      kind: 'split',
+      id: makeId('split'),
+      direction,
+      ratio: 0.5,
+      first: node,
+      second: { kind: 'pane', id: newPaneId, terminalIds: [terminalId], activeId: terminalId },
+    }
   }
-  if (activeId && containsLeaf(node.first, activeId)) return { ...node, first: insertLeaf(node.first, activeId, id, direction) }
-  return { ...node, second: insertLeaf(node.second, activeId, id, direction) }
+  if (paneId && findPane(node.first, paneId)) return { ...node, first: splitPane(node.first, paneId, terminalId, direction, newPaneId) }
+  return { ...node, second: splitPane(node.second, paneId, terminalId, direction, newPaneId) }
 }
-function updateSplit(node: LayoutNode | null, id: string, update: (node: Extract<LayoutNode, { kind: 'split' }>) => LayoutNode): LayoutNode | null {
+
+function removeTerminal(node: LayoutNode | null, terminalId: string): LayoutNode | null {
   if (!node) return null
-  if (node.kind === 'leaf') return node
-  if (node.id === id) return update(node)
-  return { ...node, first: updateSplit(node.first, id, update)!, second: updateSplit(node.second, id, update)! }
+  if (node.kind === 'pane') {
+    if (!node.terminalIds.includes(terminalId)) return node
+    const terminalIds = node.terminalIds.filter((id) => id !== terminalId)
+    if (terminalIds.length === 0) return null
+    return { ...node, terminalIds, activeId: node.activeId === terminalId ? terminalIds[0] : node.activeId }
+  }
+  const first = removeTerminal(node.first, terminalId)
+  const second = removeTerminal(node.second, terminalId)
+  return first && second ? { ...node, first, second } : first ?? second
 }
-function collapseContaining(node: LayoutNode | null, id: string): LayoutNode | null {
-  if (!node || node.kind === 'leaf') return node
-  if (containsLeaf(node.first, id)) return { ...node, collapsed: 'first' }
-  if (containsLeaf(node.second, id)) return { ...node, collapsed: 'second' }
-  return { ...node, first: collapseContaining(node.first, id)!, second: collapseContaining(node.second, id)! }
+
+function removePane(node: LayoutNode | null, paneId: string): LayoutNode | null {
+  if (!node) return null
+  if (node.kind === 'pane') return node.id === paneId ? null : node
+  const first = node.first.kind === 'pane' && node.first.id === paneId ? null : removePane(node.first, paneId)
+  const second = node.second.kind === 'pane' && node.second.id === paneId ? null : removePane(node.second, paneId)
+  return first && second ? { ...node, first, second } : first ?? second
 }
+
+function collapseContaining(node: LayoutNode | null, paneId: string): LayoutNode | null {
+  if (!node || node.kind === 'pane') return node
+  if (findPane(node.first, paneId)) return { ...node, collapsed: 'first' }
+  if (findPane(node.second, paneId)) return { ...node, collapsed: 'second' }
+  return { ...node, first: collapseContaining(node.first, paneId)!, second: collapseContaining(node.second, paneId)! }
+}
+
+function restoreSplit(node: LayoutNode | null, splitId: string): LayoutNode | null {
+  return updateSplit(node, splitId, (split) => ({ ...split, collapsed: undefined }))
+}
+
+function normalizeLayout(node: LayoutNode | null, validIds: Set<string>, seen = new Set<string>()): LayoutNode | null {
+  if (!node) return null
+  if (node.kind === 'pane') {
+    const terminalIds = node.terminalIds.filter((id) => validIds.has(id) && !seen.has(id))
+    terminalIds.forEach((id) => seen.add(id))
+    if (terminalIds.length === 0) return null
+    return { ...node, terminalIds, activeId: terminalIds.includes(node.activeId) ? node.activeId : terminalIds[0] }
+  }
+  const first = normalizeLayout(node.first, validIds, seen)
+  const second = normalizeLayout(node.second, validIds, seen)
+  if (!first) return second
+  if (!second) return first
+  return {
+    ...node,
+    ratio: Math.max(MIN_RATIO, Math.min(MAX_RATIO, typeof node.ratio === 'number' ? node.ratio : 0.5)),
+    first,
+    second,
+    collapsed: node.collapsed === 'first' || node.collapsed === 'second' ? node.collapsed : undefined,
+  }
+}
+
+function migrateLegacyLayout(value: unknown, validIds: Set<string>, order: string[]): LayoutNode | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as { kind?: string; id?: string; terminalId?: string; first?: unknown; second?: unknown; direction?: SplitDirection; ratio?: number; collapsed?: 'first' | 'second' }
+  if (v.kind === 'leaf' && typeof v.terminalId === 'string') {
+    return { kind: 'pane', id: makeId('pane'), terminalIds: [v.terminalId], activeId: v.terminalId }
+  }
+  if (v.kind === 'pane' && isLayout(value)) return value
+  if (v.kind === 'split') {
+    const first = migrateLegacyLayout(v.first, validIds, order)
+    const second = migrateLegacyLayout(v.second, validIds, order)
+    if (!first) return second
+    if (!second) return first
+    return { kind: 'split', id: typeof v.id === 'string' ? v.id : makeId('split'), direction: v.direction === 'horizontal' ? 'horizontal' : 'vertical', ratio: typeof v.ratio === 'number' ? v.ratio : 0.5, first, second, collapsed: v.collapsed }
+  }
+  return validIds.size > 0 ? { kind: 'pane', id: makeId('pane'), terminalIds: order.filter((id) => validIds.has(id)), activeId: order.find((id) => validIds.has(id)) ?? [...validIds][0] } : null
+}
+
+function ensureAllRecordsInLayout(node: LayoutNode | null, records: TerminalRecord[], order: string[]): LayoutNode | null {
+  const existing = new Set<string>()
+  function collect(current: LayoutNode | null) {
+    if (!current) return
+    if (current.kind === 'pane') current.terminalIds.forEach((id) => existing.add(id))
+    else { collect(current.first); collect(current.second) }
+  }
+  collect(node)
+  const missing = order.filter((id) => records.some((record) => record.id === id) && !existing.has(id))
+  if (missing.length === 0) return node
+  const target = firstPane(node)
+  if (target) return updatePane(node, target.id, (pane) => ({ ...pane, terminalIds: [...pane.terminalIds, ...missing] }))
+  return records.length > 0 ? { kind: 'pane', id: makeId('pane'), terminalIds: missing, activeId: missing[0] } : null
+}
+
 async function createBackendSession(cwd?: string): Promise<{ id: string; cwd: string }> {
   const res = await fetch('/api/terminal/pty', {
     method: 'POST',
@@ -89,7 +216,7 @@ async function createBackendSession(cwd?: string): Promise<{ id: string; cwd: st
 }
 
 function ResizableSplit({ node, renderNode, onRatio, onExpand }: {
-  node: Extract<LayoutNode, { kind: 'split' }>
+  node: SplitNode
   renderNode: (node: LayoutNode) => ReactNode
   onRatio: (ratio: number) => void
   onExpand: () => void
@@ -102,9 +229,9 @@ function ResizableSplit({ node, renderNode, onRatio, onExpand }: {
     const move = (event: PointerEvent) => {
       const rect = rootRef.current?.getBoundingClientRect()
       if (!rect) return
-      const pos = vertical ? event.clientX - rect.left : event.clientY - rect.top
+      const position = vertical ? event.clientX - rect.left : event.clientY - rect.top
       const size = vertical ? rect.width : rect.height
-      if (size > 0) onRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, pos / size)))
+      if (size > 0) onRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, position / size)))
     }
     const up = () => setDragging(false)
     window.addEventListener('pointermove', move)
@@ -128,10 +255,9 @@ function ResizableSplit({ node, renderNode, onRatio, onExpand }: {
       </div>
     )
   }
-  const ratio = node.ratio
   return (
     <div ref={rootRef} className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${vertical ? 'flex-row' : 'flex-col'}`}>
-      <div className="flex min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${ratio * 100}%` }}>{renderNode(node.first)}</div>
+      <div className="flex min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${node.ratio * 100}%` }}>{renderNode(node.first)}</div>
       <div
         role="separator"
         aria-orientation={vertical ? 'vertical' : 'horizontal'}
@@ -139,7 +265,6 @@ function ResizableSplit({ node, renderNode, onRatio, onExpand }: {
         tabIndex={0}
         onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
           event.preventDefault()
-          event.currentTarget.setPointerCapture?.(event.pointerId)
           setDragging(true)
         }}
         onKeyDown={(event) => {
@@ -148,14 +273,14 @@ function ResizableSplit({ node, renderNode, onRatio, onExpand }: {
             : (event.key === 'ArrowDown' ? 0.03 : event.key === 'ArrowUp' ? -0.03 : 0)
           if (delta) {
             event.preventDefault()
-            onRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, ratio + delta)))
+            onRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, node.ratio + delta)))
           }
         }}
         className={`group relative z-10 flex shrink-0 items-center justify-center border-border bg-surface-secondary transition-colors focus:outline-none focus:ring-1 focus:ring-primary ${vertical ? 'w-2 cursor-col-resize border-x' : 'h-2 cursor-row-resize border-y'} ${dragging ? 'bg-primary/20' : 'hover:bg-primary/10'}`}
       >
         <GripVertical className={`${vertical ? 'h-4 w-4' : 'h-3 w-5 rotate-90'} text-muted-foreground/60 group-hover:text-primary`} />
       </div>
-      <div className="flex min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${(1 - ratio) * 100}%` }}>{renderNode(node.second)}</div>
+      <div className="flex min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${(1 - node.ratio) * 100}%` }}>{renderNode(node.second)}</div>
     </div>
   )
 }
@@ -163,52 +288,49 @@ function ResizableSplit({ node, renderNode, onRatio, onExpand }: {
 export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, { onCountChange?: (count: number) => void }>(function DriveTerminalWorkspace({ onCountChange }, ref) {
   const [records, setRecords] = useState<TerminalRecord[]>([])
   const [closed, setClosed] = useState<TerminalRecord[]>([])
-  const [order, setOrder] = useState<string[]>([])
-  const [activeId, setActiveId] = useState<string | null>(null)
   const [layout, setLayout] = useState<LayoutNode | null>(null)
+  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [hydrated, setHydrated] = useState(false)
-  const [maximizedId, setMaximizedId] = useState<string | null>(null)
+  const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null)
   const [clearSignals, setClearSignals] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<Record<string, 'idle' | 'active'>>({})
 
   const recordById = useMemo(() => new Map(records.map((record) => [record.id, record])), [records])
-  const visibleRecords = useMemo(
-    () =>
-      order
-        .map((id) => recordById.get(id))
-        .filter((record): record is TerminalRecord => Boolean(record))
-        .filter((record) => {
-          const q = search.trim().toLowerCase()
-          return !q || record.name.toLowerCase().includes(q) || record.cwd.toLowerCase().includes(q)
-        }),
-    [order, recordById, search],
-  )
+  const focusedPane = useMemo(() => findPane(layout, focusedPaneId ?? '') ?? firstPane(layout), [focusedPaneId, layout])
+  const activeTerminalId = focusedPane?.activeId ?? null
 
-  // Hydrate persisted workspace (layout, tabs, order, active) from localStorage.
+  const visibleIds = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return new Set(records.filter((record) => !q || record.name.toLowerCase().includes(q) || record.cwd.toLowerCase().includes(q)).map((record) => record.id))
+  }, [records, search])
+
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY)
+      const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
       if (raw) {
-        const saved = JSON.parse(raw) as Partial<PersistedWorkspace>
+        const saved = JSON.parse(raw) as Partial<PersistedWorkspace> & { order?: unknown[] }
         const savedRecords = Array.isArray(saved.records) ? saved.records.filter(isRecord) : []
         const ids = new Set(savedRecords.map((record) => record.id))
-        const savedOrder = Array.isArray(saved.order) ? saved.order.filter((id): id is string => typeof id === 'string' && ids.has(id)) : []
-        const savedLayout = isLayout(saved.layout) && leafIds(saved.layout).every((id) => ids.has(id)) ? saved.layout : savedRecords[0] ? { kind: 'leaf' as const, terminalId: savedRecords[0].id } : null
+        const order = Array.isArray(saved.order) ? saved.order.filter((id): id is string => typeof id === 'string' && ids.has(id)) : savedRecords.map((record) => record.id)
+        const migrated = migrateLegacyLayout(saved.layout, ids, [...order, ...savedRecords.map((record) => record.id).filter((id) => !order.includes(id))])
+        const normalized = normalizeLayout(migrated, ids)
+        // Hydration intentionally seeds several state atoms from external
+        // localStorage state in one pass.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setRecords(savedRecords)
         setClosed(Array.isArray(saved.closed) ? saved.closed.filter(isRecord) : [])
-        setOrder([...savedOrder, ...savedRecords.map((record) => record.id).filter((id) => !savedOrder.includes(id))])
-        setActiveId(typeof saved.activeId === 'string' && ids.has(saved.activeId) ? saved.activeId : savedRecords[0]?.id ?? null)
-        setLayout(savedLayout)
+        setLayout(ensureAllRecordsInLayout(normalized, savedRecords, [...order, ...savedRecords.map((record) => record.id).filter((id) => !order.includes(id))]))
+        setFocusedPaneId(typeof saved.focusedPaneId === 'string' ? saved.focusedPaneId : firstPane(normalized)?.id ?? null)
       }
     } catch {
-      /* ignore malformed local state */
+      /* malformed or inaccessible local state is treated as a fresh workspace */
     }
     setHydrated(true)
   }, [])
 
-  // Reconnect: probe persisted PTY ids; recreate any the backend lost (e.g. after
-  // a Vercel function recycle or server restart). Scrollback replays over SSE.
+  // Reconnect persisted PTYs without invalidating the layout if only one
+  // session disappeared. Each replacement is applied to records and panes.
   useEffect(() => {
     if (!hydrated || records.length === 0) return
     let cancelled = false
@@ -219,7 +341,7 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
           const probe = await fetch(`/api/terminal/pty/${encodeURIComponent(record.id)}?probe=1`)
           if (!probe.ok) replacements.set(record.id, await createBackendSession(record.cwd))
         } catch {
-          /* transient network failures leave current session id */
+          /* transient failures leave the existing id for EventSource retry */
         }
       }
       if (cancelled || replacements.size === 0) return
@@ -227,61 +349,111 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
         const replacement = replacements.get(record.id)
         return replacement ? { ...record, id: replacement.id, cwd: replacement.cwd } : record
       }))
-      setOrder((current) => current.map((id) => replacements.get(id)?.id ?? id))
-      setActiveId((current) => replacements.get(current ?? '')?.id ?? current)
       setLayout((current) => {
         let next = current
-        for (const [from, replacement] of replacements) next = replaceId(next, from, replacement.id)
+        for (const [from, replacement] of replacements) {
+          next = updatePane(next, paneForTerminal(next, from)?.id ?? '', (pane) => ({ ...pane, terminalIds: pane.terminalIds.map((id) => id === from ? replacement.id : id), activeId: pane.activeId === from ? replacement.id : pane.activeId }))
+        }
         return next
       })
     })()
     return () => { cancelled = true }
+  // The probe effect intentionally keys on the record count: record IDs are
+  // replaced inside the effect, and including the full array would retrigger
+  // probes indefinitely after each successful reconnect.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, records.length])
 
   useEffect(() => { onCountChange?.(records.length) }, [onCountChange, records.length])
 
-  // Persist workspace shape whenever it changes (post-hydration).
   useEffect(() => {
     if (!hydrated) return
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ records, closed, order, activeId, layout } satisfies PersistedWorkspace))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, records, closed, layout, focusedPaneId } satisfies PersistedWorkspace))
     } catch {
-      /* optional */
+      /* optional persistence */
     }
-  }, [activeId, closed, hydrated, layout, order, records])
+  }, [closed, focusedPaneId, hydrated, layout, records])
 
-  const createTerminal = useCallback(async (options?: { cwd?: string; name?: string; autoName?: boolean; split?: SplitDirection; activeOverride?: string | null }) => {
+  const createTerminal = useCallback(async (options?: { cwd?: string; name?: string; autoName?: boolean; split?: SplitDirection; paneId?: string }) => {
     try {
       const created = await createBackendSession(options?.cwd)
       const record: TerminalRecord = { id: created.id, name: options?.name ?? 'bash', cwd: created.cwd, createdAt: Date.now(), autoName: options?.autoName ?? true }
+      const targetPaneId = options?.paneId ?? focusedPane?.id ?? firstPane(layout)?.id ?? null
+      const newPaneId = options?.split ? makeId('pane') : null
       setRecords((current) => [...current, record])
-      setOrder((current) => [...current, record.id])
-      setLayout((current) => insertLeaf(current, options?.activeOverride ?? activeId, record.id, options?.split ?? 'vertical'))
-      setActiveId(record.id)
+      setLayout((current) => {
+        if (options?.split) return splitPane(current, targetPaneId, record.id, options.split, newPaneId ?? undefined)
+        return targetPaneId ? addTerminalToPane(current, targetPaneId, record.id) : { kind: 'pane', id: newPaneId ?? makeId('pane'), terminalIds: [record.id], activeId: record.id }
+      })
+      setFocusedPaneId(newPaneId ?? targetPaneId)
     } catch (error) {
       console.error('[drive terminals] create failed:', error)
     }
-  }, [activeId])
+  }, [focusedPane, layout])
 
   useImperativeHandle(ref, () => ({ createTerminal: () => { void createTerminal() } }), [createTerminal])
 
   const closeTerminal = useCallback((id: string) => {
     const record = recordById.get(id)
     if (!record) return
-    setClosed((current) => [record, ...current.filter((item) => item.id !== id)].slice(0, 20))
+    setClosed((current) => [record, ...current.filter((item) => item.id !== id)].slice(0, MAX_CLOSED))
     setRecords((current) => current.filter((item) => item.id !== id))
-    setOrder((current) => current.filter((item) => item !== id))
-    setLayout((current) => removeLeaf(current, id))
-    setActiveId((current) => (current === id ? (order.find((item) => item !== id) ?? null) : current))
+    const nextLayout = removeTerminal(layout, id)
+    setLayout(nextLayout)
+    if (focusedPaneId && !findPane(nextLayout, focusedPaneId)) setFocusedPaneId(firstPane(nextLayout)?.id ?? null)
     void fetch(`/api/terminal/pty/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})
-  }, [order, recordById])
+  }, [focusedPaneId, layout, recordById])
+
+  const closePane = useCallback((paneId: string) => {
+    const pane = findPane(layout, paneId)
+    if (!pane) return
+    const otherPane = paneIds(layout).filter((id) => id !== paneId)[0]
+    if (!otherPane) {
+      window.alert('This is the only pane. Use Reset Layout to return it to the default workspace.')
+      return
+    }
+    if (pane.terminalIds.length > 1 && !window.confirm(`Close this pane? Its ${pane.terminalIds.length} terminal tabs will move to the neighboring pane.`)) return
+    const withoutPane = removePane(layout, paneId)
+    const target = firstPane(withoutPane)
+    const nextLayout = target ? updatePane(withoutPane, target.id, (current) => ({ ...current, terminalIds: [...current.terminalIds, ...pane.terminalIds], activeId: pane.activeId })) : withoutPane
+    setLayout(nextLayout)
+    setFocusedPaneId(target?.id ?? null)
+    if (maximizedPaneId === paneId) setMaximizedPaneId(null)
+  }, [layout, maximizedPaneId])
+
+  const resetLayout = useCallback(() => {
+    const keepId = activeTerminalId ?? records[0]?.id
+    if (!keepId) return
+    const keep = recordById.get(keepId)
+    if (!keep) return
+    const toClose = records.filter((record) => record.id !== keepId)
+    if (toClose.length > 0 && !window.confirm(`Reset layout to one terminal? This closes ${toClose.length} other terminal sessions.`)) return
+    for (const record of toClose) void fetch(`/api/terminal/pty/${encodeURIComponent(record.id)}`, { method: 'DELETE' }).catch(() => {})
+    const paneId = makeId('pane')
+    setRecords([keep])
+    setClosed((current) => [...toClose, ...current.filter((item) => item.id !== keepId)].slice(0, MAX_CLOSED))
+    setLayout({ kind: 'pane', id: paneId, terminalIds: [keep.id], activeId: keep.id })
+    setFocusedPaneId(paneId)
+    setMaximizedPaneId(null)
+  }, [activeTerminalId, recordById, records])
+
+  const resetWorkspace = useCallback(() => {
+    if (records.length === 0) return
+    if (!window.confirm(`Reset Command Workspace? This closes all ${records.length} terminal sessions.`)) return
+    for (const record of records) void fetch(`/api/terminal/pty/${encodeURIComponent(record.id)}`, { method: 'DELETE' }).catch(() => {})
+    setRecords([])
+    setClosed([])
+    setLayout(null)
+    setFocusedPaneId(null)
+    setMaximizedPaneId(null)
+  }, [records])
 
   const reopenLast = useCallback(() => {
     const item = closed[0]
-    if (item) {
-      setClosed((current) => current.slice(1))
-      void createTerminal({ cwd: item.cwd, name: item.name, autoName: item.autoName })
-    }
+    if (!item) return
+    setClosed((current) => current.slice(1))
+    void createTerminal({ cwd: item.cwd, name: item.name, autoName: item.autoName })
   }, [closed, createTerminal])
 
   const restartTerminal = useCallback(async (id: string) => {
@@ -291,9 +463,10 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
       await fetch(`/api/terminal/pty/${encodeURIComponent(id)}`, { method: 'DELETE' })
       const created = await createBackendSession(record.cwd)
       setRecords((current) => current.map((item) => item.id === id ? { ...item, id: created.id, cwd: created.cwd, createdAt: Date.now() } : item))
-      setOrder((current) => current.map((item) => item === id ? created.id : item))
-      setActiveId((current) => current === id ? created.id : current)
-      setLayout((current) => replaceId(current, id, created.id))
+      setLayout((current) => {
+        const pane = paneForTerminal(current, id)
+        return pane ? updatePane(current, pane.id, (currentPane) => ({ ...currentPane, terminalIds: currentPane.terminalIds.map((item) => item === id ? created.id : item), activeId: currentPane.activeId === id ? created.id : currentPane.activeId })) : current
+      })
     } catch (error) {
       console.error('[drive terminals] restart failed:', error)
     }
@@ -311,47 +484,60 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
     if (record) void createTerminal({ cwd: record.cwd, name: `${record.name} copy`, autoName: false })
   }, [createTerminal, recordById])
 
-  const markActive = useCallback((id: string) => {
-    setActiveId(id)
-    setStatus((current) => ({ ...current, [id]: 'active' }))
-    window.setTimeout(() => setStatus((current) => ({ ...current, [id]: 'idle' })), 1200)
+  const moveTerminalToNewPane = useCallback((id: string, direction: SplitDirection = 'vertical') => {
+    const source = paneForTerminal(layout, id)
+    if (!source) return
+    if (source.terminalIds.length === 1) {
+      // A lone terminal cannot be moved into a new pane without leaving an
+      // empty pane. If a sibling exists, close the empty source pane and split
+      // the remaining workspace around the moved terminal instead.
+      const otherPaneId = paneIds(layout).find((paneId) => paneId !== source.id)
+      if (!otherPaneId) return
+      const without = removePane(layout, source.id)
+      const next = splitPane(without, otherPaneId, id, direction)
+      setLayout(next)
+      setFocusedPaneId(paneForTerminal(next, id)?.id ?? otherPaneId)
+      return
+    }
+    const without = removeTerminal(layout, id)
+    const next = splitPane(without, source.id, id, direction)
+    setLayout(next)
+    setFocusedPaneId(paneForTerminal(next, id)?.id ?? source.id)
+  }, [layout])
+
+  const markActive = useCallback((paneId: string, terminalId?: string) => {
+    setFocusedPaneId(paneId)
+    if (terminalId) setLayout((current) => setPaneActive(current, paneId, terminalId))
+    if (terminalId) {
+      setStatus((current) => ({ ...current, [terminalId]: 'active' }))
+      window.setTimeout(() => setStatus((current) => ({ ...current, [terminalId]: 'idle' })), 1200)
+    }
   }, [])
 
-  const splitTerminal = useCallback((id: string, direction: SplitDirection) => {
-    setActiveId(id)
-    void createTerminal({ split: direction, activeOverride: id })
-  }, [createTerminal])
+  const splitTerminal = useCallback((paneId: string, direction: SplitDirection) => {
+    if (!findPane(layout, paneId)) return
+    void createTerminal({ split: direction, paneId })
+  }, [createTerminal, layout])
 
   const updateRatio = useCallback((id: string, ratio: number) => {
-    setLayout((current) => updateSplit(current, id, (node) => ({ ...node, ratio })))
+    setLayout((current) => updateSplit(current, id, (split) => ({ ...split, ratio })))
   }, [])
 
-  const collapseTerminal = useCallback((id: string) => {
-    setLayout((current) => collapseContaining(current, id))
-  }, [])
+  const collapsePane = useCallback((paneId: string) => setLayout((current) => collapseContaining(current, paneId)), [])
+  const expandSplit = useCallback((splitId: string) => setLayout((current) => restoreSplit(current, splitId)), [])
 
-  const expandSplit = useCallback((id: string) => {
-    setLayout((current) => updateSplit(current, id, (node) => ({ ...node, collapsed: undefined })))
-  }, [])
-
-  // Keyboard shortcuts (only fire when the user is NOT typing in a field or an
-  // xterm helper textarea — i.e. focus is on the terminal grid itself).
-  // Refs are kept current via effects (React 19 lint: no ref writes during render).
   const activeIdRef = useRef<string | null>(null)
+  const focusedPaneRef = useRef<string | null>(null)
   const createRef = useRef(createTerminal)
   const closeRef = useRef(closeTerminal)
   const splitRef = useRef(splitTerminal)
-  const toggleMaxRef = useRef<() => void>(() => {})
   useEffect(() => {
-    activeIdRef.current = activeId
+    activeIdRef.current = activeTerminalId
+    focusedPaneRef.current = focusedPane?.id ?? null
     createRef.current = createTerminal
     closeRef.current = closeTerminal
     splitRef.current = splitTerminal
-    toggleMaxRef.current = () => {
-      const target = maximizedId ? null : activeIdRef.current
-      setMaximizedId(target)
-    }
-  }, [activeId, createTerminal, closeTerminal, splitTerminal, maximizedId])
+  }, [activeTerminalId, closeTerminal, createTerminal, focusedPane?.id, splitTerminal])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -359,101 +545,92 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
       const tag = target?.tagName
       const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable
       const inXterm = target?.classList.contains('xterm-helper-textarea') || target?.classList.contains('xterm-helper')
-      if (!event.ctrlKey && !event.metaKey) return
-      if (!inXterm && inField) return // let terminal typing / search input behave normally
+      if ((!event.ctrlKey && !event.metaKey) || (inField && !inXterm)) return
       const key = event.key.toLowerCase()
-      const shift = event.shiftKey
-      const ctrl = event.ctrlKey || event.metaKey
-      if (!ctrl) return
-      if (shift && key === 't') {
-        event.preventDefault()
-        void createRef.current()
-      } else if (shift && key === 'w') {
-        event.preventDefault()
-        const id = activeIdRef.current
-        if (id) closeRef.current(id)
-      } else if (shift && key === '5') {
-        event.preventDefault()
-        const id = activeIdRef.current
-        if (id) splitRef.current(id, 'vertical')
-      } else if (shift && key === '9') {
-        event.preventDefault()
-        const id = activeIdRef.current
-        if (id) splitRef.current(id, 'horizontal')
-      } else if (shift && key === '`') {
-        event.preventDefault()
-        toggleMaxRef.current()
-      } else if (shift && key === 'f') {
-        event.preventDefault()
-        setSearch((current) => (current ? '' : ' '))
-        // focus the search input on next tick
-        requestAnimationFrame(() => {
-          const input = document.querySelector<HTMLInputElement>('[data-drive-terminal-search]')
-          input?.focus()
-        })
+      if (!event.shiftKey) return
+      event.preventDefault()
+      if (key === 't') void createRef.current()
+      else if (key === 'w' && activeIdRef.current) closeRef.current(activeIdRef.current)
+      else if (key === '5' && focusedPaneRef.current) splitRef.current(focusedPaneRef.current, 'vertical')
+      else if (key === '9' && focusedPaneRef.current) splitRef.current(focusedPaneRef.current, 'horizontal')
+      else if (key === 'f') {
+        setSearch((current) => current.trim() ? '' : ' ')
+        requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-drive-terminal-search]')?.focus())
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  const renderNode = (node: LayoutNode): ReactNode => {
-    if (maximizedId && !containsLeaf(node, maximizedId)) return null
-    if (node.kind === 'split') {
-      return <ResizableSplit node={node} renderNode={renderNode} onRatio={(ratio) => updateRatio(node.id, ratio)} onExpand={() => expandSplit(node.id)} />
-    }
-    const record = recordById.get(node.terminalId)
-    if (!record) return null
+  const renderPane = (pane: PaneNode): ReactNode => {
+    const active = pane.activeId
+    const activeRecord = recordById.get(active)
+    if (!activeRecord) return null
+    const q = search.trim()
+    const tabs = pane.terminalIds.filter((id) => visibleIds.has(id))
     return (
-      <div
-        className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden p-1 ${activeId === record.id ? 'ring-1 ring-inset ring-primary/20' : ''}`}
-        onMouseDown={() => markActive(record.id)}
-      >
-        <TerminalPane
-          id={record.id}
-          cwd={record.cwd}
-          name={record.name}
-          clearSignal={clearSignals[record.id] ?? 0}
-          onClose={() => closeTerminal(record.id)}
-          onCommand={(command) => {
-            const executable = command.trim().split(/\s+/)[0]
-            if (executable) setRecords((current) => current.map((item) => item.id === record.id && item.autoName ? { ...item, name: executable } : item))
-            markActive(record.id)
-          }}
-          onOutput={() => markActive(record.id)}
-          onRename={() => renameTerminal(record.id)}
-          onDuplicate={() => duplicateTerminal(record.id)}
-          onRestart={() => { void restartTerminal(record.id) }}
-          onKill={() => {
-            void fetch(`/api/terminal/pty/${encodeURIComponent(record.id)}/input`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ data: '\u0003' }),
-            })
-          }}
-          onClear={() => setClearSignals((current) => ({ ...current, [record.id]: (current[record.id] ?? 0) + 1 }))}
-          onSplitVertical={() => splitTerminal(record.id, 'vertical')}
-          onSplitHorizontal={() => splitTerminal(record.id, 'horizontal')}
-          onCollapse={() => collapseTerminal(record.id)}
-          onMaximize={() => setMaximizedId((current) => (current === record.id ? null : record.id))}
-          isMaximized={maximizedId === record.id}
-          status={status[record.id] === 'active' ? 'active' : 'idle'}
-        />
+      <div className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-1 ${focusedPane?.id === pane.id ? 'ring-1 ring-inset ring-primary/20' : ''}`} onMouseDown={() => markActive(pane.id)}>
+        <div className="flex min-h-7 shrink-0 items-center gap-1 rounded-t border border-border bg-surface-secondary px-1">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-hidden">
+            {tabs.map((id) => {
+              const record = recordById.get(id)
+              if (!record) return null
+              return (
+                <button key={id} onClick={() => markActive(pane.id, id)} onDoubleClick={() => renameTerminal(id)} title="Double-click to rename" className={`flex shrink-0 items-center gap-1 rounded px-2 py-1 font-mono text-[9px] ${id === active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-surface-elevated hover:text-foreground'}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${status[id] === 'active' ? 'animate-pulse bg-primary' : 'bg-muted-foreground/40'}`} />
+                  {record.name}
+                  <span onClick={(event) => { event.stopPropagation(); closeTerminal(id) }} title="Close terminal" className="ml-0.5 rounded p-0.5 hover:bg-destructive/15 hover:text-destructive"><X className="h-2.5 w-2.5" /></span>
+                </button>
+              )
+            })}
+            {q && tabs.length === 0 && <span className="px-2 font-mono text-[9px] text-muted-foreground/50">No matching tabs</span>}
+          </div>
+          <button onClick={() => { void createTerminal() }} title="New terminal tab in this pane" className="rounded p-1 text-primary hover:bg-primary/10"><Plus className="h-3 w-3" /></button>
+          <button onClick={() => splitTerminal(pane.id, 'vertical')} title="Split pane vertically" className="rounded px-1 font-mono text-[9px] text-muted-foreground hover:bg-primary/10 hover:text-primary">V</button>
+          <button onClick={() => splitTerminal(pane.id, 'horizontal')} title="Split pane horizontally" className="rounded px-1 font-mono text-[9px] text-muted-foreground hover:bg-primary/10 hover:text-primary">H</button>
+          <button onClick={() => moveTerminalToNewPane(active, 'vertical')} title="Move active terminal to a new pane" className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"><PanelLeftOpen className="h-3 w-3" /></button>
+          <button onClick={() => setMaximizedPaneId((current) => current === pane.id ? null : pane.id)} title="Maximize pane" className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"><Minimize2 className="h-3 w-3" /></button>
+          <button onClick={() => closePane(pane.id)} title="Close pane; move its tabs to a neighboring pane" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><PanelLeftClose className="h-3 w-3" /></button>
+        </div>
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <TerminalPane
+            id={activeRecord.id}
+            cwd={activeRecord.cwd}
+            name={activeRecord.name}
+            clearSignal={clearSignals[activeRecord.id] ?? 0}
+            onClose={() => closeTerminal(activeRecord.id)}
+            onClosePane={() => closePane(pane.id)}
+            onCommand={(command) => {
+              const executable = command.trim().split(/\s+/)[0]
+              if (executable) setRecords((current) => current.map((item) => item.id === activeRecord.id && item.autoName ? { ...item, name: executable } : item))
+              markActive(pane.id, activeRecord.id)
+            }}
+            onOutput={() => markActive(pane.id, activeRecord.id)}
+            onRename={() => renameTerminal(activeRecord.id)}
+            onDuplicate={() => duplicateTerminal(activeRecord.id)}
+            onRestart={() => { void restartTerminal(activeRecord.id) }}
+            onKill={() => { void fetch(`/api/terminal/pty/${encodeURIComponent(activeRecord.id)}/input`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: '\u0003' }) }) }}
+            onClear={() => setClearSignals((current) => ({ ...current, [activeRecord.id]: (current[activeRecord.id] ?? 0) + 1 }))}
+            onSplitVertical={() => splitTerminal(pane.id, 'vertical')}
+            onSplitHorizontal={() => splitTerminal(pane.id, 'horizontal')}
+            onMoveToPane={() => moveTerminalToNewPane(activeRecord.id)}
+            onCollapse={() => collapsePane(pane.id)}
+            onMaximize={() => setMaximizedPaneId((current) => current === pane.id ? null : pane.id)}
+            isMaximized={maximizedPaneId === pane.id}
+            status={status[activeRecord.id] === 'active' ? 'active' : 'idle'}
+          />
+        </div>
       </div>
     )
   }
 
-  const activeRecord = activeId ? recordById.get(activeId) : undefined
+  const renderNode = (node: LayoutNode): ReactNode => {
+    if (node.kind === 'pane') return renderPane(node)
+    return <ResizableSplit node={node} renderNode={renderNode} onRatio={(ratio) => updateRatio(node.id, ratio)} onExpand={() => expandSplit(node.id)} />
+  }
 
-  // Empty state — a real Codespaces-style welcome instead of a blank panel.
   if (!hydrated) {
-    return (
-      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center border-l border-border bg-[#0a0b0d]">
-        <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground/50">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-primary/60" /> restoring workspace…
-        </div>
-      </div>
-    )
+    return <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center border-l border-border bg-[#0a0b0d]"><div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground/50"><span className="h-2 w-2 animate-pulse rounded-full bg-primary/60" /> restoring workspace…</div></div>
   }
 
   if (records.length === 0) {
@@ -461,112 +638,34 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border bg-[#0a0b0d]">
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6">
           <TerminalSquare className="h-8 w-8 text-primary/30" />
-          <div className="text-center">
-            <p className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground/70">Command Workspace</p>
-            <p className="mt-1 max-w-[300px] text-center font-mono text-[10px] leading-relaxed text-muted-foreground/40">
-              Real PTY shells. Unlimited terminals, nested splits, drag-to-resize. Type <kbd className="rounded border border-border/50 bg-surface-secondary px-1 py-0.5 text-[8px]">Ctrl</kbd>+<kbd className="rounded border border-border/50 bg-surface-secondary px-1 py-0.5 text-[8px]">Shift</kbd>+<kbd className="rounded border border-border/50 bg-surface-secondary px-1 py-0.5 text-[8px]">T</kbd> to spawn one.
-            </p>
-          </div>
-          <button
-            onClick={() => { void createTerminal() }}
-            className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20"
-          >
-            <Plus className="h-3 w-3" /> New Terminal
-          </button>
+          <div className="text-center"><p className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground/70">Command Workspace</p><p className="mt-1 max-w-[320px] font-mono text-[10px] leading-relaxed text-muted-foreground/40">New Terminal opens a tab. Use V/H or Split to create a pane. All sessions are real PTYs.</p></div>
+          <button onClick={() => { void createTerminal() }} className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[10px] text-primary hover:bg-primary/20"><Plus className="h-3 w-3" /> New Terminal</button>
         </div>
-        <div className="flex h-6 flex-shrink-0 items-center gap-3 border-t border-border bg-surface-secondary px-3 font-mono text-[9px] text-muted-foreground/50">
-          <span>0 terminals</span>
-          <span className="ml-auto">Ctrl⇧T new · Ctrl⇧W close · Ctrl⇧5/9 split · Ctrl⇧` maximize</span>
-        </div>
+        <div className="flex h-6 shrink-0 items-center border-t border-border bg-surface-secondary px-3 font-mono text-[9px] text-muted-foreground/50">0 terminals <span className="ml-auto">Ctrl⇧T new · Ctrl⇧W close · Ctrl⇧5/9 split</span></div>
       </div>
     )
   }
 
+  const maximizedPane = maximizedPaneId ? findPane(layout, maximizedPaneId) : null
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border bg-[#0a0b0d]">
-      {/* Tab strip — Codespaces-style */}
       <div className="flex min-h-8 shrink-0 items-center gap-1 border-b border-border bg-surface-secondary px-1.5">
         <TerminalSquare className="ml-1 h-3.5 w-3.5 text-primary" />
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-hidden">
-          {visibleRecords.map((record) => (
-            <button
-              key={record.id}
-              draggable
-              onDragStart={(event) => event.dataTransfer.setData('text/plain', record.id)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault()
-                const from = event.dataTransfer.getData('text/plain')
-                if (!from || from === record.id) return
-                setOrder((current) => {
-                  const next = [...current]
-                  const a = next.indexOf(from)
-                  const b = next.indexOf(record.id)
-                  if (a < 0 || b < 0) return current
-                  next.splice(a, 1)
-                  next.splice(b, 0, from)
-                  return next
-                })
-              }}
-              onClick={() => setActiveId(record.id)}
-              onDoubleClick={() => renameTerminal(record.id)}
-              title={`${record.cwd || 'workspace'} · double-click to rename`}
-              className={`flex shrink-0 items-center gap-1 rounded px-2 py-1 font-mono text-[9px] transition-colors ${activeId === record.id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-surface-elevated hover:text-foreground'}`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${status[record.id] === 'active' ? 'animate-pulse bg-primary' : 'bg-muted-foreground/40'}`} />
-              {record.name}
-            </button>
-          ))}
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <div className="relative hidden items-center sm:flex">
-            <Search className="pointer-events-none absolute left-1.5 h-3 w-3 text-muted-foreground/50" />
-            <input
-              data-drive-terminal-search
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="find"
-              aria-label="Search terminals"
-              className="w-20 rounded border border-border bg-surface-base py-1 pl-5 pr-1 font-mono text-[9px] text-foreground outline-none focus:border-primary/40"
-            />
-          </div>
-          {closed.length > 0 && (
-            <button onClick={reopenLast} title="Reopen last closed terminal" className="rounded p-1 text-muted-foreground hover:bg-surface-elevated hover:text-primary">
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-          )}
-          <button onClick={() => { void createTerminal() }} title="Create terminal" className="rounded p-1 text-primary hover:bg-primary/10">
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-          {maximizedId && (
-            <button onClick={() => setMaximizedId(null)} title="Restore terminal layout" className="rounded p-1 text-muted-foreground hover:bg-surface-elevated hover:text-primary">
-              <Minimize2 className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <span className="mr-2 font-mono text-[9px] uppercase tracking-wider text-muted-foreground/60">Command Workspace</span>
+        <div className="relative hidden items-center sm:flex"><Search className="pointer-events-none absolute left-1.5 h-3 w-3 text-muted-foreground/50" /><input data-drive-terminal-search value={search.trim() === ' ' ? '' : search} onChange={(event) => setSearch(event.target.value)} placeholder="find tabs" aria-label="Search terminal tabs" className="w-24 rounded border border-border bg-surface-base py-1 pl-5 pr-1 font-mono text-[9px] text-foreground outline-none focus:border-primary/40" /></div>
+        <div className="ml-auto flex items-center gap-0.5">
+          {closed.length > 0 && <button onClick={reopenLast} title="Reopen last closed terminal" className="rounded p-1 text-muted-foreground hover:bg-surface-elevated hover:text-primary"><RotateCcw className="h-3.5 w-3.5" /></button>}
+          <button onClick={resetLayout} title="Reset Layout: keep one terminal fullscreen" className="flex items-center gap-1 rounded px-1.5 py-1 font-mono text-[9px] text-muted-foreground hover:bg-surface-elevated hover:text-primary"><RotateCcw className="h-3 w-3" /> Reset Layout</button>
+          <button onClick={resetWorkspace} title="Reset Workspace: close all terminals and panes" className="flex items-center gap-1 rounded px-1.5 py-1 font-mono text-[9px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3 w-3" /> Reset Workspace</button>
+          <button onClick={() => { void createTerminal() }} title="New terminal tab in the focused pane" className="rounded p-1 text-primary hover:bg-primary/10"><Plus className="h-3.5 w-3.5" /></button>
         </div>
       </div>
-
-      {/* Pane area */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {maximizedId ? renderNode({ kind: 'leaf', terminalId: maximizedId }) : layout ? renderNode(layout) : null}
+        {maximizedPane ? renderPane(maximizedPane) : layout ? renderNode(layout) : null}
       </div>
-
-      {/* Status bar */}
-      <div className="flex h-6 flex-shrink-0 items-center gap-3 border-t border-border bg-surface-secondary px-3 font-mono text-[9px] text-muted-foreground/60">
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary/70" />
-          {records.length} terminal{records.length === 1 ? '' : 's'}
-        </span>
-        {activeRecord && (
-          <>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="max-w-[240px] truncate text-foreground/80">{activeRecord.name}</span>
-            {activeRecord.cwd && <span className="max-w-[200px] truncate text-muted-foreground/40">{activeRecord.cwd.replace(/^\/workspaces\/[^/]+/, '.')}</span>}
-          </>
-        )}
-        <span className="ml-auto hidden sm:inline">Ctrl⇧T new · Ctrl⇧W close · Ctrl⇧5/9 split · Ctrl⇧` maximize · Ctrl⇧F find</span>
-      </div>
+      <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-surface-secondary px-3 font-mono text-[9px] text-muted-foreground/60"><span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-primary/70" />{records.length} terminal{records.length === 1 ? '' : 's'}</span>{focusedPane && <><span className="text-muted-foreground/40">·</span><span className="max-w-[240px] truncate text-foreground/80">{recordById.get(focusedPane.activeId)?.name ?? 'pane'}</span></>}<span className="ml-auto hidden sm:inline">Ctrl⇧T tab · Ctrl⇧W close terminal · Ctrl⇧5/9 split · Ctrl⇧F find</span></div>
     </div>
   )
 })
+
 DriveTerminalWorkspace.displayName = 'DriveTerminalWorkspace'
