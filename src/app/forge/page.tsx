@@ -8,7 +8,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, ChevronDown, ChevronRight, Check, X, Send, Loader2,
   GitBranch, Folder, File, Lock, Sliders, Zap, TerminalSquare, Eye, Play,
-  Car, Radar, Swords, FileText, Pencil, Brain, Globe, Plus,
+  Car, Radar, Swords, FileText, Pencil, Brain, Globe, Plus, MessageSquare,
 } from 'lucide-react'
 import { CruisePanel } from '@/components/agent/cruise-panel'
 import { DriveTerminalWorkspace, type DriveTerminalWorkspaceHandle } from '@/components/terminal/drive-terminal-workspace'
@@ -299,6 +299,14 @@ export default function AgentPage() {
   // Top-level mode: Drive (interactive, the existing behavior) vs Cruise
   // (autonomous scan). Distinct from `mode` above, which is Drive's auto/manual.
   const [cruiseMode, setCruiseMode] = useState<'drive' | 'cruise'>('drive')
+  // Workspace mode: 'chat' (conversation only) vs 'command' (IDE terminals only).
+  // Both stay mounted so each workspace preserves its state across switches.
+  const [workspaceMode, setWorkspaceMode] = useState<'chat' | 'command'>(
+    () => (typeof window !== 'undefined' && localStorage.getItem('golem.drive.mode') === 'command' ? 'command' : 'chat'),
+  )
+  useEffect(() => {
+    try { localStorage.setItem('golem.drive.mode', workspaceMode) } catch { /* optional */ }
+  }, [workspaceMode])
   const [lines, setLines] = useState<ChatLine[]>([
     { kind: 'system', text: 'coding agent \u2014 select a repository to begin.' },
   ])
@@ -1073,6 +1081,24 @@ USER REQUEST: ${userText}`
           </button>
         </div>
 
+        {/* Chat / Command workspace switcher — fully separate workspaces */}
+        <div className="flex items-center gap-0.5 rounded border border-border bg-surface-secondary p-0.5">
+          <button onClick={() => setWorkspaceMode('chat')}
+            className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] transition-colors ${
+              workspaceMode === 'chat' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title="Chat workspace — conversation, model, skills (no terminals)">
+            <MessageSquare className="h-3 w-3" /> Chat
+          </button>
+          <button onClick={() => setWorkspaceMode('command')}
+            className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] transition-colors ${
+              workspaceMode === 'command' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title="Command workspace — full IDE terminals (no chat)">
+            <TerminalSquare className="h-3 w-3" /> Commands
+          </button>
+        </div>
+
         <div className="ml-auto flex items-center gap-3">
           {/* See Golem — opens The Atelier with this surface's live context:
               which mode is active (drive/cruise) and whether a run is going */}
@@ -1250,18 +1276,15 @@ USER REQUEST: ${userText}`
           )}
         </aside>
 
-        {/* Main content + terminal column split. Drive stays the dominant pane. */}
+        {/* Main workspace — Chat and Command are fully separate workspaces. */}
         <div className="flex min-h-0 min-w-0 flex-1">
-          {/* Main content area: Drive conversation (or Cruise). */}
-          <div
-            className={`flex min-h-0 min-w-0 flex-col ${terminalCount === 0 ? 'flex-1' : ''}`}
-            style={terminalCount > 0 ? { flexGrow: 2, flexBasis: 0 } : undefined}
-          >
+          {/* Chat workspace: conversation (or Cruise). No terminals visible. */}
+          <div className={`flex min-h-0 min-w-0 flex-col flex-1 ${workspaceMode === 'command' ? 'hidden' : ''}`}>
             {/* Cruise replaces the conversation pane when active */}
             {cruiseMode === 'cruise' && <CruisePanel repo={repo} />}
 
             {/* Conversation (Drive) — kept mounted but hidden in Cruise so its state survives a toggle */}
-            <div className={`min-w-0 flex-col ${cruiseMode === 'cruise' ? 'hidden' : 'flex'} ${terminalCount === 0 ? 'flex-1' : ''}`} style={terminalCount > 0 ? { flexGrow: 1, flexBasis: 0 } : undefined}>
+            <div className={`min-w-0 flex-col flex-1 ${cruiseMode === 'cruise' ? 'hidden' : 'flex'}`}>
           <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hidden">
             <div className="mx-auto max-w-[720px] px-8 py-6">
               {driveCompaction.isCompacted && (
@@ -1776,9 +1799,11 @@ USER REQUEST: ${userText}`
             </div>
           </div>
         </div>
+        </div>
+          {/* Command workspace: full IDE — terminals only, no chat. */}
+          <div className={`min-h-0 min-w-0 flex-1 ${workspaceMode === 'chat' ? 'hidden' : 'flex'}`}>
+            <DriveTerminalWorkspace ref={terminalWorkspaceRef} onCountChange={setTerminalCount} />
           </div>
-          {/* Drive workspace — unlimited interactive PTYs with nested splits. */}
-          <DriveTerminalWorkspace ref={terminalWorkspaceRef} onCountChange={setTerminalCount} />
         </div>
       </div>
     </div>

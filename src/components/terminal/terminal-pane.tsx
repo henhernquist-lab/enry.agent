@@ -43,8 +43,10 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
   const closedRef = useRef(false)
   const onCommandRef = useRef(onCommand)
   const onOutputRef = useRef(onOutput)
-  onCommandRef.current = onCommand
-  onOutputRef.current = onOutput
+  useEffect(() => {
+    onCommandRef.current = onCommand
+    onOutputRef.current = onOutput
+  }, [onCommand, onOutput])
 
   // ─── "Explain last command" ────────────────────────────────────────
   // lineBufferRef reconstructs the command line from the keystroke stream
@@ -57,6 +59,9 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
   const [explaining, setExplaining] = useState(false)
   const [explanation, setExplanation] = useState('')
   const [explainError, setExplainError] = useState<string | null>(null)
+  // Last process exit code (shown as a header badge). Captured from the SSE
+  // 'exit' event; reset when a new command is submitted or output resumes.
+  const [exitCode, setExitCode] = useState<number | null>(null)
 
   const explain = useCallback(async () => {
     if (!lastCommand || explaining) return
@@ -162,6 +167,7 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       // "type a command, hit enter, explain it" flow this targets.
       const onDataDisp = term.onData((data) => {
         onOutputRef.current?.()
+        setExitCode(null) // new keystrokes mean a fresh command is in flight
         void sendInput(id, data)
         for (const ch of data) {
           if (ch === '\r' || ch === '\n') {
@@ -194,9 +200,15 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
           /* malformed chunk */
         }
       })
-      es.addEventListener('exit', () => {
+      es.addEventListener('exit', (e) => {
         if (!disposed) {
           term.write('\r\n\x1b[90m[process exited]\x1b[0m\r\n')
+        }
+        try {
+          const parsed = JSON.parse((e as MessageEvent).data) as { exitCode?: number }
+          if (typeof parsed.exitCode === 'number') setExitCode(parsed.exitCode)
+        } catch {
+          /* malformed payload */
         }
       })
       es.onerror = () => {
@@ -264,6 +276,16 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
           <span className="truncate font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             {name}{cwd ? ` · ${cwd.replace(/^\/workspaces\/[^/]+/, '.')}` : ''}
           </span>
+          {exitCode !== null && (
+            <span
+              title="Last process exit code"
+              className={`flex-shrink-0 rounded px-1 py-px font-mono text-[9px] tabular-nums ${
+                exitCode === 0 ? 'bg-primary/10 text-primary/80' : 'bg-warning/15 text-warning'
+              }`}
+            >
+              {exitCode === 0 ? 'exit 0' : `exit ${exitCode}`}
+            </span>
+          )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-0.5">
           <button onClick={onSplitVertical} title="Split vertically" className="rounded p-1 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary"><Columns2 className="h-3 w-3" /></button>

@@ -4,54 +4,569 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { GripVertical, Minimize2, PanelLeftOpen, Plus, RotateCcw, Search, TerminalSquare } from 'lucide-react'
 import { TerminalPane } from './terminal-pane'
 
-export interface DriveTerminalWorkspaceHandle { createTerminal: () => void }
+export interface DriveTerminalWorkspaceHandle {
+  createTerminal: () => void
+}
 interface TerminalRecord { id: string; name: string; cwd: string; createdAt: number; autoName: boolean }
 type SplitDirection = 'vertical' | 'horizontal'
-type LayoutNode = { kind: 'leaf'; terminalId: string } | { kind: 'split'; id: string; direction: SplitDirection; ratio: number; first: LayoutNode; second: LayoutNode; collapsed?: 'first' | 'second' }
-interface PersistedWorkspace { records: TerminalRecord[]; closed: TerminalRecord[]; order: string[]; activeId: string | null; layout: LayoutNode | null }
+type LayoutNode =
+  | { kind: 'leaf'; terminalId: string }
+  | { kind: 'split'; id: string; direction: SplitDirection; ratio: number; first: LayoutNode; second: LayoutNode; collapsed?: 'first' | 'second' }
+interface PersistedWorkspace {
+  records: TerminalRecord[]
+  closed: TerminalRecord[]
+  order: string[]
+  activeId: string | null
+  layout: LayoutNode | null
+}
 const STORAGE_KEY = 'golem.drive.terminals.v2'
 const MIN_RATIO = 0.16
 const MAX_RATIO = 0.84
 
-function isRecord(value: unknown): value is TerminalRecord { if (!value || typeof value !== 'object') return false; const v = value as Partial<TerminalRecord>; return typeof v.id === 'string' && typeof v.name === 'string' && typeof v.cwd === 'string' }
-function isLayout(value: unknown): value is LayoutNode { if (!value || typeof value !== 'object') return false; const v = value as { kind?: string; terminalId?: unknown; id?: unknown; first?: unknown; second?: unknown }; if (v.kind === 'leaf') return typeof v.terminalId === 'string'; return v.kind === 'split' && typeof v.id === 'string' && isLayout(v.first) && isLayout(v.second) }
-function containsLeaf(node: LayoutNode, id: string): boolean { return node.kind === 'leaf' ? node.terminalId === id : containsLeaf(node.first, id) || containsLeaf(node.second, id) }
-function leafIds(node: LayoutNode | null, out: string[] = []): string[] { if (!node) return out; if (node.kind === 'leaf') out.push(node.terminalId); else { leafIds(node.first, out); leafIds(node.second, out) }; return out }
-function replaceId(node: LayoutNode | null, from: string, to: string): LayoutNode | null { if (!node) return null; if (node.kind === 'leaf') return node.terminalId === from ? { ...node, terminalId: to } : node; return { ...node, first: replaceId(node.first, from, to)!, second: replaceId(node.second, from, to)! } }
-function removeLeaf(node: LayoutNode | null, id: string): LayoutNode | null { if (!node) return null; if (node.kind === 'leaf') return node.terminalId === id ? null : node; const first = removeLeaf(node.first, id); const second = removeLeaf(node.second, id); return first ? (second ? { ...node, first, second } : first) : second }
-function insertLeaf(node: LayoutNode | null, activeId: string | null, id: string, direction: SplitDirection): LayoutNode { if (!node) return { kind: 'leaf', terminalId: id }; if (node.kind === 'leaf') return !activeId || node.terminalId === activeId ? { kind: 'split', id: `split-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, direction, ratio: 0.5, first: node, second: { kind: 'leaf', terminalId: id } } : node; if (activeId && containsLeaf(node.first, activeId)) return { ...node, first: insertLeaf(node.first, activeId, id, direction) }; return { ...node, second: insertLeaf(node.second, activeId, id, direction) } }
-function updateSplit(node: LayoutNode | null, id: string, update: (node: Extract<LayoutNode, { kind: 'split' }>) => LayoutNode): LayoutNode | null { if (!node) return null; if (node.kind === 'leaf') return node; if (node.id === id) return update(node); return { ...node, first: updateSplit(node.first, id, update)!, second: updateSplit(node.second, id, update)! } }
-function collapseContaining(node: LayoutNode | null, id: string): LayoutNode | null { if (!node || node.kind === 'leaf') return node; if (containsLeaf(node.first, id)) return { ...node, collapsed: 'first' }; if (containsLeaf(node.second, id)) return { ...node, collapsed: 'second' }; return { ...node, first: collapseContaining(node.first, id)!, second: collapseContaining(node.second, id)! } }
-async function createBackendSession(cwd?: string): Promise<{ id: string; cwd: string }> { const res = await fetch('/api/terminal/pty', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cols: 80, rows: 24, ...(cwd ? { cwd } : {}) }) }); const data = await res.json().catch(() => ({})) as { id?: string; cwd?: string; error?: string }; if (!res.ok || !data.id) throw new Error(data.error || `Terminal failed to open (HTTP ${res.status})`); return { id: data.id, cwd: data.cwd ?? cwd ?? '' } }
+function isRecord(value: unknown): value is TerminalRecord {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Partial<TerminalRecord>
+  return typeof v.id === 'string' && typeof v.name === 'string' && typeof v.cwd === 'string'
+}
+function isLayout(value: unknown): value is LayoutNode {
+  if (!value || typeof value !== 'object') return false
+  const v = value as { kind?: string; terminalId?: unknown; id?: unknown; first?: unknown; second?: unknown }
+  if (v.kind === 'leaf') return typeof v.terminalId === 'string'
+  return v.kind === 'split' && typeof v.id === 'string' && isLayout(v.first) && isLayout(v.second)
+}
+function containsLeaf(node: LayoutNode, id: string): boolean {
+  return node.kind === 'leaf' ? node.terminalId === id : containsLeaf(node.first, id) || containsLeaf(node.second, id)
+}
+function leafIds(node: LayoutNode | null, out: string[] = []): string[] {
+  if (!node) return out
+  if (node.kind === 'leaf') out.push(node.terminalId)
+  else { leafIds(node.first, out); leafIds(node.second, out) }
+  return out
+}
+function replaceId(node: LayoutNode | null, from: string, to: string): LayoutNode | null {
+  if (!node) return null
+  if (node.kind === 'leaf') return node.terminalId === from ? { ...node, terminalId: to } : node
+  return { ...node, first: replaceId(node.first, from, to)!, second: replaceId(node.second, from, to)! }
+}
+function removeLeaf(node: LayoutNode | null, id: string): LayoutNode | null {
+  if (!node) return null
+  if (node.kind === 'leaf') return node.terminalId === id ? null : node
+  const first = removeLeaf(node.first, id)
+  const second = removeLeaf(node.second, id)
+  return first ? (second ? { ...node, first, second } : first) : second
+}
+function insertLeaf(node: LayoutNode | null, activeId: string | null, id: string, direction: SplitDirection): LayoutNode {
+  if (!node) return { kind: 'leaf', terminalId: id }
+  if (node.kind === 'leaf') {
+    return !activeId || node.terminalId === activeId
+      ? { kind: 'split', id: `split-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, direction, ratio: 0.5, first: node, second: { kind: 'leaf', terminalId: id } }
+      : node
+  }
+  if (activeId && containsLeaf(node.first, activeId)) return { ...node, first: insertLeaf(node.first, activeId, id, direction) }
+  return { ...node, second: insertLeaf(node.second, activeId, id, direction) }
+}
+function updateSplit(node: LayoutNode | null, id: string, update: (node: Extract<LayoutNode, { kind: 'split' }>) => LayoutNode): LayoutNode | null {
+  if (!node) return null
+  if (node.kind === 'leaf') return node
+  if (node.id === id) return update(node)
+  return { ...node, first: updateSplit(node.first, id, update)!, second: updateSplit(node.second, id, update)! }
+}
+function collapseContaining(node: LayoutNode | null, id: string): LayoutNode | null {
+  if (!node || node.kind === 'leaf') return node
+  if (containsLeaf(node.first, id)) return { ...node, collapsed: 'first' }
+  if (containsLeaf(node.second, id)) return { ...node, collapsed: 'second' }
+  return { ...node, first: collapseContaining(node.first, id)!, second: collapseContaining(node.second, id)! }
+}
+async function createBackendSession(cwd?: string): Promise<{ id: string; cwd: string }> {
+  const res = await fetch('/api/terminal/pty', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cols: 80, rows: 24, ...(cwd ? { cwd } : {}) }),
+  })
+  const data = await res.json().catch(() => ({})) as { id?: string; cwd?: string; error?: string }
+  if (!res.ok || !data.id) throw new Error(data.error || `Terminal failed to open (HTTP ${res.status})`)
+  return { id: data.id, cwd: data.cwd ?? cwd ?? '' }
+}
 
-function ResizableSplit({ node, renderNode, onRatio, onExpand }: { node: Extract<LayoutNode, { kind: 'split' }>; renderNode: (node: LayoutNode) => ReactNode; onRatio: (ratio: number) => void; onExpand: () => void }) {
-  const rootRef = useRef<HTMLDivElement>(null); const [dragging, setDragging] = useState(false); const vertical = node.direction === 'vertical'
-  useEffect(() => { if (!dragging) return; const move = (event: PointerEvent) => { const rect = rootRef.current?.getBoundingClientRect(); if (!rect) return; const pos = vertical ? event.clientX - rect.left : event.clientY - rect.top; const size = vertical ? rect.width : rect.height; if (size > 0) onRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, pos / size))) }; const up = () => setDragging(false); window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); document.body.style.userSelect = 'none'; document.body.style.cursor = vertical ? 'col-resize' : 'row-resize'; return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.style.userSelect = ''; document.body.style.cursor = '' } }, [dragging, onRatio, vertical])
-  if (node.collapsed) return <div ref={rootRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">{renderNode(node.collapsed === 'first' ? node.second : node.first)}<button onClick={onExpand} title="Restore collapsed pane" className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded border border-primary/30 bg-surface-elevated/95 px-2 py-1 font-mono text-[9px] text-primary shadow-lg"><PanelLeftOpen className="h-3 w-3" /> Restore pane</button></div>
+function ResizableSplit({ node, renderNode, onRatio, onExpand }: {
+  node: Extract<LayoutNode, { kind: 'split' }>
+  renderNode: (node: LayoutNode) => ReactNode
+  onRatio: (ratio: number) => void
+  onExpand: () => void
+}) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const vertical = node.direction === 'vertical'
+  useEffect(() => {
+    if (!dragging) return
+    const move = (event: PointerEvent) => {
+      const rect = rootRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const pos = vertical ? event.clientX - rect.left : event.clientY - rect.top
+      const size = vertical ? rect.width : rect.height
+      if (size > 0) onRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, pos / size)))
+    }
+    const up = () => setDragging(false)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = vertical ? 'col-resize' : 'row-resize'
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+    }
+  }, [dragging, onRatio, vertical])
+  if (node.collapsed) {
+    return (
+      <div ref={rootRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {renderNode(node.collapsed === 'first' ? node.second : node.first)}
+        <button onClick={onExpand} title="Restore collapsed pane" className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded border border-primary/30 bg-surface-elevated/95 px-2 py-1 font-mono text-[9px] text-primary shadow-lg">
+          <PanelLeftOpen className="h-3 w-3" /> Restore pane
+        </button>
+      </div>
+    )
+  }
   const ratio = node.ratio
-  return <div ref={rootRef} className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${vertical ? 'flex-row' : 'flex-col'}`}><div className="flex min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${ratio * 100}%` }}>{renderNode(node.first)}</div><div role="separator" aria-orientation={vertical ? 'vertical' : 'horizontal'} aria-label="Resize terminal panes" tabIndex={0} onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture?.(event.pointerId); setDragging(true) }} onKeyDown={(event) => { const delta = vertical ? (event.key === 'ArrowRight' ? 0.03 : event.key === 'ArrowLeft' ? -0.03 : 0) : (event.key === 'ArrowDown' ? 0.03 : event.key === 'ArrowUp' ? -0.03 : 0); if (delta) { event.preventDefault(); onRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, ratio + delta))) } }} className={`group relative z-10 flex shrink-0 items-center justify-center border-border bg-surface-secondary transition-colors focus:outline-none focus:ring-1 focus:ring-primary ${vertical ? 'w-2 cursor-col-resize border-x' : 'h-2 cursor-row-resize border-y'} ${dragging ? 'bg-primary/20' : 'hover:bg-primary/10'}`}><GripVertical className={`${vertical ? 'h-4 w-4' : 'h-3 w-5 rotate-90'} text-muted-foreground/60 group-hover:text-primary`} /></div><div className="flex min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${(1 - ratio) * 100}%` }}>{renderNode(node.second)}</div></div>
+  return (
+    <div ref={rootRef} className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${vertical ? 'flex-row' : 'flex-col'}`}>
+      <div className="flex min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${ratio * 100}%` }}>{renderNode(node.first)}</div>
+      <div
+        role="separator"
+        aria-orientation={vertical ? 'vertical' : 'horizontal'}
+        aria-label="Resize terminal panes"
+        tabIndex={0}
+        onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
+          event.preventDefault()
+          event.currentTarget.setPointerCapture?.(event.pointerId)
+          setDragging(true)
+        }}
+        onKeyDown={(event) => {
+          const delta = vertical
+            ? (event.key === 'ArrowRight' ? 0.03 : event.key === 'ArrowLeft' ? -0.03 : 0)
+            : (event.key === 'ArrowDown' ? 0.03 : event.key === 'ArrowUp' ? -0.03 : 0)
+          if (delta) {
+            event.preventDefault()
+            onRatio(Math.max(MIN_RATIO, Math.min(MAX_RATIO, ratio + delta)))
+          }
+        }}
+        className={`group relative z-10 flex shrink-0 items-center justify-center border-border bg-surface-secondary transition-colors focus:outline-none focus:ring-1 focus:ring-primary ${vertical ? 'w-2 cursor-col-resize border-x' : 'h-2 cursor-row-resize border-y'} ${dragging ? 'bg-primary/20' : 'hover:bg-primary/10'}`}
+      >
+        <GripVertical className={`${vertical ? 'h-4 w-4' : 'h-3 w-5 rotate-90'} text-muted-foreground/60 group-hover:text-primary`} />
+      </div>
+      <div className="flex min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${(1 - ratio) * 100}%` }}>{renderNode(node.second)}</div>
+    </div>
+  )
 }
 
 export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, { onCountChange?: (count: number) => void }>(function DriveTerminalWorkspace({ onCountChange }, ref) {
-  const [records, setRecords] = useState<TerminalRecord[]>([]); const [closed, setClosed] = useState<TerminalRecord[]>([]); const [order, setOrder] = useState<string[]>([]); const [activeId, setActiveId] = useState<string | null>(null); const [layout, setLayout] = useState<LayoutNode | null>(null); const [search, setSearch] = useState(''); const [hydrated, setHydrated] = useState(false); const [maximizedId, setMaximizedId] = useState<string | null>(null); const [clearSignals, setClearSignals] = useState<Record<string, number>>({}); const [status, setStatus] = useState<Record<string, 'idle' | 'active'>>({})
-  const recordById = useMemo(() => new Map(records.map((record) => [record.id, record])), [records]); const visibleRecords = useMemo(() => order.map((id) => recordById.get(id)).filter((record): record is TerminalRecord => Boolean(record)).filter((record) => { const q = search.trim().toLowerCase(); return !q || record.name.toLowerCase().includes(q) || record.cwd.toLowerCase().includes(q) }), [order, recordById, search])
-  useEffect(() => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const saved = JSON.parse(raw) as Partial<PersistedWorkspace>; const savedRecords = Array.isArray(saved.records) ? saved.records.filter(isRecord) : []; const ids = new Set(savedRecords.map((record) => record.id)); const savedOrder = Array.isArray(saved.order) ? saved.order.filter((id): id is string => typeof id === 'string' && ids.has(id)) : []; const savedLayout = isLayout(saved.layout) && leafIds(saved.layout).every((id) => ids.has(id)) ? saved.layout : savedRecords[0] ? { kind: 'leaf' as const, terminalId: savedRecords[0].id } : null; setRecords(savedRecords); setClosed(Array.isArray(saved.closed) ? saved.closed.filter(isRecord) : []); setOrder([...savedOrder, ...savedRecords.map((record) => record.id).filter((id) => !savedOrder.includes(id))]); setActiveId(typeof saved.activeId === 'string' && ids.has(saved.activeId) ? saved.activeId : savedRecords[0]?.id ?? null); setLayout(savedLayout) } } catch { /* ignore malformed local state */ } setHydrated(true) }, [])
-  useEffect(() => { if (!hydrated || records.length === 0) return; let cancelled = false; void (async () => { const replacements = new Map<string, { id: string; cwd: string }>(); for (const record of records) { try { const probe = await fetch(`/api/terminal/pty/${encodeURIComponent(record.id)}?probe=1`); if (!probe.ok) replacements.set(record.id, await createBackendSession(record.cwd)) } catch { /* transient network failures leave current session id */ } } if (cancelled || replacements.size === 0) return; setRecords((current) => current.map((record) => { const replacement = replacements.get(record.id); return replacement ? { ...record, id: replacement.id, cwd: replacement.cwd } : record })); setOrder((current) => current.map((id) => replacements.get(id)?.id ?? id)); setActiveId((current) => replacements.get(current ?? '')?.id ?? current); setLayout((current) => { let next = current; for (const [from, replacement] of replacements) next = replaceId(next, from, replacement.id); return next }) })(); return () => { cancelled = true } }, [hydrated, records.length])
-  useEffect(() => { onCountChange?.(records.length) }, [onCountChange, records.length]); useEffect(() => { if (!hydrated) return; try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ records, closed, order, activeId, layout } satisfies PersistedWorkspace)) } catch { /* optional */ } }, [activeId, closed, hydrated, layout, order, records])
-  const createTerminal = useCallback(async (options?: { cwd?: string; name?: string; autoName?: boolean; split?: SplitDirection; activeOverride?: string | null }) => { try { const created = await createBackendSession(options?.cwd); const record: TerminalRecord = { id: created.id, name: options?.name ?? 'bash', cwd: created.cwd, createdAt: Date.now(), autoName: options?.autoName ?? true }; setRecords((current) => [...current, record]); setOrder((current) => [...current, record.id]); setLayout((current) => insertLeaf(current, options?.activeOverride ?? activeId, record.id, options?.split ?? 'vertical')); setActiveId(record.id) } catch (error) { console.error('[drive terminals] create failed:', error) } }, [activeId])
+  const [records, setRecords] = useState<TerminalRecord[]>([])
+  const [closed, setClosed] = useState<TerminalRecord[]>([])
+  const [order, setOrder] = useState<string[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [layout, setLayout] = useState<LayoutNode | null>(null)
+  const [search, setSearch] = useState('')
+  const [hydrated, setHydrated] = useState(false)
+  const [maximizedId, setMaximizedId] = useState<string | null>(null)
+  const [clearSignals, setClearSignals] = useState<Record<string, number>>({})
+  const [status, setStatus] = useState<Record<string, 'idle' | 'active'>>({})
+
+  const recordById = useMemo(() => new Map(records.map((record) => [record.id, record])), [records])
+  const visibleRecords = useMemo(
+    () =>
+      order
+        .map((id) => recordById.get(id))
+        .filter((record): record is TerminalRecord => Boolean(record))
+        .filter((record) => {
+          const q = search.trim().toLowerCase()
+          return !q || record.name.toLowerCase().includes(q) || record.cwd.toLowerCase().includes(q)
+        }),
+    [order, recordById, search],
+  )
+
+  // Hydrate persisted workspace (layout, tabs, order, active) from localStorage.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const saved = JSON.parse(raw) as Partial<PersistedWorkspace>
+        const savedRecords = Array.isArray(saved.records) ? saved.records.filter(isRecord) : []
+        const ids = new Set(savedRecords.map((record) => record.id))
+        const savedOrder = Array.isArray(saved.order) ? saved.order.filter((id): id is string => typeof id === 'string' && ids.has(id)) : []
+        const savedLayout = isLayout(saved.layout) && leafIds(saved.layout).every((id) => ids.has(id)) ? saved.layout : savedRecords[0] ? { kind: 'leaf' as const, terminalId: savedRecords[0].id } : null
+        setRecords(savedRecords)
+        setClosed(Array.isArray(saved.closed) ? saved.closed.filter(isRecord) : [])
+        setOrder([...savedOrder, ...savedRecords.map((record) => record.id).filter((id) => !savedOrder.includes(id))])
+        setActiveId(typeof saved.activeId === 'string' && ids.has(saved.activeId) ? saved.activeId : savedRecords[0]?.id ?? null)
+        setLayout(savedLayout)
+      }
+    } catch {
+      /* ignore malformed local state */
+    }
+    setHydrated(true)
+  }, [])
+
+  // Reconnect: probe persisted PTY ids; recreate any the backend lost (e.g. after
+  // a Vercel function recycle or server restart). Scrollback replays over SSE.
+  useEffect(() => {
+    if (!hydrated || records.length === 0) return
+    let cancelled = false
+    void (async () => {
+      const replacements = new Map<string, { id: string; cwd: string }>()
+      for (const record of records) {
+        try {
+          const probe = await fetch(`/api/terminal/pty/${encodeURIComponent(record.id)}?probe=1`)
+          if (!probe.ok) replacements.set(record.id, await createBackendSession(record.cwd))
+        } catch {
+          /* transient network failures leave current session id */
+        }
+      }
+      if (cancelled || replacements.size === 0) return
+      setRecords((current) => current.map((record) => {
+        const replacement = replacements.get(record.id)
+        return replacement ? { ...record, id: replacement.id, cwd: replacement.cwd } : record
+      }))
+      setOrder((current) => current.map((id) => replacements.get(id)?.id ?? id))
+      setActiveId((current) => replacements.get(current ?? '')?.id ?? current)
+      setLayout((current) => {
+        let next = current
+        for (const [from, replacement] of replacements) next = replaceId(next, from, replacement.id)
+        return next
+      })
+    })()
+    return () => { cancelled = true }
+  }, [hydrated, records.length])
+
+  useEffect(() => { onCountChange?.(records.length) }, [onCountChange, records.length])
+
+  // Persist workspace shape whenever it changes (post-hydration).
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ records, closed, order, activeId, layout } satisfies PersistedWorkspace))
+    } catch {
+      /* optional */
+    }
+  }, [activeId, closed, hydrated, layout, order, records])
+
+  const createTerminal = useCallback(async (options?: { cwd?: string; name?: string; autoName?: boolean; split?: SplitDirection; activeOverride?: string | null }) => {
+    try {
+      const created = await createBackendSession(options?.cwd)
+      const record: TerminalRecord = { id: created.id, name: options?.name ?? 'bash', cwd: created.cwd, createdAt: Date.now(), autoName: options?.autoName ?? true }
+      setRecords((current) => [...current, record])
+      setOrder((current) => [...current, record.id])
+      setLayout((current) => insertLeaf(current, options?.activeOverride ?? activeId, record.id, options?.split ?? 'vertical'))
+      setActiveId(record.id)
+    } catch (error) {
+      console.error('[drive terminals] create failed:', error)
+    }
+  }, [activeId])
+
   useImperativeHandle(ref, () => ({ createTerminal: () => { void createTerminal() } }), [createTerminal])
-  const closeTerminal = useCallback((id: string) => { const record = recordById.get(id); if (!record) return; setClosed((current) => [record, ...current.filter((item) => item.id !== id)].slice(0, 20)); setRecords((current) => current.filter((item) => item.id !== id)); setOrder((current) => current.filter((item) => item !== id)); setLayout((current) => removeLeaf(current, id)); setActiveId((current) => current === id ? (order.find((item) => item !== id) ?? null) : current); void fetch(`/api/terminal/pty/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {}) }, [order, recordById])
-  const reopenLast = useCallback(() => { const item = closed[0]; if (item) { setClosed((current) => current.slice(1)); void createTerminal({ cwd: item.cwd, name: item.name, autoName: item.autoName }) } }, [closed, createTerminal])
-  const restartTerminal = useCallback(async (id: string) => { const record = recordById.get(id); if (!record) return; try { await fetch(`/api/terminal/pty/${encodeURIComponent(id)}`, { method: 'DELETE' }); const created = await createBackendSession(record.cwd); setRecords((current) => current.map((item) => item.id === id ? { ...item, id: created.id, cwd: created.cwd, createdAt: Date.now() } : item)); setOrder((current) => current.map((item) => item === id ? created.id : item)); setActiveId((current) => current === id ? created.id : current); setLayout((current) => replaceId(current, id, created.id)) } catch (error) { console.error('[drive terminals] restart failed:', error) } }, [recordById])
-  const renameTerminal = useCallback((id: string) => { const record = recordById.get(id); if (!record) return; const name = window.prompt('Terminal name', record.name)?.trim(); if (name) setRecords((current) => current.map((item) => item.id === id ? { ...item, name, autoName: false } : item)) }, [recordById])
-  const duplicateTerminal = useCallback((id: string) => { const record = recordById.get(id); if (record) void createTerminal({ cwd: record.cwd, name: `${record.name} copy`, autoName: false }) }, [createTerminal, recordById])
-  const markActive = useCallback((id: string) => { setActiveId(id); setStatus((current) => ({ ...current, [id]: 'active' })); window.setTimeout(() => setStatus((current) => ({ ...current, [id]: 'idle' })), 1200) }, [])
-  const splitTerminal = useCallback((id: string, direction: SplitDirection) => { setActiveId(id); void createTerminal({ split: direction, activeOverride: id }) }, [createTerminal])
-  const updateRatio = useCallback((id: string, ratio: number) => { setLayout((current) => updateSplit(current, id, (node) => ({ ...node, ratio }))) }, [])
-  const collapseTerminal = useCallback((id: string) => { setLayout((current) => collapseContaining(current, id)) }, [])
-  const expandSplit = useCallback((id: string) => { setLayout((current) => updateSplit(current, id, (node) => ({ ...node, collapsed: undefined }))) }, [])
-  const renderNode = (node: LayoutNode): ReactNode => { if (maximizedId && !containsLeaf(node, maximizedId)) return null; if (node.kind === 'split') return <ResizableSplit node={node} renderNode={renderNode} onRatio={(ratio) => updateRatio(node.id, ratio)} onExpand={() => expandSplit(node.id)} />; const record = recordById.get(node.terminalId); if (!record) return null; return <div className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden p-1 ${activeId === record.id ? 'ring-1 ring-inset ring-primary/20' : ''}`} onMouseDown={() => markActive(record.id)}><TerminalPane id={record.id} cwd={record.cwd} name={record.name} clearSignal={clearSignals[record.id] ?? 0} onClose={() => closeTerminal(record.id)} onCommand={(command) => { const executable = command.trim().split(/\s+/)[0]; if (executable) setRecords((current) => current.map((item) => item.id === record.id && item.autoName ? { ...item, name: executable } : item)); markActive(record.id) }} onOutput={() => markActive(record.id)} onRename={() => renameTerminal(record.id)} onDuplicate={() => duplicateTerminal(record.id)} onRestart={() => { void restartTerminal(record.id) }} onKill={() => { void fetch(`/api/terminal/pty/${encodeURIComponent(record.id)}/input`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: '\u0003' }) }) }} onClear={() => setClearSignals((current) => ({ ...current, [record.id]: (current[record.id] ?? 0) + 1 }))} onSplitVertical={() => splitTerminal(record.id, 'vertical')} onSplitHorizontal={() => splitTerminal(record.id, 'horizontal')} onCollapse={() => collapseTerminal(record.id)} onMaximize={() => setMaximizedId((current) => current === record.id ? null : record.id)} isMaximized={maximizedId === record.id} status={status[record.id] === 'active' ? 'active' : 'idle'} /></div> }
-  if (!layout || records.length === 0) return null
-  return <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border bg-[#0a0b0d]"><div className="flex min-h-8 shrink-0 items-center gap-1 border-b border-border bg-surface-secondary px-1.5"><TerminalSquare className="ml-1 h-3.5 w-3.5 text-primary" /><div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-hidden">{visibleRecords.map((record) => <button key={record.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', record.id)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const from = event.dataTransfer.getData('text/plain'); if (!from || from === record.id) return; setOrder((current) => { const next = [...current]; const a = next.indexOf(from); const b = next.indexOf(record.id); if (a < 0 || b < 0) return current; next.splice(a, 1); next.splice(b, 0, from); return next }) }} onClick={() => setActiveId(record.id)} onDoubleClick={() => renameTerminal(record.id)} title={`${record.cwd || 'workspace'} · double-click to rename`} className={`flex shrink-0 items-center gap-1 rounded px-2 py-1 font-mono text-[9px] transition-colors ${activeId === record.id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-surface-elevated hover:text-foreground'}`}><span className={`h-1.5 w-1.5 rounded-full ${status[record.id] === 'active' ? 'animate-pulse bg-primary' : 'bg-muted-foreground/40'}`} />{record.name}</button>)}</div><div className="flex shrink-0 items-center gap-0.5"><div className="relative hidden items-center sm:flex"><Search className="pointer-events-none absolute left-1.5 h-3 w-3 text-muted-foreground/50" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="find" aria-label="Search terminals" className="w-20 rounded border border-border bg-surface-base py-1 pl-5 pr-1 font-mono text-[9px] text-foreground outline-none focus:border-primary/40" /></div>{closed.length > 0 && <button onClick={reopenLast} title="Reopen last closed terminal" className="rounded p-1 text-muted-foreground hover:bg-surface-elevated hover:text-primary"><RotateCcw className="h-3.5 w-3.5" /></button>}<button onClick={() => { void createTerminal() }} title="Create terminal" className="rounded p-1 text-primary hover:bg-primary/10"><Plus className="h-3.5 w-3.5" /></button>{maximizedId && <button onClick={() => setMaximizedId(null)} title="Restore terminal layout" className="rounded p-1 text-muted-foreground hover:bg-surface-elevated hover:text-primary"><Minimize2 className="h-3.5 w-3.5" /></button>}</div></div><div className="flex min-h-0 flex-1 overflow-hidden">{maximizedId ? renderNode({ kind: 'leaf', terminalId: maximizedId }) : renderNode(layout)}</div></div>
+
+  const closeTerminal = useCallback((id: string) => {
+    const record = recordById.get(id)
+    if (!record) return
+    setClosed((current) => [record, ...current.filter((item) => item.id !== id)].slice(0, 20))
+    setRecords((current) => current.filter((item) => item.id !== id))
+    setOrder((current) => current.filter((item) => item !== id))
+    setLayout((current) => removeLeaf(current, id))
+    setActiveId((current) => (current === id ? (order.find((item) => item !== id) ?? null) : current))
+    void fetch(`/api/terminal/pty/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})
+  }, [order, recordById])
+
+  const reopenLast = useCallback(() => {
+    const item = closed[0]
+    if (item) {
+      setClosed((current) => current.slice(1))
+      void createTerminal({ cwd: item.cwd, name: item.name, autoName: item.autoName })
+    }
+  }, [closed, createTerminal])
+
+  const restartTerminal = useCallback(async (id: string) => {
+    const record = recordById.get(id)
+    if (!record) return
+    try {
+      await fetch(`/api/terminal/pty/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const created = await createBackendSession(record.cwd)
+      setRecords((current) => current.map((item) => item.id === id ? { ...item, id: created.id, cwd: created.cwd, createdAt: Date.now() } : item))
+      setOrder((current) => current.map((item) => item === id ? created.id : item))
+      setActiveId((current) => current === id ? created.id : current)
+      setLayout((current) => replaceId(current, id, created.id))
+    } catch (error) {
+      console.error('[drive terminals] restart failed:', error)
+    }
+  }, [recordById])
+
+  const renameTerminal = useCallback((id: string) => {
+    const record = recordById.get(id)
+    if (!record) return
+    const name = window.prompt('Terminal name', record.name)?.trim()
+    if (name) setRecords((current) => current.map((item) => item.id === id ? { ...item, name, autoName: false } : item))
+  }, [recordById])
+
+  const duplicateTerminal = useCallback((id: string) => {
+    const record = recordById.get(id)
+    if (record) void createTerminal({ cwd: record.cwd, name: `${record.name} copy`, autoName: false })
+  }, [createTerminal, recordById])
+
+  const markActive = useCallback((id: string) => {
+    setActiveId(id)
+    setStatus((current) => ({ ...current, [id]: 'active' }))
+    window.setTimeout(() => setStatus((current) => ({ ...current, [id]: 'idle' })), 1200)
+  }, [])
+
+  const splitTerminal = useCallback((id: string, direction: SplitDirection) => {
+    setActiveId(id)
+    void createTerminal({ split: direction, activeOverride: id })
+  }, [createTerminal])
+
+  const updateRatio = useCallback((id: string, ratio: number) => {
+    setLayout((current) => updateSplit(current, id, (node) => ({ ...node, ratio })))
+  }, [])
+
+  const collapseTerminal = useCallback((id: string) => {
+    setLayout((current) => collapseContaining(current, id))
+  }, [])
+
+  const expandSplit = useCallback((id: string) => {
+    setLayout((current) => updateSplit(current, id, (node) => ({ ...node, collapsed: undefined })))
+  }, [])
+
+  // Keyboard shortcuts (only fire when the user is NOT typing in a field or an
+  // xterm helper textarea — i.e. focus is on the terminal grid itself).
+  // Refs are kept current via effects (React 19 lint: no ref writes during render).
+  const activeIdRef = useRef<string | null>(null)
+  const createRef = useRef(createTerminal)
+  const closeRef = useRef(closeTerminal)
+  const splitRef = useRef(splitTerminal)
+  const toggleMaxRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    activeIdRef.current = activeId
+    createRef.current = createTerminal
+    closeRef.current = closeTerminal
+    splitRef.current = splitTerminal
+    toggleMaxRef.current = () => {
+      const target = maximizedId ? null : activeIdRef.current
+      setMaximizedId(target)
+    }
+  }, [activeId, createTerminal, closeTerminal, splitTerminal, maximizedId])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable
+      const inXterm = target?.classList.contains('xterm-helper-textarea') || target?.classList.contains('xterm-helper')
+      if (!event.ctrlKey && !event.metaKey) return
+      if (!inXterm && inField) return // let terminal typing / search input behave normally
+      const key = event.key.toLowerCase()
+      const shift = event.shiftKey
+      const ctrl = event.ctrlKey || event.metaKey
+      if (!ctrl) return
+      if (shift && key === 't') {
+        event.preventDefault()
+        void createRef.current()
+      } else if (shift && key === 'w') {
+        event.preventDefault()
+        const id = activeIdRef.current
+        if (id) closeRef.current(id)
+      } else if (shift && key === '5') {
+        event.preventDefault()
+        const id = activeIdRef.current
+        if (id) splitRef.current(id, 'vertical')
+      } else if (shift && key === '9') {
+        event.preventDefault()
+        const id = activeIdRef.current
+        if (id) splitRef.current(id, 'horizontal')
+      } else if (shift && key === '`') {
+        event.preventDefault()
+        toggleMaxRef.current()
+      } else if (shift && key === 'f') {
+        event.preventDefault()
+        setSearch((current) => (current ? '' : ' '))
+        // focus the search input on next tick
+        requestAnimationFrame(() => {
+          const input = document.querySelector<HTMLInputElement>('[data-drive-terminal-search]')
+          input?.focus()
+        })
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  const renderNode = (node: LayoutNode): ReactNode => {
+    if (maximizedId && !containsLeaf(node, maximizedId)) return null
+    if (node.kind === 'split') {
+      return <ResizableSplit node={node} renderNode={renderNode} onRatio={(ratio) => updateRatio(node.id, ratio)} onExpand={() => expandSplit(node.id)} />
+    }
+    const record = recordById.get(node.terminalId)
+    if (!record) return null
+    return (
+      <div
+        className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden p-1 ${activeId === record.id ? 'ring-1 ring-inset ring-primary/20' : ''}`}
+        onMouseDown={() => markActive(record.id)}
+      >
+        <TerminalPane
+          id={record.id}
+          cwd={record.cwd}
+          name={record.name}
+          clearSignal={clearSignals[record.id] ?? 0}
+          onClose={() => closeTerminal(record.id)}
+          onCommand={(command) => {
+            const executable = command.trim().split(/\s+/)[0]
+            if (executable) setRecords((current) => current.map((item) => item.id === record.id && item.autoName ? { ...item, name: executable } : item))
+            markActive(record.id)
+          }}
+          onOutput={() => markActive(record.id)}
+          onRename={() => renameTerminal(record.id)}
+          onDuplicate={() => duplicateTerminal(record.id)}
+          onRestart={() => { void restartTerminal(record.id) }}
+          onKill={() => {
+            void fetch(`/api/terminal/pty/${encodeURIComponent(record.id)}/input`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: '\u0003' }),
+            })
+          }}
+          onClear={() => setClearSignals((current) => ({ ...current, [record.id]: (current[record.id] ?? 0) + 1 }))}
+          onSplitVertical={() => splitTerminal(record.id, 'vertical')}
+          onSplitHorizontal={() => splitTerminal(record.id, 'horizontal')}
+          onCollapse={() => collapseTerminal(record.id)}
+          onMaximize={() => setMaximizedId((current) => (current === record.id ? null : record.id))}
+          isMaximized={maximizedId === record.id}
+          status={status[record.id] === 'active' ? 'active' : 'idle'}
+        />
+      </div>
+    )
+  }
+
+  const activeRecord = activeId ? recordById.get(activeId) : undefined
+
+  // Empty state — a real Codespaces-style welcome instead of a blank panel.
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center border-l border-border bg-[#0a0b0d]">
+        <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground/50">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-primary/60" /> restoring workspace…
+        </div>
+      </div>
+    )
+  }
+
+  if (records.length === 0) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border bg-[#0a0b0d]">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6">
+          <TerminalSquare className="h-8 w-8 text-primary/30" />
+          <div className="text-center">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground/70">Command Workspace</p>
+            <p className="mt-1 max-w-[300px] text-center font-mono text-[10px] leading-relaxed text-muted-foreground/40">
+              Real PTY shells. Unlimited terminals, nested splits, drag-to-resize. Type <kbd className="rounded border border-border/50 bg-surface-secondary px-1 py-0.5 text-[8px]">Ctrl</kbd>+<kbd className="rounded border border-border/50 bg-surface-secondary px-1 py-0.5 text-[8px]">Shift</kbd>+<kbd className="rounded border border-border/50 bg-surface-secondary px-1 py-0.5 text-[8px]">T</kbd> to spawn one.
+            </p>
+          </div>
+          <button
+            onClick={() => { void createTerminal() }}
+            className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20"
+          >
+            <Plus className="h-3 w-3" /> New Terminal
+          </button>
+        </div>
+        <div className="flex h-6 flex-shrink-0 items-center gap-3 border-t border-border bg-surface-secondary px-3 font-mono text-[9px] text-muted-foreground/50">
+          <span>0 terminals</span>
+          <span className="ml-auto">Ctrl⇧T new · Ctrl⇧W close · Ctrl⇧5/9 split · Ctrl⇧` maximize</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border bg-[#0a0b0d]">
+      {/* Tab strip — Codespaces-style */}
+      <div className="flex min-h-8 shrink-0 items-center gap-1 border-b border-border bg-surface-secondary px-1.5">
+        <TerminalSquare className="ml-1 h-3.5 w-3.5 text-primary" />
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-hidden">
+          {visibleRecords.map((record) => (
+            <button
+              key={record.id}
+              draggable
+              onDragStart={(event) => event.dataTransfer.setData('text/plain', record.id)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault()
+                const from = event.dataTransfer.getData('text/plain')
+                if (!from || from === record.id) return
+                setOrder((current) => {
+                  const next = [...current]
+                  const a = next.indexOf(from)
+                  const b = next.indexOf(record.id)
+                  if (a < 0 || b < 0) return current
+                  next.splice(a, 1)
+                  next.splice(b, 0, from)
+                  return next
+                })
+              }}
+              onClick={() => setActiveId(record.id)}
+              onDoubleClick={() => renameTerminal(record.id)}
+              title={`${record.cwd || 'workspace'} · double-click to rename`}
+              className={`flex shrink-0 items-center gap-1 rounded px-2 py-1 font-mono text-[9px] transition-colors ${activeId === record.id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-surface-elevated hover:text-foreground'}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${status[record.id] === 'active' ? 'animate-pulse bg-primary' : 'bg-muted-foreground/40'}`} />
+              {record.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <div className="relative hidden items-center sm:flex">
+            <Search className="pointer-events-none absolute left-1.5 h-3 w-3 text-muted-foreground/50" />
+            <input
+              data-drive-terminal-search
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="find"
+              aria-label="Search terminals"
+              className="w-20 rounded border border-border bg-surface-base py-1 pl-5 pr-1 font-mono text-[9px] text-foreground outline-none focus:border-primary/40"
+            />
+          </div>
+          {closed.length > 0 && (
+            <button onClick={reopenLast} title="Reopen last closed terminal" className="rounded p-1 text-muted-foreground hover:bg-surface-elevated hover:text-primary">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button onClick={() => { void createTerminal() }} title="Create terminal" className="rounded p-1 text-primary hover:bg-primary/10">
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+          {maximizedId && (
+            <button onClick={() => setMaximizedId(null)} title="Restore terminal layout" className="rounded p-1 text-muted-foreground hover:bg-surface-elevated hover:text-primary">
+              <Minimize2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Pane area */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {maximizedId ? renderNode({ kind: 'leaf', terminalId: maximizedId }) : layout ? renderNode(layout) : null}
+      </div>
+
+      {/* Status bar */}
+      <div className="flex h-6 flex-shrink-0 items-center gap-3 border-t border-border bg-surface-secondary px-3 font-mono text-[9px] text-muted-foreground/60">
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary/70" />
+          {records.length} terminal{records.length === 1 ? '' : 's'}
+        </span>
+        {activeRecord && (
+          <>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="max-w-[240px] truncate text-foreground/80">{activeRecord.name}</span>
+            {activeRecord.cwd && <span className="max-w-[200px] truncate text-muted-foreground/40">{activeRecord.cwd.replace(/^\/workspaces\/[^/]+/, '.')}</span>}
+          </>
+        )}
+        <span className="ml-auto hidden sm:inline">Ctrl⇧T new · Ctrl⇧W close · Ctrl⇧5/9 split · Ctrl⇧` maximize · Ctrl⇧F find</span>
+      </div>
+    </div>
+  )
 })
 DriveTerminalWorkspace.displayName = 'DriveTerminalWorkspace'
