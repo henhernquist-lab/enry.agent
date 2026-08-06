@@ -167,6 +167,19 @@ function openSession(
   ws.on('open', () => {
     session.ready = true
     session.ws = ws
+    // Push the geometry we believe in as soon as the pipe exists. Two cases
+    // this covers, both of which left bash wrapping at 80 columns inside a
+    // wide pane: a resize that arrived while the WS was still connecting (see
+    // resizeSession), and a reattach — buildAttachUrl carries no cols/rows, so
+    // a rehydrated session would otherwise keep whatever size it was created
+    // with, forever.
+    if (session.cols > 0 && session.rows > 0) {
+      try {
+        ws.send(JSON.stringify({ type: 'resize', cols: session.cols, rows: session.rows }))
+      } catch (err) {
+        console.error('[sprite-manager] initial resize push failed:', err)
+      }
+    }
   })
 
   ws.on('message', (data, isBinary) => {
@@ -479,7 +492,13 @@ export async function resizeSession(id: string, cols: number, rows: number): Pro
   // Persist geometry so a rehydrating instance reattaches at the right size.
   void touchSession(id, c, r)
   const ws = session.ws
-  if (!ws || ws.readyState !== WebSocket.OPEN || !session.ready) return true
+  if (!ws || ws.readyState !== WebSocket.OPEN || !session.ready) {
+    // Was `return true`, which reported success while sending nothing — the
+    // client then never retried and the PTY stayed at its creation size. The
+    // new geometry is already on `session`, so the open handler above will
+    // flush it; returning false lets the client retry in the meantime.
+    return false
+  }
   try {
     ws.send(JSON.stringify({ type: 'resize', cols: c, rows: r }))
     return true

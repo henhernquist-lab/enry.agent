@@ -202,12 +202,32 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       // Backs off rather than giving up after one shot: two animation frames
       // (cheap, covers the common "not measured yet" case), then widening
       // timeouts for a slow font or a pane still settling.
+      // The PTY starts at 80x24 and only this call widens it, so a dropped
+      // resize is not cosmetic — it decides how bash wraps every line.
+      // Retries until the server confirms it landed.
+      const RESIZE_RETRY_MS = [0, 250, 750, 2000]
+      const pushResize = (cols: number, rows: number, attempt = 0): void => {
+        if (disposed) return
+        window.setTimeout(() => {
+          if (disposed) return
+          void sendResize(id, cols, rows).then((ok) => {
+            if (ok || disposed) return
+            if (attempt + 1 < RESIZE_RETRY_MS.length) {
+              pushResize(cols, rows, attempt + 1)
+            } else {
+              console.warn('[terminal-pane] PTY resize never confirmed', { id, cols, rows })
+              setInputError('Terminal size could not be sent to the shell — output may wrap short. Try reopening the terminal.')
+            }
+          })
+        }, RESIZE_RETRY_MS[attempt])
+      }
+
       const RETRY_DELAYS_MS = [50, 150, 400]
       let fitAttempt = 0
       const scheduleFit = () => {
         if (disposed) return
         if (tryFit()) {
-          sendResize(id, term.cols, term.rows)
+          pushResize(term.cols, term.rows)
           return
         }
         if (fitAttempt >= RETRY_DELAYS_MS.length + 2) {
@@ -283,8 +303,28 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
 
       // SSE: replay scrollback, then live output.
       const es = new EventSource(`/api/terminal/pty/${id}`, { withCredentials: true })
+
+      // Every (re)connect may be a different lambda that just reattached to
+      // the Sprite, so re-assert the geometry — nothing else does it, and a
+      // reattach carries no cols/rows. Also refits, since the pane has
+      // certainly been laid out by the time the stream is up.
+      es.onopen = () => {
+        if (disposed) return
+        fitAttempt = 0
+        scheduleFit()
+        pushResize(term.cols, term.rows)
+      }
+      // First byte of real output is the latest point at which layout is
+      // guaranteed settled; cheap one-shot correction.
+      let sawFirstOutput = false
       es.addEventListener('output', (e) => {
         onOutputRef.current?.()
+        if (!sawFirstOutput) {
+          sawFirstOutput = true
+          fitAttempt = 0
+          scheduleFit()
+          pushResize(term.cols, term.rows)
+        }
         try {
           const text = JSON.parse((e as MessageEvent).data) as string
           console.debug('[terminal chain] transport → xterm', { id, bytes: text.length })
@@ -317,17 +357,37 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
         // gets the same treatment instead of silently no-oping.
         fitAttempt = 0
         scheduleFit()
-        if (`${term.cols}x${term.rows}` !== before) sendResize(id, term.cols, term.rows)
+        if (`${term.cols}x${term.rows}` !== before) pushResize(term.cols, term.rows)
       }
 
       // Safety net, not the fix: if the grid is ever sitting on the default
       // while the pane is clearly bigger, something upstream failed — re-fit.
+      // Measures the rendered result rather than the grid numbers: the grid can
+      // be perfectly sized while the screen still under-fills its host, and the
+      // 80x24 signature alone missed that. Stops once it settles so an idle
+      // terminal isn't polling forever.
+      const underFilled = () => {
+        const screenEl = containerRef.current?.querySelector('.xterm-screen') as HTMLElement | null
+        const hostEl = containerRef.current
+        if (!screenEl || !hostEl) return false
+        const s = screenEl.getBoundingClientRect()
+        const h = hostEl.getBoundingClientRect()
+        if (h.width < 50) return false // pane collapsed or hidden — nothing to fix
+        return s.width < h.width * 0.9
+      }
+
+      let healChecks = 0
       const healTimer = setInterval(() => {
         if (disposed) return
-        if (gridLooksStuck()) {
+        if (gridLooksStuck() || underFilled()) {
+          healChecks = 0
           fitAttempt = 0
           scheduleFit()
+          pushResize(term.cols, term.rows)
+          return
         }
+        // Healthy for three consecutive checks — stand down.
+        if (++healChecks >= 3) clearInterval(healTimer)
       }, 2000)
       const ro = new ResizeObserver(() => {
         if (resizeTimer) clearTimeout(resizeTimer)
@@ -528,14 +588,27 @@ async function sendInput(id: string, data: string, sequence: number): Promise<st
   }
 }
 
-async function sendResize(id: string, cols: number, rows: number) {
+/**
+ * Push the rendered geometry to the remote PTY. Returns false if it didn't
+ * land, so the caller can retry.
+ *
+ * This used to swallow the result. The PTY is created at 80x24 before xterm
+ * exists, so this call is the ONLY thing that ever widens it — when it failed
+ * silently, bash kept wrapping at 80 columns inside a full-width pane and the
+ * output filled about a third of it. That looked like the terminal was small;
+ * it wasn't, the shell was.
+ */
+async function sendResize(id: string, cols: number, rows: number): Promise<boolean> {
   try {
-    await fetch(`/api/terminal/pty/${id}/resize`, {
+    const res = await fetch(`/api/terminal/pty/${id}/resize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cols, rows }),
     })
+    if (!res.ok) return false
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean }
+    return body.ok !== false
   } catch {
-    /* non-fatal */
+    return false
   }
 }
