@@ -40,9 +40,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
   // Cloud: WS may be down from a prior function cycle. Best-effort revive —
   // if it can't come back, return ok:false so the client knows the keystroke
   // was dropped (xterm.js local echo still shows it; the shell just didn't get it).
-  if (onCloud) ensureWsLive(id)
+  if (onCloud) await ensureWsLive(id)
 
-  const ok = onCloud ? writeSpriteInput(id, data) : writeLocalInput(id, data)
+  const ok = onCloud ? await writeSpriteInput(id, data) : writeLocalInput(id, data)
   console.debug('[terminal chain] input route → PTY manager', { id, bytes: data.length, ok, cloud: onCloud })
   return Response.json({ ok })
 }

@@ -40,6 +40,10 @@ interface TerminalPaneProps {
  */
 export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose, onClosePane, onCommand, onOutput, onRename, onDuplicate, onRestart, onKill, onClear, onSplitVertical, onSplitHorizontal, onMoveToPane, onCollapse, onMaximize, isMaximized = false, status = 'idle' }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  // Why the last keystroke didn't reach the shell. Rendered inline on the
+  // pane: a dropped keystroke is invisible otherwise, because xterm echoes
+  // locally whether or not the backend ever received it.
+  const [inputError, setInputError] = useState<string | null>(null)
   const termRef = useRef<XTermTerminal | null>(null)
   const fitRef = useRef<XTermFitAddon | null>(null)
   const closedRef = useRef(false)
@@ -157,14 +161,89 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       termRef.current = term
       fitRef.current = fit
 
-      try {
-        fit.fit()
-      } catch {
-        /* container not sized yet */
+      // ─── Sizing ────────────────────────────────────────────────────
+      // FitAddon.fit() is a silent no-op whenever proposeDimensions() can't
+      // measure a cell — which happens if the renderer hasn't measured the
+      // font yet. The old code was `try { fit.fit() } catch {}`, so that
+      // no-op left the grid on the constructor's 80x24 (~577x384px) inside a
+      // much larger pane, and swallowed every trace of why. That is the
+      // "autoshrink" bug.
+      //
+      // DEFAULT_COLS/ROWS below must match the Terminal() options above.
+      const DEFAULT_COLS = 80
+      const DEFAULT_ROWS = 24
+      // Below this the default grid is a plausible fit, so it isn't evidence
+      // of failure; above it, 80x24 means fit() never applied.
+      const SUSPICIOUS_WIDTH = 600
+
+      const gridLooksStuck = () => {
+        const el = containerRef.current
+        if (!el) return false
+        return (
+          term.cols === DEFAULT_COLS &&
+          term.rows === DEFAULT_ROWS &&
+          el.getBoundingClientRect().width > SUSPICIOUS_WIDTH
+        )
       }
 
-      // Send initial size so the server PTY matches the rendered geometry.
-      sendResize(id, term.cols, term.rows)
+      /** One fit attempt. True when the terminal ends up correctly sized. */
+      const tryFit = (): boolean => {
+        if (disposed || !containerRef.current) return true
+        try {
+          const proposed = fit.proposeDimensions()
+          if (!proposed || !proposed.cols || !proposed.rows) return false
+          fit.fit()
+          return !gridLooksStuck()
+        } catch {
+          return false
+        }
+      }
+
+      // Backs off rather than giving up after one shot: two animation frames
+      // (cheap, covers the common "not measured yet" case), then widening
+      // timeouts for a slow font or a pane still settling.
+      const RETRY_DELAYS_MS = [50, 150, 400]
+      let fitAttempt = 0
+      const scheduleFit = () => {
+        if (disposed) return
+        if (tryFit()) {
+          sendResize(id, term.cols, term.rows)
+          return
+        }
+        if (fitAttempt >= RETRY_DELAYS_MS.length + 2) {
+          // Never fail silently again — this is the diagnostic that was
+          // missing when the bug was first reported.
+          const rect = containerRef.current?.getBoundingClientRect()
+          console.warn(
+            '[terminal-pane] fit() never succeeded — terminal may be mis-sized.',
+            {
+              id,
+              container: rect ? `${Math.round(rect.width)}x${Math.round(rect.height)}` : 'gone',
+              proposed: (() => {
+                try {
+                  return fit.proposeDimensions()
+                } catch {
+                  return undefined
+                }
+              })(),
+              grid: `${term.cols}x${term.rows}`,
+            },
+          )
+          return
+        }
+        const attempt = fitAttempt++
+        if (attempt < 2) requestAnimationFrame(scheduleFit)
+        else setTimeout(scheduleFit, RETRY_DELAYS_MS[attempt - 2])
+      }
+      scheduleFit()
+
+      // IBM Plex Mono is an async webfont (next/font). If it lands after the
+      // first fit, cell metrics change and the grid is stale — refit then.
+      void document.fonts?.ready.then(() => {
+        if (disposed) return
+        fitAttempt = 0
+        scheduleFit()
+      })
 
       // Keystrokes → PTY. Also reconstruct the current command line from the
       // same stream so "Explain" knows the last-submitted command. Best-effort:
@@ -176,7 +255,12 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
         setExitCode(null) // new keystrokes mean a fresh command is in flight
         const sequence = ++inputSequenceRef.current
         console.debug('[terminal chain] xterm → input queue', { id, sequence, bytes: data.length })
-        inputQueueRef.current = inputQueueRef.current.then(() => sendInput(id, data, sequence)).catch(() => {})
+        inputQueueRef.current = inputQueueRef.current
+          .then(() => sendInput(id, data, sequence))
+          .then((reason) => {
+            if (!disposed) setInputError(reason)
+          })
+          .catch(() => {})
         for (const ch of data) {
           if (ch === '\r' || ch === '\n') {
             const cmd = lineBufferRef.current.trim()
@@ -228,15 +312,23 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       let resizeTimer: ReturnType<typeof setTimeout> | null = null
       const doFit = () => {
         if (disposed) return
-        try {
-          const before = `${term.cols}x${term.rows}`
-          fit.fit()
-          const after = `${term.cols}x${term.rows}`
-          if (before !== after) sendResize(id, term.cols, term.rows)
-        } catch {
-          /* not laid out yet */
-        }
+        const before = `${term.cols}x${term.rows}`
+        // Same retrying helper as mount, so a resize that arrives mid-layout
+        // gets the same treatment instead of silently no-oping.
+        fitAttempt = 0
+        scheduleFit()
+        if (`${term.cols}x${term.rows}` !== before) sendResize(id, term.cols, term.rows)
       }
+
+      // Safety net, not the fix: if the grid is ever sitting on the default
+      // while the pane is clearly bigger, something upstream failed — re-fit.
+      const healTimer = setInterval(() => {
+        if (disposed) return
+        if (gridLooksStuck()) {
+          fitAttempt = 0
+          scheduleFit()
+        }
+      }, 2000)
       const ro = new ResizeObserver(() => {
         if (resizeTimer) clearTimeout(resizeTimer)
         resizeTimer = setTimeout(doFit, 60)
@@ -249,6 +341,7 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       containerRef.current.addEventListener('mousedown', onClick)
 
       cleanup = () => {
+        clearInterval(healTimer)
         onDataDisp.dispose()
         containerRef.current?.removeEventListener('mousedown', onClick)
         ro.disconnect()
@@ -332,6 +425,23 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
           </button>
         </div>
       </div>
+      {inputError && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-start gap-1.5 border-b border-destructive/30 bg-destructive/10 px-2.5 py-1 font-mono text-[10px] leading-relaxed text-destructive"
+        >
+          <span className="mt-[1px] shrink-0" aria-hidden="true">&#9888;</span>
+          <span className="min-w-0 flex-1">{inputError}</span>
+          <button
+            type="button"
+            onClick={() => setInputError(null)}
+            aria-label="Dismiss terminal input error"
+            className="shrink-0 text-destructive/60 transition-colors hover:text-destructive"
+          >
+            &times;
+          </button>
+        </div>
+      )}
       <div ref={containerRef} className="min-h-0 flex-1 px-1 py-1" />
 
       {/* On-demand, Feynman-style explanation of the last command. Inline and
@@ -372,7 +482,16 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
 
 // ─── Helpers ────────────────────────────────────────────────
 
-async function sendInput(id: string, data: string, sequence: number) {
+/**
+ * Send a keystroke, and report why it failed if it did.
+ *
+ * This used to await the fetch and throw the response away. xterm echoes
+ * locally, so a dropped keystroke still appeared on screen and the terminal
+ * looked alive while nothing reached the shell — which is precisely why "can't
+ * type" was so hard to pin down. Returns null on success, else a message the
+ * pane shows inline.
+ */
+async function sendInput(id: string, data: string, sequence: number): Promise<string | null> {
   console.debug('[terminal chain] input queue → transport', { id, sequence, bytes: data.length })
   try {
     const response = await fetch(`/api/terminal/pty/${id}/input`, {
@@ -380,10 +499,32 @@ async function sendInput(id: string, data: string, sequence: number) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data }),
     })
-    const result = await response.json().catch(() => ({})) as { ok?: boolean }
+    const result = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string }
     console.debug('[terminal chain] transport → PTY stdin', { id, sequence, status: response.status, ok: result.ok === true })
+
+    if (response.ok && result.ok === true) return null
+
+    // Each failure class gets its own message — they have different fixes and
+    // used to be indistinguishable from the UI.
+    if (response.status === 503 && /OWNER_EMAIL/i.test(result.error ?? '')) {
+      return 'Cloud terminals are not configured — OWNER_EMAIL is not set on the deployment.'
+    }
+    if (response.status === 503) {
+      return result.error || 'Terminal backend unavailable (503).'
+    }
+    if (response.status === 403) {
+      return 'This account is not the terminal owner — cloud terminals are owner-only.'
+    }
+    if (response.status === 401) {
+      return 'Session expired — reload and sign in again.'
+    }
+    if (response.ok && result.ok === false) {
+      return 'Input dropped — the terminal session was lost. Restart the terminal.'
+    }
+    return `Input failed (HTTP ${response.status}).`
   } catch (error) {
     console.error('[terminal chain] transport failed', { id, sequence, error: error instanceof Error ? error.message : String(error) })
+    return 'Terminal backend unreachable — check your connection.'
   }
 }
 
