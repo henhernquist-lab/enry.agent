@@ -37,8 +37,8 @@ export async function POST(req: Request, ctx: RouteCtx) {
     return Response.json({ error: 'Invalid body' }, { status: 400 })
   }
 
-  if (onCloud) ensureWsLive(id)
+  if (onCloud) await ensureWsLive(id)
 
-  const ok = onCloud ? resizeSpriteSession(id, cols, rows) : resizeLocalSession(id, cols, rows)
+  const ok = onCloud ? await resizeSpriteSession(id, cols, rows) : resizeLocalSession(id, cols, rows)
   return Response.json({ ok })
 }

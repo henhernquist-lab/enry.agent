@@ -6,7 +6,7 @@ import {
   killSession as killLocalSession,
 } from '@/lib/terminal/pty-manager'
 import {
-  getSession as getSpriteSession,
+  resolveSession as resolveSpriteSession,
   getScrollback as getSpriteScrollback,
   subscribe as subscribeSprite,
   killSession as killSpriteSession,
@@ -47,7 +47,10 @@ export async function GET(req: Request, ctx: RouteCtx) {
     }
   }
 
-  const session = onCloud ? getSpriteSession(id) : getLocalSession(id)
+  // Cloud: rehydrate from the durable store if this lambda has never seen the
+  // session, so an SSE reconnect that lands on a cold instance reattaches
+  // instead of 404ing the terminal.
+  const session = onCloud ? await resolveSpriteSession(id) : getLocalSession(id)
   if (!session) {
     return new Response('Not found', { status: 404 })
   }
@@ -64,7 +67,7 @@ export async function GET(req: Request, ctx: RouteCtx) {
   // SSE path below will emit the exit event from scrollback's last frame and
   // the live subscribe won't add anything new. That's the correct behavior
   // (matches Codespace where an exited PTY replays its last output then EOFs).
-  if (onCloud) ensureWsLive(id)
+  if (onCloud) await ensureWsLive(id)
 
   const getScrollback = onCloud ? getSpriteScrollback : getLocalScrollback
   const subscribe = onCloud ? subscribeSprite : subscribeLocal
@@ -150,6 +153,6 @@ export async function DELETE(_req: Request, ctx: RouteCtx) {
     }
   }
 
-  const ok = onCloud ? killSpriteSession(id) : killLocalSession(id)
+  const ok = onCloud ? await killSpriteSession(id) : killLocalSession(id)
   return Response.json({ ok })
 }

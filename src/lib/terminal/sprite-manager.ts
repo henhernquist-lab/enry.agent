@@ -1,5 +1,13 @@
 import { randomUUID } from 'crypto'
 import WebSocket from 'ws'
+import {
+  persistSession,
+  loadSession,
+  updateSpriteSessionId,
+  touchSession,
+  markExited,
+  deleteSession as deleteStoredSession,
+} from './session-store'
 
 // Cloud-terminal session manager — the deployed counterpart to pty-manager.ts.
 //
@@ -172,8 +180,12 @@ function openSession(
       }
       if (msg.type === 'session_info' && msg.session_id) {
         session.spriteSessionId = msg.session_id
+        // Without this persisted, a rehydrating instance can't reattach and
+        // would spawn a second shell — losing scrollback and running jobs.
+        void updateSpriteSessionId(session.id, msg.session_id)
       } else if (msg.type === 'exit') {
         session.exited = true
+        void markExited(session.id)
         const code = typeof msg.exit_code === 'number' ? msg.exit_code : 0
         for (const fn of Array.from(session.exitListeners)) {
           try {
@@ -319,11 +331,100 @@ export async function createSession(
   })
 
   sessions.set(id, session)
+  // Durable index, so a later invocation on a different lambda can find and
+  // reattach to this session instead of dropping the user's keystrokes.
+  await persistSession({ id, spriteName, spriteSessionId: session.spriteSessionId, cols, rows, exited: false })
   return session
 }
 
 export function getSession(id: string): SpriteSession | undefined {
   return sessions.get(id)
+}
+
+/** How long to wait for a rehydrated WS to finish its handshake. */
+const REATTACH_TIMEOUT_MS = 15_000
+
+/**
+ * Find a session on THIS instance, rebuilding it from the durable store if
+ * this lambda has never seen it.
+ *
+ * The whole point: `sessions` is per-process, so on Vercel the invocation
+ * carrying a keystroke is frequently not the one that created the terminal.
+ * Before this existed, that lookup simply missed and the keystroke was
+ * dropped. Now a miss rehydrates from terminal_sessions and reattaches to the
+ * live Sprites-side exec session, which replays its own scrollback — so the
+ * shell, its history and its running processes all survive the hop.
+ *
+ * The in-process Map stays in front as a warm-instance cache: a hit here costs
+ * nothing, and only a cold instance pays for the round trip.
+ */
+export async function resolveSession(id: string): Promise<SpriteSession | undefined> {
+  const warm = sessions.get(id)
+  if (warm) return warm
+
+  const stored = await loadSession(id)
+  if (!stored || stored.exited) return undefined
+
+  const { token } = envConfig()
+  if (!token) return undefined
+
+  const session: SpriteSession = {
+    id: stored.id,
+    spriteName: stored.spriteName,
+    spriteSessionId: stored.spriteSessionId,
+    cols: stored.cols,
+    rows: stored.rows,
+    createdAt: Date.now(),
+    lastWriteAt: Date.now(),
+    // Scrollback lives on the Sprite; reattaching replays it, so starting
+    // empty here loses nothing.
+    scrollback: [],
+    scrollbackBytes: 0,
+    dataListeners: new Set(),
+    exitListeners: new Set(),
+    exited: false,
+    ws: null,
+    ready: false,
+  }
+
+  let ws: WebSocket
+  try {
+    ws = openSession(session, token, stored.spriteName, stored.spriteSessionId ?? undefined)
+  } catch (err) {
+    console.error('[sprite-manager] rehydrate: openSession threw:', err)
+    return undefined
+  }
+  session.ws = ws
+
+  const opened = await new Promise<boolean>((resolve) => {
+    const done = (ok: boolean) => {
+      clearTimeout(timer)
+      ws.off('open', onOpen)
+      ws.off('error', onError)
+      resolve(ok)
+    }
+    const onOpen = () => done(true)
+    const onError = (err: Error) => {
+      console.error('[sprite-manager] rehydrate: WS error:', err.message)
+      done(false)
+    }
+    const timer = setTimeout(() => done(false), REATTACH_TIMEOUT_MS)
+    ws.once('open', onOpen)
+    ws.once('error', onError)
+  })
+
+  if (!opened) {
+    try {
+      ws.close()
+    } catch {
+      /* ignore */
+    }
+    return undefined
+  }
+
+  sessions.set(id, session)
+  ensureReaper()
+  return session
 }
 
 /**
@@ -332,8 +433,8 @@ export function getSession(id: string): SpriteSession | undefined {
  * when a resync arrives and the previous WS has been torn down by Vercel's
  * function cycle. Idempotent — no-ops if a WS is already live.
  */
-export function ensureWsLive(id: string): boolean {
-  const session = sessions.get(id)
+export async function ensureWsLive(id: string): Promise<boolean> {
+  const session = await resolveSession(id)
   if (!session || session.exited) return false
   if (session.ws && session.ws.readyState === WebSocket.OPEN) return true
 
@@ -350,8 +451,8 @@ export function ensureWsLive(id: string): boolean {
   }
 }
 
-export function writeInput(id: string, data: string): boolean {
-  const session = sessions.get(id)
+export async function writeInput(id: string, data: string): Promise<boolean> {
+  const session = await resolveSession(id)
   if (!session || session.exited) return false
   const ws = session.ws
   if (!ws || ws.readyState !== WebSocket.OPEN || !session.ready) return false
@@ -367,14 +468,16 @@ export function writeInput(id: string, data: string): boolean {
   }
 }
 
-export function resizeSession(id: string, cols: number, rows: number): boolean {
-  const session = sessions.get(id)
+export async function resizeSession(id: string, cols: number, rows: number): Promise<boolean> {
+  const session = await resolveSession(id)
   if (!session || session.exited) return false
   const c = Math.max(1, Math.min(400, Math.floor(cols)))
   const r = Math.max(1, Math.min(200, Math.floor(rows)))
   if (c === session.cols && r === session.rows) return true
   session.cols = c
   session.rows = r
+  // Persist geometry so a rehydrating instance reattaches at the right size.
+  void touchSession(id, c, r)
   const ws = session.ws
   if (!ws || ws.readyState !== WebSocket.OPEN || !session.ready) return true
   try {
@@ -386,9 +489,14 @@ export function resizeSession(id: string, cols: number, rows: number): boolean {
   }
 }
 
-export function killSession(id: string): boolean {
-  const session = sessions.get(id)
-  if (!session) return false
+export async function killSession(id: string): Promise<boolean> {
+  const session = await resolveSession(id)
+  if (!session) {
+    // Not resolvable (already gone, or the store row outlived the Sprite) —
+    // still drop the row so it can't be rehydrated forever.
+    void deleteStoredSession(id)
+    return false
+  }
 
   // Best-effort kill of the Sprites-side exec session. If the bash process is
   // already dead or the WS is down, this is a no-op — don't propagate errors.
@@ -411,6 +519,7 @@ export function killSession(id: string): boolean {
     /* ignore */
   }
   sessions.delete(id)
+  void deleteStoredSession(id)
   return true
 }
 
