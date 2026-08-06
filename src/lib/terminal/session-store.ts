@@ -36,7 +36,7 @@ function logIfReal(scope: string, error: { message?: string } | null): void {
 
 export async function persistSession(session: StoredSession): Promise<void> {
   try {
-    const { error } = await supabase.from('terminal_sessions').upsert(
+    const { error } = await supabase.from('cloud_terminal_sessions').upsert(
       {
         id: session.id,
         sprite_name: session.spriteName,
@@ -57,7 +57,7 @@ export async function persistSession(session: StoredSession): Promise<void> {
 export async function loadSession(id: string): Promise<StoredSession | null> {
   try {
     const { data, error } = await supabase
-      .from('terminal_sessions')
+      .from('cloud_terminal_sessions')
       .select('id, sprite_name, sprite_session_id, cols, rows, exited')
       .eq('id', id)
       .maybeSingle()
@@ -89,7 +89,7 @@ export async function loadSession(id: string): Promise<StoredSession | null> {
 export async function updateSpriteSessionId(id: string, spriteSessionId: string): Promise<void> {
   try {
     const { error } = await supabase
-      .from('terminal_sessions')
+      .from('cloud_terminal_sessions')
       .update({ sprite_session_id: spriteSessionId, last_active_at: new Date().toISOString() })
       .eq('id', id)
     logIfReal('updateSpriteSessionId', error)
@@ -103,7 +103,7 @@ export async function touchSession(id: string, cols?: number, rows?: number): Pr
     const patch: Record<string, unknown> = { last_active_at: new Date().toISOString() }
     if (typeof cols === 'number') patch.cols = cols
     if (typeof rows === 'number') patch.rows = rows
-    const { error } = await supabase.from('terminal_sessions').update(patch).eq('id', id)
+    const { error } = await supabase.from('cloud_terminal_sessions').update(patch).eq('id', id)
     logIfReal('touch', error)
   } catch (e) {
     console.error('[session-store] touch threw:', e)
@@ -112,7 +112,7 @@ export async function touchSession(id: string, cols?: number, rows?: number): Pr
 
 export async function markExited(id: string): Promise<void> {
   try {
-    const { error } = await supabase.from('terminal_sessions').update({ exited: true }).eq('id', id)
+    const { error } = await supabase.from('cloud_terminal_sessions').update({ exited: true }).eq('id', id)
     logIfReal('markExited', error)
   } catch (e) {
     console.error('[session-store] markExited threw:', e)
@@ -121,7 +121,7 @@ export async function markExited(id: string): Promise<void> {
 
 export async function deleteSession(id: string): Promise<void> {
   try {
-    const { error } = await supabase.from('terminal_sessions').delete().eq('id', id)
+    const { error } = await supabase.from('cloud_terminal_sessions').delete().eq('id', id)
     logIfReal('delete', error)
   } catch (e) {
     console.error('[session-store] delete threw:', e)

@@ -12,7 +12,7 @@
 -- WSS /sprites/{name}/exec/{sprite_session_id} replays server-side scrollback,
 -- so no output needs to be persisted.
 
-create table if not exists public.terminal_sessions (
+create table if not exists public.cloud_terminal_sessions (
   -- The opaque id handed to the browser and used in the route URLs.
   id                 text primary key,
 
@@ -31,10 +31,10 @@ create table if not exists public.terminal_sessions (
 );
 
 -- The reaper sweeps by age.
-create index if not exists idx_terminal_sessions_active
-  on public.terminal_sessions(last_active_at desc);
+create index if not exists idx_cloud_terminal_sessions_active
+  on public.cloud_terminal_sessions(last_active_at desc);
 
-alter table public.terminal_sessions enable row level security;
+alter table public.cloud_terminal_sessions enable row level security;
 
 -- Written only by the server via the service-role client, which bypasses RLS.
 -- No anon policy: a browser must never enumerate or mutate session rows, since
