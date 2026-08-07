@@ -1,7 +1,7 @@
 'use client'
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { GripVertical, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search, TerminalSquare, Trash2, X } from 'lucide-react'
+import { GripVertical, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search, TerminalSquare, Trash2, X } from 'lucide-react'
 import { TerminalPane } from './terminal-pane'
 
 export interface DriveTerminalWorkspaceHandle {
@@ -295,6 +295,7 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
   const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null)
   const [clearSignals, setClearSignals] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<Record<string, 'idle' | 'active'>>({})
+  const [fullscreen, setFullscreen] = useState(false)
 
   const recordById = useMemo(() => new Map(records.map((record) => [record.id, record])), [records])
   const focusedPane = useMemo(() => findPane(layout, focusedPaneId ?? '') ?? firstPane(layout), [focusedPaneId, layout])
@@ -526,18 +527,72 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
   const collapsePane = useCallback((paneId: string) => setLayout((current) => collapseContaining(current, paneId)), [])
   const expandSplit = useCallback((splitId: string) => setLayout((current) => restoreSplit(current, splitId)), [])
 
+  // Pane-maximize only reclaims space from sibling panes — the workspace itself
+  // is still boxed in by the Forge header and the 240px sidebar, which is what
+  // "fullscreen doesn't work" means. This escapes both.
+  //
+  // Two mechanisms on purpose: requestFullscreen() for the real thing, plus a
+  // fixed-inset overlay because the Fullscreen API is refused outright in
+  // sandboxed iframes and some PWA shells, and a refused promise would
+  // otherwise leave the button doing nothing at all. The overlay alone already
+  // fills the viewport, so the fallback is not a degraded mode — it just keeps
+  // the browser chrome.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const nativeFullscreenRef = useRef(false)
+
+  const toggleFullscreen = useCallback(() => {
+    const element = rootRef.current
+    if (!element) return
+    if (fullscreen) {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+      setFullscreen(false)
+    } else {
+      // Must stay inside the click's user-gesture window or the request is denied.
+      void element.requestFullscreen?.().catch(() => {})
+      setFullscreen(true)
+    }
+  }, [fullscreen])
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const isNative = document.fullscreenElement === rootRef.current
+      // Esc leaves native fullscreen without routing through the toggle. Only
+      // react to *our* element leaving it, or an unrelated fullscreen exit
+      // elsewhere on the page would tear down the fallback overlay.
+      if (nativeFullscreenRef.current && !isNative) setFullscreen(false)
+      nativeFullscreenRef.current = isNative
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
+  // Esc out of the fallback overlay. Native fullscreen already handles Esc
+  // itself and never reaches here.
+  useEffect(() => {
+    if (!fullscreen) return
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || document.fullscreenElement) return
+      event.preventDefault()
+      setFullscreen(false)
+    }
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [fullscreen])
+
   const activeIdRef = useRef<string | null>(null)
   const focusedPaneRef = useRef<string | null>(null)
   const createRef = useRef(createTerminal)
   const closeRef = useRef(closeTerminal)
   const splitRef = useRef(splitTerminal)
+  const fullscreenToggleRef = useRef(toggleFullscreen)
   useEffect(() => {
     activeIdRef.current = activeTerminalId
     focusedPaneRef.current = focusedPane?.id ?? null
     createRef.current = createTerminal
     closeRef.current = closeTerminal
     splitRef.current = splitTerminal
-  }, [activeTerminalId, closeTerminal, createTerminal, focusedPane?.id, splitTerminal])
+    fullscreenToggleRef.current = toggleFullscreen
+  }, [activeTerminalId, closeTerminal, createTerminal, focusedPane?.id, splitTerminal, toggleFullscreen])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -553,6 +608,7 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
       else if (key === 'w' && activeIdRef.current) closeRef.current(activeIdRef.current)
       else if (key === '5' && focusedPaneRef.current) splitRef.current(focusedPaneRef.current, 'vertical')
       else if (key === '9' && focusedPaneRef.current) splitRef.current(focusedPaneRef.current, 'horizontal')
+      else if (key === 'enter') fullscreenToggleRef.current()
       else if (key === 'f') {
         setSearch((current) => current.trim() ? '' : ' ')
         requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-drive-terminal-search]')?.focus())
@@ -589,7 +645,7 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
           <button onClick={() => splitTerminal(pane.id, 'vertical')} title="Split pane vertically" className="rounded px-1 font-mono text-[9px] text-muted-foreground hover:bg-primary/10 hover:text-primary">V</button>
           <button onClick={() => splitTerminal(pane.id, 'horizontal')} title="Split pane horizontally" className="rounded px-1 font-mono text-[9px] text-muted-foreground hover:bg-primary/10 hover:text-primary">H</button>
           <button onClick={() => moveTerminalToNewPane(active, 'vertical')} title="Move active terminal to a new pane" className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"><PanelLeftOpen className="h-3 w-3" /></button>
-          <button onClick={() => setMaximizedPaneId((current) => current === pane.id ? null : pane.id)} title="Maximize pane" className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"><Minimize2 className="h-3 w-3" /></button>
+          <button onClick={() => setMaximizedPaneId((current) => current === pane.id ? null : pane.id)} title={maximizedPaneId === pane.id ? 'Restore the other panes' : 'Maximize pane within the workspace'} className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary">{maximizedPaneId === pane.id ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}</button>
           <button onClick={() => closePane(pane.id)} title="Close pane; move its tabs to a neighboring pane" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><PanelLeftClose className="h-3 w-3" /></button>
         </div>
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -648,13 +704,19 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
 
   const maximizedPane = maximizedPaneId ? findPane(layout, maximizedPaneId) : null
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border bg-[#0a0b0d]">
+    <div
+      ref={rootRef}
+      className={`flex min-h-0 min-w-0 flex-col bg-[#0a0b0d] ${
+        fullscreen ? 'fixed inset-0 z-50 h-screen w-screen' : 'flex-1 border-l border-border'
+      }`}
+    >
       <div className="flex min-h-8 shrink-0 items-center gap-1 border-b border-border bg-surface-secondary px-1.5">
         <TerminalSquare className="ml-1 h-3.5 w-3.5 text-primary" />
         <span className="mr-2 font-mono text-[9px] uppercase tracking-wider text-muted-foreground/60">Command Workspace</span>
         <div className="relative hidden items-center sm:flex"><Search className="pointer-events-none absolute left-1.5 h-3 w-3 text-muted-foreground/50" /><input data-drive-terminal-search value={search.trim() === ' ' ? '' : search} onChange={(event) => setSearch(event.target.value)} placeholder="find tabs" aria-label="Search terminal tabs" className="w-24 rounded border border-border bg-surface-base py-1 pl-5 pr-1 font-mono text-[9px] text-foreground outline-none focus:border-primary/40" /></div>
         <div className="ml-auto flex items-center gap-0.5">
           {closed.length > 0 && <button onClick={reopenLast} title="Reopen last closed terminal" className="rounded p-1 text-muted-foreground hover:bg-surface-elevated hover:text-primary"><RotateCcw className="h-3.5 w-3.5" /></button>}
+          <button onClick={toggleFullscreen} title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen workspace — escapes the header and sidebar (Ctrl⇧Enter)'} className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary">{fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}</button>
           <button onClick={resetLayout} title="Reset Layout: keep one terminal fullscreen" className="flex items-center gap-1 rounded px-1.5 py-1 font-mono text-[9px] text-muted-foreground hover:bg-surface-elevated hover:text-primary"><RotateCcw className="h-3 w-3" /> Reset Layout</button>
           <button onClick={resetWorkspace} title="Reset Workspace: close all terminals and panes" className="flex items-center gap-1 rounded px-1.5 py-1 font-mono text-[9px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3 w-3" /> Reset Workspace</button>
           <button onClick={() => { void createTerminal() }} title="New terminal tab in the focused pane" className="rounded p-1 text-primary hover:bg-primary/10"><Plus className="h-3.5 w-3.5" /></button>
@@ -663,7 +725,7 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {maximizedPane ? renderPane(maximizedPane) : layout ? renderNode(layout) : null}
       </div>
-      <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-surface-secondary px-3 font-mono text-[9px] text-muted-foreground/60"><span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-primary/70" />{records.length} terminal{records.length === 1 ? '' : 's'}</span>{focusedPane && <><span className="text-muted-foreground/40">·</span><span className="max-w-[240px] truncate text-foreground/80">{recordById.get(focusedPane.activeId)?.name ?? 'pane'}</span></>}<span className="ml-auto hidden sm:inline">Ctrl⇧T tab · Ctrl⇧W close terminal · Ctrl⇧5/9 split · Ctrl⇧F find</span></div>
+      <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-surface-secondary px-3 font-mono text-[9px] text-muted-foreground/60"><span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-primary/70" />{records.length} terminal{records.length === 1 ? '' : 's'}</span>{focusedPane && <><span className="text-muted-foreground/40">·</span><span className="max-w-[240px] truncate text-foreground/80">{recordById.get(focusedPane.activeId)?.name ?? 'pane'}</span></>}<span className="ml-auto hidden sm:inline">Ctrl⇧T tab · Ctrl⇧W close terminal · Ctrl⇧5/9 split · Ctrl⇧F find · Ctrl⇧⏎ fullscreen</span></div>
     </div>
   )
 })
