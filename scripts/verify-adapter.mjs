@@ -44,9 +44,11 @@ const TIMEOUT_MS = Number(process.env.TIMEOUT_MS ?? 120_000)
 const ok = (m) => console.log(`  ✓ ${m}`)
 const info = (m) => console.log(`    ${m}`)
 
+// cli_command may carry flags (e.g. "gemini --skip-trust"), so probe the
+// executable only — `command -v` would treat the flags as more names to look up.
 const onPath = (cli) => {
   try {
-    execSync(`command -v ${cli}`, { stdio: 'ignore' })
+    execSync(`command -v ${cli.trim().split(/\s+/)[0]}`, { stdio: 'ignore' })
     return true
   } catch {
     return false

@@ -175,7 +175,10 @@ insert into public.agents
    '["multi-file-refactor","architecture","test-writing","long-context"]'::jsonb, 3, 4, 92, 200000, true),
   ('Codex CLI', 2, 'codex',
    '["algorithmic","single-file","competitive-programming"]'::jsonb, 4, 3, 85, 128000, true),
-  ('Gemini CLI', 2, 'gemini',
+  -- --skip-trust: headless runs abort with exit 55 ("not running in a trusted
+  -- directory") unless trust is granted interactively, which no unattended
+  -- dispatch can do. See 20260807020000_gemini_skip_trust.sql.
+  ('Gemini CLI', 2, 'gemini --skip-trust',
    '["large-context","research","documentation","multimodal"]'::jsonb, 4, 2, 84, 1000000, true),
   ('OpenHands', 2, 'openhands',
    '["autonomous-loops","environment-setup","debugging"]'::jsonb, 2, 2, 78, 128000, true),
