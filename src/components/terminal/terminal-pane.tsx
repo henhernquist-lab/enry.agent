@@ -431,7 +431,12 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-[#080808]">
+    // flex-1 is load-bearing: the parent in drive-terminal-workspace is a row
+    // flex container, so without it this is `flex: 0 1 auto` and sizes to the
+    // toolbar's max-content — roughly a quarter of a wide workspace, with the
+    // rest left black. min-w-0 lets it shrink below that content width when a
+    // split gets narrow, instead of overflowing its share.
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-[#080808]">
       <div className="flex items-center justify-between border-b border-border bg-surface-secondary px-2.5 py-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className={`h-2 w-2 flex-shrink-0 rounded-full ${status === 'active' ? 'animate-pulse bg-primary' : 'bg-muted-foreground/50'}`} />

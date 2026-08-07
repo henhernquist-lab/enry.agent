@@ -648,7 +648,7 @@ export const DriveTerminalWorkspace = forwardRef<DriveTerminalWorkspaceHandle, {
           <button onClick={() => setMaximizedPaneId((current) => current === pane.id ? null : pane.id)} title={maximizedPaneId === pane.id ? 'Restore the other panes' : 'Maximize pane within the workspace'} className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary">{maximizedPaneId === pane.id ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}</button>
           <button onClick={() => closePane(pane.id)} title="Close pane; move its tabs to a neighboring pane" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><PanelLeftClose className="h-3 w-3" /></button>
         </div>
-        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <TerminalPane
             id={activeRecord.id}
             cwd={activeRecord.cwd}
