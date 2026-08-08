@@ -519,3 +519,69 @@ export async function getAgentByName(name: string): Promise<Agent | null> {
   if (error) fail('getAgentByName', error)
   return data ? toAgent(data as AgentRow) : null
 }
+
+// ── CLI detection ─────────────────────────────────────────────────────
+// Kept off listAgents' SELECT on purpose: these columns arrive in a later
+// migration, and widening that SELECT would break the adapter's agent lookup
+// on any database where it hasn't been applied yet. Reading them is opt-in.
+
+export type DetectionHost = 'local' | 'sprite'
+
+export interface AgentDetectionRecord {
+  cliPath: string | null
+  cliVersion: string | null
+  detectedAt: string | null
+  detectedHost: DetectionHost | null
+}
+
+const DETECTION_MIGRATION = 'supabase/migrations/20260807040000_agent_cli_detection.sql'
+
+/** "column ... does not exist" also matches isTableMissing, so check first. */
+function failDetection(scope: string, error: { message?: string; code?: string } | null): never {
+  if (/column .* does not exist/i.test(error?.message ?? '') || isTableMissing(error)) {
+    throw new MissionStoreError(`${scope}: detection columns are missing — apply ${DETECTION_MIGRATION}.`, error)
+  }
+  throw new MissionStoreError(`${scope}: ${error?.message ?? 'unknown database error'}`, error)
+}
+
+/**
+ * Persist one host's detection sweep.
+ *
+ * A null path means "checked on that host and absent" — deliberately distinct
+ * from detected_at being null, which means never checked at all.
+ */
+export async function recordDetection(
+  host: DetectionHost,
+  results: { agentId: string; path: string | null; version: string | null }[],
+): Promise<number> {
+  const detectedAt = new Date().toISOString()
+  for (const r of results) {
+    const { error } = await supabase
+      .from('agents')
+      .update({ cli_path: r.path, cli_version: r.version, detected_at: detectedAt, detected_host: host })
+      .eq('id', r.agentId)
+    if (error) failDetection('recordDetection', error)
+  }
+  return results.length
+}
+
+export async function getDetections(): Promise<Map<string, AgentDetectionRecord>> {
+  const { data, error } = await supabase
+    .from('agents')
+    .select('id, cli_path, cli_version, detected_at, detected_host')
+  if (error) failDetection('getDetections', error)
+
+  const rows = (data ?? []) as {
+    id: string
+    cli_path: string | null
+    cli_version: string | null
+    detected_at: string | null
+    detected_host: DetectionHost | null
+  }[]
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      { cliPath: r.cli_path, cliVersion: r.cli_version, detectedAt: r.detected_at, detectedHost: r.detected_host },
+    ]),
+  )
+}
