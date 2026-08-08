@@ -205,12 +205,17 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       // The PTY starts at 80x24 and only this call widens it, so a dropped
       // resize is not cosmetic — it decides how bash wraps every line.
       // Retries until the server confirms it landed.
+      // Geometry the server has actually acknowledged, as "COLSxROWS". Distinct
+      // from term.cols/term.rows, which is only what the browser believes.
+      let confirmedGeometry = ''
+
       const RESIZE_RETRY_MS = [0, 250, 750, 2000]
       const pushResize = (cols: number, rows: number, attempt = 0): void => {
         if (disposed) return
         window.setTimeout(() => {
           if (disposed) return
           void sendResize(id, cols, rows).then((ok) => {
+            if (ok) confirmedGeometry = `${cols}x${rows}`
             if (ok || disposed) return
             if (attempt + 1 < RESIZE_RETRY_MS.length) {
               pushResize(cols, rows, attempt + 1)
@@ -275,7 +280,21 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
         setExitCode(null) // new keystrokes mean a fresh command is in flight
         const sequence = ++inputSequenceRef.current
         console.debug('[terminal chain] xterm → input queue', { id, sequence, bytes: data.length })
+        // A TUI reads TIOCGWINSZ once at exec time, so a command submitted
+        // before the resize handshake lands snapshots the 80x24 the PTY was
+        // born at and paints into a corner of a much wider pane. Enter is the
+        // only keystroke that can exec something, so it's the only one that
+        // waits — and only when the server hasn't confirmed the current size,
+        // which after the first successful push is never.
+        const submits = data.includes('\r') || data.includes('\n')
         inputQueueRef.current = inputQueueRef.current
+          .then(async () => {
+            // Re-read inside the queue: an earlier Enter may already have
+            // confirmed this geometry, and the grid may have changed since.
+            const current = `${term.cols}x${term.rows}`
+            if (!submits || disposed || confirmedGeometry === current) return
+            if (await sendResize(id, term.cols, term.rows)) confirmedGeometry = current
+          })
           .then(() => sendInput(id, data, sequence))
           .then((reason) => {
             if (!disposed) setInputError(reason)
