@@ -21,8 +21,14 @@
 // the session id. Spawning our own process would work only in the Codespace
 // and would need every CLI re-authenticated somewhere else.
 
-import { runHeadless, base64Arg } from '@/lib/terminal/headless-run'
-import { getTask, listAgents, recordResult, updateTaskStatus } from './store'
+import {
+  runHeadless,
+  base64Arg,
+  worktreeSignature,
+  diffSignatures,
+  type WorktreeDelta,
+} from '@/lib/terminal/headless-run'
+import { getTask, listAgents, recordEvent, recordResult, updateTaskStatus } from './store'
 import type { Agent, Task, TaskResult } from './types'
 
 /** Default wall-clock cap for one builder run. */
@@ -49,6 +55,14 @@ export interface RunBuilderTaskOptions {
   sessionId?: string
   /** Working directory. Ignored on the Sprite path (see sprite-manager). */
   cwd?: string
+  /**
+   * Whether this task is expected to modify the checkout. Default true.
+   *
+   * When true, a run that exits 0 without changing anything is recorded as a
+   * FAILURE, because that is what it is. Set false for genuinely read-only
+   * work (a review, an analysis) where no diff is the correct outcome.
+   */
+  expectsWrite?: boolean
 }
 
 export interface RunBuilderTaskResult {
@@ -61,6 +75,8 @@ export interface RunBuilderTaskResult {
   durationMs: number
   timedOut: boolean
   sessionId: string
+  /** What the run did to the checkout. */
+  worktree: WorktreeDelta
 }
 
 /**
@@ -102,7 +118,12 @@ export async function runBuilderTask(
 
   await updateTaskStatus(taskId, 'running', { agent: agent.name, cli: agent.cliCommand })
 
-  const run = await runHeadless(`${agent.cliCommand} -p ${base64Arg(prompt)}`, {
+  // cli_command carries the whole invocation up to (but not including) the
+  // prompt, because the prompt flag is NOT universal: claude and gemini take
+  // -p, hermes takes -z, and opencode takes `run <message>` while its own -p
+  // means --password. Hardcoding -p here silently mis-invoked half the roster.
+  const before = await worktreeSignature(options.cwd)
+  const run = await runHeadless(`${agent.cliCommand} ${base64Arg(prompt)}`, {
     timeoutMs,
     runId: taskId,
     sessionId: options.sessionId,
@@ -110,16 +131,38 @@ export async function runBuilderTask(
   })
 
   const { output, exitCode, timedOut, durationMs } = run
-  const success = run.failure === null && !timedOut && exitCode === 0
+  const after = await worktreeSignature(options.cwd)
+  const delta: WorktreeDelta = diffSignatures(before, after)
+
+  const ranCleanly = run.failure === null && !timedOut && exitCode === 0
+  // A builder that changed nothing did not do the task, whatever it exited.
+  // This is the check that would have caught two batches of hollow successes.
+  const wroteNothing = ranCleanly && options.expectsWrite !== false && !delta.changed && !delta.unknown
+  const success = ranCleanly && !wroteNothing
   const error = run.failure
     ? run.failure
     : timedOut
       ? `timeout after ${timeoutMs}ms`
       : exitCode === null
         ? 'run ended without an end marker — the shell or CLI died mid-run'
+        : wroteNothing
+        ? `${agent.cliCommand} exited 0 but the working tree did not change — the CLI ran and produced no edits`
         : exitCode === 0
           ? null
           : `${agent.cliCommand} exited ${exitCode}`
+
+  await recordEvent(
+    task.missionId,
+    'task.worktree',
+    {
+      changed: delta.changed,
+      unknown: delta.unknown,
+      fileCount: delta.files.length,
+      files: delta.files,
+      agent: agent.name,
+    },
+    taskId,
+  )
 
   const result = await recordResult(taskId, agent.id, output, success, error, durationMs)
 
@@ -132,5 +175,6 @@ export async function runBuilderTask(
     durationMs,
     timedOut,
     sessionId: run.sessionId,
+    worktree: delta,
   }
 }

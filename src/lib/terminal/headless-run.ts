@@ -252,3 +252,87 @@ export async function runHeadless(
     backendKind: term.kind,
   }
 }
+
+// ─── Worktree change detection ─────────────────────────────────────────
+// Exit code alone is not evidence that a builder did anything. `claude -p` is
+// read-only by default and exits 0 while refusing to write; `openhands
+// --headless` exits 0 having produced nothing. Both were recorded as successes
+// for an entire batch. Comparing the checkout before and after is the only
+// signal that distinguishes "did the work" from "ran and declined".
+
+/**
+ * Snapshot of a checkout, cheap enough to take on every run.
+ *
+ * Uses git when the directory is a repo — precise, and fast even on a large
+ * tree — and falls back to a path/size/mtime walk otherwise, so a scratch
+ * directory that was never `git init`ed still gets covered.
+ */
+const SIGNATURE_TIMEOUT_MS = 30_000
+
+const SIGNATURE_SCRIPT = `
+set +e
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "MODE git"
+  echo "HEAD $(git rev-parse HEAD 2>/dev/null || echo none)"
+  git status --porcelain=v1 --untracked-files=all 2>/dev/null | sort
+else
+  echo "MODE find"
+  find . -type f -not -path './.git/*' -not -path './node_modules/*' \\
+    -printf '%p|%s|%T@\\n' 2>/dev/null | sort
+fi
+`.trim()
+
+export interface WorktreeSignature {
+  /** Raw snapshot lines. Compared verbatim between before and after. */
+  lines: string[]
+  /** True when the snapshot could not be taken at all. */
+  failed: boolean
+}
+
+export async function worktreeSignature(cwd?: string): Promise<WorktreeSignature> {
+  try {
+    const run = await runHeadless(`bash -c ${base64Arg(SIGNATURE_SCRIPT)}`, {
+      timeoutMs: SIGNATURE_TIMEOUT_MS,
+      runId: `sig-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      cwd,
+    })
+    if (run.failure || run.timedOut || run.exitCode !== 0) return { lines: [], failed: true }
+    return { lines: run.output.split('\n').map((l) => l.trim()).filter(Boolean), failed: false }
+  } catch {
+    return { lines: [], failed: true }
+  }
+}
+
+export interface WorktreeDelta {
+  changed: boolean
+  /** Paths that appeared, vanished or changed. Best-effort, capped. */
+  files: string[]
+  /** True when either snapshot failed, so "changed" is not trustworthy. */
+  unknown: boolean
+}
+
+const MAX_REPORTED_FILES = 50
+
+/** Difference between two snapshots, as a set of lines that moved either way. */
+export function diffSignatures(before: WorktreeSignature, after: WorktreeSignature): WorktreeDelta {
+  if (before.failed || after.failed) return { changed: false, files: [], unknown: true }
+
+  const beforeSet = new Set(before.lines)
+  const afterSet = new Set(after.lines)
+  const moved = [
+    ...after.lines.filter((l) => !beforeSet.has(l)),
+    ...before.lines.filter((l) => !afterSet.has(l)),
+  ]
+
+  // Strip the porcelain status prefix / the find metadata so the report reads
+  // as paths rather than as raw snapshot lines.
+  const files = [
+    ...new Set(
+      moved
+        .filter((l) => !l.startsWith('MODE ') && !l.startsWith('HEAD '))
+        .map((l) => (l.includes('|') ? l.split('|')[0] : l.replace(/^\S+\s+/, '')))
+        .map((p) => p.replace(/^\.\//, '')),
+    ),
+  ]
+  return { changed: files.length > 0, files: files.slice(0, MAX_REPORTED_FILES), unknown: false }
+}
