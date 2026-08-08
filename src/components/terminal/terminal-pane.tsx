@@ -44,6 +44,11 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
   // pane: a dropped keystroke is invisible otherwise, because xterm echoes
   // locally whether or not the backend ever received it.
   const [inputError, setInputError] = useState<string | null>(null)
+  // The output stream can drop while the input path stays perfectly healthy —
+  // they are different routes. Keystrokes still reach the shell, but nothing
+  // echoes them back, so typing looks like it is going nowhere. Without this
+  // the state is completely invisible; see the SSE handlers below.
+  const [streamDown, setStreamDown] = useState(false)
   const termRef = useRef<XTermTerminal | null>(null)
   const fitRef = useRef<XTermFitAddon | null>(null)
   const closedRef = useRef(false)
@@ -329,6 +334,7 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       // certainly been laid out by the time the stream is up.
       es.onopen = () => {
         if (disposed) return
+        setStreamDown(false)
         fitAttempt = 0
         scheduleFit()
         pushResize(term.cols, term.rows)
@@ -338,6 +344,7 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       let sawFirstOutput = false
       es.addEventListener('output', (e) => {
         onOutputRef.current?.()
+        setStreamDown(false) // bytes arriving is the only proof the gap closed
         if (!sawFirstOutput) {
           sawFirstOutput = true
           fitAttempt = 0
@@ -364,7 +371,18 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
         }
       })
       es.onerror = () => {
-        // EventSource auto-reconnects; nothing to do here.
+        // EventSource reconnects on its own, so there is nothing to repair —
+        // but the gap is not cosmetic. Keystrokes keep POSTing successfully to
+        // a different route the whole time, and a PTY echoes typed characters
+        // back through THIS stream rather than xterm drawing them locally. So
+        // while this is down, typing is invisible even though every keystroke
+        // lands, and the command runs normally on Enter. That is indisting-
+        // uishable from a frozen UI unless it says so.
+        //
+        // On Vercel this is routine, not exceptional: the SSE route caps at
+        // maxDuration 300, so the function is torn down and reconnected every
+        // five minutes for as long as the pane is open.
+        if (!disposed && es.readyState !== EventSource.OPEN) setStreamDown(true)
       }
 
       // Resize handling — debounce, since a split-layout reflow fires many.
@@ -398,6 +416,13 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
       let healChecks = 0
       const healTimer = setInterval(() => {
         if (disposed) return
+        // A hidden pane is not healthy, it is unmeasurable. The Chat/Commands
+        // switcher hides this whole subtree with display:none while leaving it
+        // mounted, so both checks below read zero width and report "fine" —
+        // three of those in six seconds used to clear this interval for good,
+        // retiring the safety net exactly when a later reveal might need it.
+        const hostWidth = containerRef.current?.getBoundingClientRect().width ?? 0
+        if (hostWidth < 50) return
         if (gridLooksStuck() || underFilled()) {
           healChecks = 0
           fitAttempt = 0
@@ -509,6 +534,18 @@ export function TerminalPane({ id, cwd, name = 'bash', clearSignal = 0, onClose,
           </button>
         </div>
       </div>
+      {streamDown && (
+        <div
+          role="status"
+          className="flex shrink-0 items-start gap-1.5 border-b border-warning/30 bg-warning/10 px-2.5 py-1 font-mono text-[10px] leading-relaxed text-warning"
+        >
+          <span className="mt-[1px] shrink-0 animate-pulse" aria-hidden="true">&#9679;</span>
+          <span className="min-w-0 flex-1">
+            Output stream reconnecting — keystrokes are still reaching the shell, but nothing will
+            echo back until it resumes.
+          </span>
+        </div>
+      )}
       {inputError && (
         <div
           role="alert"
