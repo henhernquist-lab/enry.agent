@@ -61,8 +61,12 @@ try {
   ok(`mission ${mission.id} status="${mission.status}"`)
   info(`goal: ${GOAL}`)
 
-  const result = await planMission(mission.id, { modelId: process.env.MODEL })
+  const result = await planMission(mission.id, { modelId: process.env.MODEL, cwd: process.env.REPO_CWD ?? process.cwd() })
   ok(`planned with ${result.modelId} in ${result.attempts} attempt(s)`)
+  info(
+    `repo context: ${result.repoContext.manifestFile ?? 'none'} · ${result.repoContext.chars} chars` +
+      `${result.repoContext.truncated ? ' (truncated)' : ''}${result.repoContext.warning ? ` · ${result.repoContext.warning}` : ''}`,
+  )
   info(
     `usage: ${result.usage.promptTokens} in + ${result.usage.completionTokens} out = ` +
       `${result.usage.totalTokens} tokens, $${result.usage.costUsd.toFixed(4)}`,

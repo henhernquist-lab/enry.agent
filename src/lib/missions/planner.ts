@@ -25,6 +25,7 @@ import {
   updateMissionStatus,
   MissionStoreError,
 } from './store'
+import { gatherRepoContext } from './repo-context'
 import type { Mission, Task, TaskPriority } from './types'
 
 /** A bad decomposition must not write an unbounded task list. */
@@ -74,8 +75,11 @@ Rules:
   Make it self-contained and concrete.
 - No task may depend on itself, and the graph must be acyclic.`
 
-function userPrompt(mission: Mission): string {
-  return `Repository: ${mission.repo}\n\nGoal:\n${mission.goal}`
+function userPrompt(mission: Mission, repoContext: string): string {
+  const context = repoContext
+    ? `\n\nRepo context (read from the checkout — plan against THIS stack, do not assume another):\n${repoContext}`
+    : ''
+  return `Repository: ${mission.repo}${context}\n\nGoal:\n${mission.goal}`
 }
 
 const VALID_PRIORITY = new Set<TaskPriority>(['low', 'medium', 'high'])
@@ -158,11 +162,20 @@ export interface PlanMissionResult {
   modelId: string
   attempts: number
   usage: { promptTokens: number; completionTokens: number; totalTokens: number; costUsd: number }
+  /** Grounding the model actually received. */
+  repoContext: { manifestFile: string | null; chars: number; truncated: boolean; warning: string | null }
 }
 
 export interface PlanMissionOptions {
   /** Defaults to the same model the rest of Golem chat uses. */
   modelId?: string
+  /**
+   * Checkout to read repo context from. Defaults to the terminal backend's own
+   * working directory, which is the repo in the Codespace. On the Sprite the
+   * checkout location is not implied by mission.repo, so pass it explicitly
+   * there or planning falls back to no context.
+   */
+  cwd?: string
 }
 
 /**
@@ -211,6 +224,17 @@ export async function planMission(
   const modelId = options.modelId ?? DEFAULT_MODEL_ID
   if (!getModelMeta(modelId)) throw new PlannerError(`planMission: unknown model "${modelId}"`)
 
+  // Grounding, gathered after the cap check so a halted mission never pays for
+  // it. Never throws — planning with no context beats not planning at all — so
+  // a failure is recorded and the run continues unground.
+  const repoContext = await gatherRepoContext({ cwd: options.cwd })
+  await recordEvent(missionId, 'planner.context', {
+    manifestFile: repoContext.manifestFile,
+    chars: repoContext.chars,
+    truncated: repoContext.truncated,
+    warning: repoContext.warning,
+  })
+
   let attempts = 0
   let plan: PlannedTask[] | null = null
   let lastError = ''
@@ -243,8 +267,8 @@ export async function planMission(
         system: SYSTEM_PROMPT,
         prompt:
           attempts === 1
-            ? userPrompt(mission)
-            : `${userPrompt(mission)}\n\nYour previous reply was rejected: ${lastError}\nReply with valid JSON only.`,
+            ? userPrompt(mission, repoContext.text)
+            : `${userPrompt(mission, repoContext.text)}\n\nYour previous reply was rejected: ${lastError}\nReply with valid JSON only.`,
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         abortSignal: AbortSignal.timeout(PLANNER_TIMEOUT_MS),
       })
@@ -315,7 +339,19 @@ export async function planMission(
   })
 
   const running = await updateMissionStatus(missionId, 'running', { plannedTasks: created.length })
-  return { mission: running, tasks: created, modelId, attempts, usage: totals }
+  return {
+    mission: running,
+    tasks: created,
+    modelId,
+    attempts,
+    usage: totals,
+    repoContext: {
+      manifestFile: repoContext.manifestFile,
+      chars: repoContext.chars,
+      truncated: repoContext.truncated,
+      warning: repoContext.warning,
+    },
+  }
 }
 
 export { MissionStoreError }
